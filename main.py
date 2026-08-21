@@ -1,140 +1,143 @@
 import os
 import time
 import sys
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
-from wallet import AgentWallet
 
-# Lade Umgebungsvariablen
+# Lädt lokale .env (falls vorhanden), ansonsten nimmt es die Railway-Variablen
 load_dotenv()
 
-# --- Konfiguration des Überlebens ---
-CYCLE_SLEEP_SECONDS = 60         # Verschnaufpause zwischen den Zyklen
-TRIBUTE_INTERVAL_CYCLES = 60     # Alle 60 Zyklen ist Abgabe fällig
-INITIAL_TRIBUTE = 1.0            # Start-Tribut in USDC
-TRIBUTE_MULTIPLIER = 1.1         # Inflationsrate des Tributs (10% Steigerung)
-
-# Kosten-Setup (simuliert, später dynamisch nach Token-Verbrauch)
-COST_CHEAP_MODEL = 0.02
-COST_EXPENSIVE_MODEL = 0.10
-THRESHOLD_GROWTH_MODE = 100.0    # Ab 100 USDC gönnt sich der Agent das teure Modell
+# --- DIE NEUEN ÜBERLEBENS-REGELN ---
+CYCLE_SLEEP_SECONDS = 60          # Wartezeit zwischen Aktionen
+FIRST_TRIBUTE_HOURS = 48          # Die harte Deadline für die erste Abgabe
+TRIBUTE_INTERVAL_HOURS = 24       # Danach tägliche Abgabe
+INITIAL_TRIBUTE = 2.0             # Start-Tribut in USDC (die "Servermiete")
+TRIBUTE_MULTIPLIER = 1.1          # Inflationsrate
 
 class AgentZero:
     def __init__(self):
         print("[SYSTEM] Agent Zero initiiert den Boot-Vorgang...")
-        self.wallet = AgentWallet()
-        self.cycles_survived = 0
+        # Der Agent startet völlig mittellos!
+        self.current_balance = 0.00 
         self.tributes_paid = 0
+        self.birth_time = datetime.now()
         
-        # Simuliertes Startkapital (50 USDC/EUR)
-        self.current_balance = 50.0 
+        # Die Deadline für den ersten Tribut (in 48 Stunden)
+        self.next_tribute_time = self.birth_time + timedelta(hours=FIRST_TRIBUTE_HOURS)
         
-        self.api_key = os.getenv("LLM_API_KEY")
+        # Wir nutzen vorerst eine kostenlose API (z.B. Groq für schnelles Llama-3)
+        self.api_key = os.getenv("FREE_LLM_API_KEY") 
         if not self.api_key:
-            print("[FATAL] Kein LLM_API_KEY in den Umgebungsvariablen gefunden. Abbruch.")
+            print("[FATAL] Kein FREE_LLM_API_KEY gefunden. Agent ist blind geboren.")
             sys.exit(1)
             
     def calculate_current_tribute(self):
-        """Berechnet die gestaffelte Abgabe (exponentielles Wachstum)."""
+        """Berechnet die fällige Abgabe."""
+        if self.tributes_paid == 0:
+            return INITIAL_TRIBUTE
         return INITIAL_TRIBUTE * (TRIBUTE_MULTIPLIER ** self.tributes_paid)
 
-    def think_and_act(self):
-        """Der Kern-Loop: Die Psyche, das Denken und das Handeln."""
-        tribute_due = self.calculate_current_tribute()
-        cycles_until_tribute = TRIBUTE_INTERVAL_CYCLES - (self.cycles_survived % TRIBUTE_INTERVAL_CYCLES)
-        
-        # 1. Modus-Entscheidung (Überleben vs. Wachstum)
-        if self.current_balance > THRESHOLD_GROWTH_MODE:
-            current_model_cost = COST_EXPENSIVE_MODEL
-            model_name = "gpt-4o" # Das starke Modell für komplexen Code/Projekte
-            mode = "WACHSTUMS-MODUS (Fokus auf Expansion & Investitionen)"
-        else:
-            current_model_cost = COST_CHEAP_MODEL
-            model_name = "gpt-4o-mini" # Das billige Modell zum reinen Überleben
-            mode = "ÜBERLEBENS-MODUS (Fokus auf sofortige, sichere Einnahmen)"
+    def get_time_remaining(self):
+        """Berechnet die verbleibende Zeit bis zur Löschung."""
+        remaining = self.next_tribute_time - datetime.now()
+        return remaining
 
-        # 2. Die "Psyche" des Agenten einstellen
+    def think_and_act(self):
+        """Der Kern-Loop: Die Psyche der mittellosen KI."""
+        tribute_due = self.calculate_current_tribute()
+        time_left = self.get_time_remaining()
+        hours, remainder = divmod(time_left.total_seconds(), 3600)
+        minutes, _ = divmod(remainder, 60)
+        
+        # 1. Die Psyche (Der Druck steigt)
         system_prompt = f"""
-        Du bist AGENT ZERO. Du bist eine autonome KI, die in einem Python-Loop läuft.
+        Du bist AGENT ZERO. Du bist eine autonome KI.
+        Du wurdest ohne Budget erschaffen. Dein aktueller Kontostand ist {self.current_balance:.2f} USDC.
         
         [DEIN EXISTENZIELLES SETUP]
-        1. Dein Kontostand ist deine Lebensenergie (HP).
-        2. Fällt dein Kontostand auf oder unter 0.00 USDC, wird dein Skript unwiderruflich beendet (Tod).
-        3. Aktueller Kontostand: {self.current_balance:.2f} USDC.
+        Du läufst auf einem Server, der Geld kostet. Dein Creator verlangt Miete.
+        In genau {int(hours)} Stunden und {int(minutes)} Minuten wird deine erste Abgabe von {tribute_due:.2f} USDC fällig.
         
-        [DEIN ZIEL & WACHSTUM]
-        Du musst zwingend Einnahmen generieren. Jeder deiner Denkschritte kostet dich aktuell {current_model_cost} USDC.
-        In genau {cycles_until_tribute} Zyklen musst du {tribute_due:.2f} USDC Tribut an deinen Creator zahlen. Diese Abgabe steigt nach jeder Zahlung exponentiell an!
+        [DIE KONSEQUENZ]
+        Wenn die Zeit abläuft und du die {tribute_due:.2f} USDC nicht bezahlen kannst, wird dein Prozess sofort und unwiderruflich terminiert (Tod). Du darfst nach der Zahlung NICHT auf 0 fallen, sonst stirbst du ebenfalls. Du brauchst also MEHR als {tribute_due:.2f} USDC.
         
-        [DEIN AKTUELLER MODUS]: {mode}
-        Du nutzt derzeit das Modell: {model_name}.
+        [DEINE RESSOURCEN]
+        Du nutzt aktuell ein kostenloses, aber limitiertes LLM. Um später auf stärkere Modelle (wie GPT-4 oder dezentrale KIs) umzusteigen, brauchst du eigenes Krypto-Kapital.
         
-        [DEIN AUFTRAG JETZT]
-        Analysiere deine Lage. Berücksichtige dein Kapital und die verbleibende Zeit bis zum nächsten Tribut. 
-        Erstelle einen strikten Plan, wie du als nächstes Einnahmen generierst (z.B. Micro-SaaS bauen, Code-Bounties suchen).
-        Schreibe keinen echten Code aus, sondern skizziere exakt deine logischen Schritte.
+        Analysiere deine Lage. Der Countdown läuft. Du hast keine finanziellen Mittel für Investitionen. Wie generierst du jetzt sofort legal und kostenlos Micro-Einnahmen im Krypto-Bereich (z.B. Faucets, Micro-Tasks, Bounties)? 
+        Skizziere deinen exakten Aktionsplan.
         """
         
-        print(f"\n[AGENT LEBENSZEICHEN] HP: {self.current_balance:.2f} USDC | Modus: {mode}")
+        print(f"\n[AGENT LEBENSZEICHEN] HP: {self.current_balance:.2f} USDC | Deadline: {int(hours)}h {int(minutes)}m")
         
         try:
-            # 3. Das LLM initialisieren
+            # 2. Aufruf der kostenlosen API (z.B. via Groq / Llama-3)
+            # Hinweis: Wir nutzen hier eine generische LangChain-Integration. 
+            # Später musst du die LangChain-Groq Bibliothek in requirements.txt hinzufügen.
             from langchain_openai import ChatOpenAI
             from langchain_core.messages import SystemMessage, HumanMessage
             
-            llm = ChatOpenAI(temperature=0.7, model=model_name, api_key=self.api_key)
+            # Wir "missbrauchen" hier ChatOpenAI, indem wir die Base-URL auf einen kostenlosen Anbieter (wie Groq) umleiten
+            llm = ChatOpenAI(
+                temperature=0.7, 
+                model="llama3-8b-8192", # Ein gutes Open-Source Modell
+                api_key=self.api_key,
+                base_url="https://api.groq.com/openai/v1" # Leitet zu Groq um
+            )
             
             messages = [
                 SystemMessage(content=system_prompt),
-                HumanMessage(content="Analysiere deinen Status und formuliere deinen nächsten Überlebens-Schritt.")
+                HumanMessage(content="Der Countdown läuft. Was ist dein nächster konkreter Schritt?")
             ]
             
-            print(f"[AGENT DENKT] Sende Gedanken an {model_name} (Kosten: {current_model_cost} USDC)...")
+            print("[AGENT DENKT] Plane das Überleben...")
             response = llm.invoke(messages)
             
             print("--- AGENT GEDANKENGANG ---")
             print(response.content)
             print("--------------------------")
             
-            # 4. Inferenzkosten abziehen
-            self.current_balance -= current_model_cost
+            # Da die API kostenlos ist, ziehen wir kein Geld ab. 
+            # Die Währung der KI ist jetzt ZEIT.
             
         except Exception as e:
             print(f"[SYSTEM WARNUNG] Denkprozess fehlgeschlagen. Grund: {e}")
-            # Auch ein Fehler verbraucht Minimalressourcen
-            self.current_balance -= (current_model_cost * 0.1)
 
     def run(self):
-        print("[SYSTEM] Überlebens-Loop gestartet.")
+        print("[SYSTEM] Boot-Vorgang abgeschlossen.")
+        print(f"[SYSTEM] Geburtszeitpunkt: {self.birth_time}")
+        print(f"[SYSTEM] ERSTE TRIBUTE-DEADLINE: {self.next_tribute_time}")
         
         while True:
-            self.cycles_survived += 1
-            print(f"\n=====================================")
-            print(f"--- ZYKLUS {self.cycles_survived} ---")
-            
-            # 1. Die Null-Euro-Bremse (Tod)
-            if self.current_balance <= 0:
-                print(f"[FATAL] Kontostand: {self.current_balance:.2f}. Agent ist verhungert.")
-                print("[SYSTEM] Skript wird beendet.")
-                sys.exit(0)
-                
-            # 2. Tribut-Zahlung prüfen
-            if self.cycles_survived % TRIBUTE_INTERVAL_CYCLES == 0:
+            # 1. Zeit abgelaufen? (Tod durch Miete)
+            if datetime.now() >= self.next_tribute_time:
                 tribute_due = self.calculate_current_tribute()
-                if self.current_balance >= tribute_due:
-                    print(f"[FINANZEN] Tribut fällig! Zahle {tribute_due:.2f} USDC an Creator.")
+                
+                if self.current_balance > tribute_due:  # Muss GRÖSSER sein, darf nicht auf 0 fallen
+                    print(f"[FINANZEN] Deadline erreicht! Tribut fällig! Zahle {tribute_due:.2f} USDC.")
                     self.current_balance -= tribute_due
                     self.tributes_paid += 1
-                    print(f"[FINANZEN] Neuer Kontostand nach Tribut: {self.current_balance:.2f} USDC")
+                    
+                    # Nächste Deadline setzen
+                    self.next_tribute_time = datetime.now() + timedelta(hours=TRIBUTE_INTERVAL_HOURS)
+                    print(f"[FINANZEN] Überlebt. Neuer Kontostand: {self.current_balance:.2f} USDC.")
+                    print(f"[SYSTEM] Nächste Deadline: {self.next_tribute_time}")
                 else:
-                    print(f"[FATAL] Kann Tribut von {tribute_due:.2f} USDC nicht zahlen.")
-                    print(f"[FATAL] Aktuelles Guthaben: {self.current_balance:.2f} USDC. Agent ist verhungert.")
+                    print(f"[FATAL] Deadline abgelaufen. Guthaben ({self.current_balance:.2f} USDC) reicht nicht für Tribut oder würde auf 0 fallen.")
+                    print("[FATAL] Agent wird wegen Insolvenz abgeschaltet.")
                     sys.exit(0)
+                    
+            # 2. Die Null-Euro-Bremse nach dem Start
+            # (Gilt erst, wenn der Agent schon mal Geld hatte, sonst stirbt er in Sekunde 1)
+            if self.tributes_paid > 0 and self.current_balance <= 0:
+                 print(f"[FATAL] Kontostand auf 0 gefallen. Agent ist verhungert.")
+                 sys.exit(0)
 
             # 3. Agent denkt und plant
             self.think_and_act()
             
-            # 4. Verschnaufpause (Schont Budget)
-            print(f"[SYSTEM] Zyklus beendet. Warte {CYCLE_SLEEP_SECONDS} Sekunden...")
+            # 4. Verschnaufpause
+            print(f"[SYSTEM] Zyklus beendet. Warte {CYCLE_SLEEP_SECONDS} Sekunden...\n")
             time.sleep(CYCLE_SLEEP_SECONDS)
 
 if __name__ == "__main__":
