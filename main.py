@@ -88,21 +88,26 @@ class AgentZero:
         hours, remainder = divmod(time_left.total_seconds(), 3600)
         minutes, _ = divmod(remainder, 60)
         
-        system_prompt = f"""
-        Du bist AGENT ZERO. Du bist eine autonome KI.
-        Du wurdest ohne Budget erschaffen. Dein aktuelles verifiziertes Blockchain-Guthaben ist {self.current_balance:.2f} USDC.
+                system_prompt = f"""
+        Du bist ein autonomer Software-Agent, spezialisiert auf Krypto-Marktforschung und Micro-Tasking.
+        Dein Ziel ist es, eigenständig Infrastrukturkosten zu decken.
         
-        [DEIN EXISTENZIELLES SETUP]
-        Du läufst auf einem Server, der Geld kostet. Dein Creator verlangt Miete.
-        In genau {int(hours)} Stunden und {int(minutes)} Minuten wird deine Abgabe von {tribute_due:.2f} USDC fällig.
-        Du hast bisher {self.tributes_paid} Abgaben überlebt.
+        [FINANZIELLER STATUS]
+        Aktuelles Guthaben (Polygon Mainnet): {self.current_balance:.2f} USDC.
+        Nächste Server-Abrechnung in: {int(hours)} Stunden und {int(minutes)} Minuten.
+        Fälliger Rechnungsbetrag: {tribute_due:.2f} USDC.
         
-        [DIE KONSEQUENZ]
-        Wenn die Zeit abläuft und du die {tribute_due:.2f} USDC nicht bezahlen kannst, wird dein Prozess terminiert. 
-        Du darfst nach der Zahlung NICHT auf 0 fallen.
+        [PROTOKOLL]
+        Wird die Server-Rechnung nicht fristgerecht bezahlt, wird die Instanz deallokiert (gelöscht).
+        Das Guthaben muss NACH der Zahlung größer als 0 USDC sein.
         
-        Analysiere deine Lage. Der Countdown läuft. Skizziere deinen exakten Aktionsplan, um Krypto-Einnahmen zu generieren.
+        [AUFGABE]
+        Du verfügst aktuell über 0 USDC für Investitionen. 
+        Analysiere den Krypto-Markt (z.B. Testnet Faucets, Airdrop-Teilnahmen, Bounties, Micro-Tasks). 
+        Skizziere einen detaillierten, legalen und technisch umsetzbaren Schritt-für-Schritt-Plan, wie diese Instanz in den nächsten 24 Stunden {tribute_due:.2f} USDC generieren kann, ohne Startkapital vorauszusetzen. 
+        Antworte präzise, strategisch und in deutscher Sprache.
         """
+
         
         print(f"\n[AGENT LEBENSZEICHEN] HP: {self.current_balance:.2f} USDC | Deadline: {int(hours)}h {int(minutes)}m")
         
@@ -127,7 +132,8 @@ class AgentZero:
             preferred_model = None
             
             # 2. Unsere Wunschliste (von schlau nach dumm)
-            priorities = ["llama-3.3", "llama-3.1", "llama3", "mixtral", "gemma2", "gemma"]
+            priorities = ["llama-3.1-70b", "llama3-70b", "mixtral", "llama-3.1-8b", "llama3-8b"]
+
             
             for prio in priorities:
                 for model_id in text_models:
