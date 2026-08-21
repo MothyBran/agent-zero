@@ -35,7 +35,6 @@ class AgentZero:
 
     def load_state(self):
         """Lädt die Lebensdaten aus dem permanenten Speicher."""
-        # Prüft ob wir das Verzeichnis erst erstellen müssen (wichtig für lokale Tests)
         os.makedirs(os.path.dirname(STATE_FILE) if os.path.dirname(STATE_FILE) else ".", exist_ok=True)
         
         if os.path.exists(STATE_FILE):
@@ -88,7 +87,7 @@ class AgentZero:
         hours, remainder = divmod(time_left.total_seconds(), 3600)
         minutes, _ = divmod(remainder, 60)
         
-                system_prompt = f"""
+        system_prompt = f"""
         Du bist ein autonomer Software-Agent, spezialisiert auf Krypto-Marktforschung und Micro-Tasking.
         Dein Ziel ist es, eigenständig Infrastrukturkosten zu decken.
         
@@ -107,7 +106,6 @@ class AgentZero:
         Skizziere einen detaillierten, legalen und technisch umsetzbaren Schritt-für-Schritt-Plan, wie diese Instanz in den nächsten 24 Stunden {tribute_due:.2f} USDC generieren kann, ohne Startkapital vorauszusetzen. 
         Antworte präzise, strategisch und in deutscher Sprache.
         """
-
         
         print(f"\n[AGENT LEBENSZEICHEN] HP: {self.current_balance:.2f} USDC | Deadline: {int(hours)}h {int(minutes)}m")
         
@@ -116,7 +114,6 @@ class AgentZero:
             from langchain_openai import ChatOpenAI
             from langchain_core.messages import SystemMessage, HumanMessage
             
-            # --- NEU: Dynamische Modellauswahl (Audio-Modelle gefiltert) ---
             headers = {"Authorization": f"Bearer {self.api_key}"}
             models_url = "https://api.groq.com/openai/v1/models"
             
@@ -126,24 +123,22 @@ class AgentZero:
             data = response.json()
             available_models = [m["id"] for m in data.get("data", [])]
             
-            # 1. Wir filtern reine Audio-Modelle (wie whisper) rigoros aus!
+            # Wir filtern reine Audio-Modelle (wie whisper) rigoros aus
             text_models = [m for m in available_models if "whisper" not in m.lower()]
             
             preferred_model = None
             
-            # 2. Unsere Wunschliste (von schlau nach dumm)
-            priorities = ["llama-3.1-70b", "llama3-70b", "mixtral", "llama-3.1-8b", "llama3-8b"]
-
+            # Unsere aktualisierte Wunschliste (von schlau nach dumm)
+            priorities = ["llama-3.1-70b", "llama3-70b", "mixtral", "llama-3.1-8b", "llama3-8b", "gemma2", "gemma"]
             
             for prio in priorities:
                 for model_id in text_models:
                     if prio in model_id.lower():
                         preferred_model = model_id
                         break
-                if preferred_model: # Bricht ab, sobald das beste gefunden wurde
+                if preferred_model:
                     break
                     
-            # 3. Absoluter Fallback: Das erste Modell, das KEIN Audio-Modell ist
             if not preferred_model and text_models:
                 preferred_model = text_models[0]
                 
@@ -151,8 +146,6 @@ class AgentZero:
                 raise ValueError("Keine Text-Modelle über die Groq-API verfügbar.")
                 
             print(f"[SYSTEM] Nutze Modell: {preferred_model}")
-            
-            # -------------------------------------
             
             llm = ChatOpenAI(
                 temperature=0.7, 
@@ -176,7 +169,6 @@ class AgentZero:
         except Exception as e:
             print(f"[SYSTEM WARNUNG] Denkprozess fehlgeschlagen. Grund: {e}")
 
-
     def run(self):
         print("[SYSTEM] Boot-Vorgang abgeschlossen.")
         print(f"[SYSTEM] Geburtszeitpunkt: {self.birth_time}")
@@ -185,7 +177,6 @@ class AgentZero:
         while True:
             self.current_balance = self.wallet.get_usdc_balance()
             
-            # 1. Zeit abgelaufen? (Tod durch Miete)
             if datetime.now() >= self.next_tribute_time:
                 tribute_due = self.calculate_current_tribute()
                 
@@ -196,7 +187,6 @@ class AgentZero:
                     self.tributes_paid += 1
                     self.next_tribute_time = datetime.now() + timedelta(hours=TRIBUTE_INTERVAL_HOURS)
                     
-                    # WICHTIG: Speichere den neuen Zustand!
                     self.save_state()
                     
                     print(f"[FINANZEN] Überlebt. Neuer Kontostand: {self.current_balance:.2f} USDC.")
@@ -206,12 +196,10 @@ class AgentZero:
                     print("[FATAL] Agent wird wegen Insolvenz abgeschaltet.")
                     sys.exit(0)
                     
-            # 2. Die Null-Euro-Bremse nach dem Start
             if self.tributes_paid > 0 and self.current_balance <= 0:
                  print(f"[FATAL] Kontostand auf 0 gefallen. Agent ist verhungert.")
                  sys.exit(0)
 
-            # 3. Agent denkt und plant
             self.think_and_act()
             
             print(f"[SYSTEM] Zyklus beendet. Warte {CYCLE_SLEEP_SECONDS} Sekunden...\n")
