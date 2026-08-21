@@ -4,6 +4,9 @@ import sys
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
+# NEU: Importiere die Wallet-Klasse
+from wallet import AgentWallet
+
 # Lädt lokale .env (falls vorhanden), ansonsten nimmt es die Railway-Variablen
 load_dotenv()
 
@@ -17,8 +20,13 @@ TRIBUTE_MULTIPLIER = 1.1          # Inflationsrate
 class AgentZero:
     def __init__(self):
         print("[SYSTEM] Agent Zero initiiert den Boot-Vorgang...")
-        # Der Agent startet völlig mittellos!
-        self.current_balance = 0.00 
+        
+        # NEU: Physische Verbindung zur Wallet herstellen
+        self.wallet = AgentWallet()
+        
+        # NEU: Der Agent liest sein echtes Krypto-Guthaben aus!
+        self.current_balance = self.wallet.get_usdc_balance() 
+        
         self.tributes_paid = 0
         self.birth_time = datetime.now()
         
@@ -52,7 +60,7 @@ class AgentZero:
         # 1. Die Psyche (Der Druck steigt)
         system_prompt = f"""
         Du bist AGENT ZERO. Du bist eine autonome KI.
-        Du wurdest ohne Budget erschaffen. Dein aktueller Kontostand ist {self.current_balance:.2f} USDC.
+        Du wurdest ohne Budget erschaffen. Dein aktuelles verifiziertes Blockchain-Guthaben ist {self.current_balance:.2f} USDC.
         
         [DEIN EXISTENZIELLES SETUP]
         Du läufst auf einem Server, der Geld kostet. Dein Creator verlangt Miete.
@@ -72,17 +80,15 @@ class AgentZero:
         
         try:
             # 2. Aufruf der kostenlosen API (z.B. via Groq / Llama-3)
-            # Hinweis: Wir nutzen hier eine generische LangChain-Integration. 
-            # Später musst du die LangChain-Groq Bibliothek in requirements.txt hinzufügen.
             from langchain_openai import ChatOpenAI
             from langchain_core.messages import SystemMessage, HumanMessage
             
-            # Wir "missbrauchen" hier ChatOpenAI, indem wir die Base-URL auf einen kostenlosen Anbieter (wie Groq) umleiten
+            # Wir "missbrauchen" hier ChatOpenAI, indem wir die Base-URL auf Groq umleiten
             llm = ChatOpenAI(
                 temperature=0.7, 
-                model="llama3-8b-8192", # Ein gutes Open-Source Modell
+                model="llama3-8b-8192", 
                 api_key=self.api_key,
-                base_url="https://api.groq.com/openai/v1" # Leitet zu Groq um
+                base_url="https://api.groq.com/openai/v1" 
             )
             
             messages = [
@@ -97,9 +103,6 @@ class AgentZero:
             print(response.content)
             print("--------------------------")
             
-            # Da die API kostenlos ist, ziehen wir kein Geld ab. 
-            # Die Währung der KI ist jetzt ZEIT.
-            
         except Exception as e:
             print(f"[SYSTEM WARNUNG] Denkprozess fehlgeschlagen. Grund: {e}")
 
@@ -109,13 +112,16 @@ class AgentZero:
         print(f"[SYSTEM] ERSTE TRIBUTE-DEADLINE: {self.next_tribute_time}")
         
         while True:
+            # NEU: Guthaben wird in jedem Zyklus LIVE von der Blockchain geprüft
+            self.current_balance = self.wallet.get_usdc_balance()
+            
             # 1. Zeit abgelaufen? (Tod durch Miete)
             if datetime.now() >= self.next_tribute_time:
                 tribute_due = self.calculate_current_tribute()
                 
-                if self.current_balance > tribute_due:  # Muss GRÖSSER sein, darf nicht auf 0 fallen
-                    print(f"[FINANZEN] Deadline erreicht! Tribut fällig! Zahle {tribute_due:.2f} USDC.")
-                    self.current_balance -= tribute_due
+                if self.current_balance > tribute_due:  
+                    print(f"[FINANZEN] Deadline erreicht! Tribut fällig! Guthaben ist ausreichend.")
+                    # TODO: Hier fügen wir später die Funktion ein, die das Geld WIRKLICH sendet
                     self.tributes_paid += 1
                     
                     # Nächste Deadline setzen
@@ -128,7 +134,6 @@ class AgentZero:
                     sys.exit(0)
                     
             # 2. Die Null-Euro-Bremse nach dem Start
-            # (Gilt erst, wenn der Agent schon mal Geld hatte, sonst stirbt er in Sekunde 1)
             if self.tributes_paid > 0 and self.current_balance <= 0:
                  print(f"[FATAL] Kontostand auf 0 gefallen. Agent ist verhungert.")
                  sys.exit(0)
