@@ -123,13 +123,13 @@ class AgentZero:
             data = response.json()
             available_models = [m["id"] for m in data.get("data", [])]
             
-            # Wir filtern reine Audio-Modelle (wie whisper) rigoros aus
-            text_models = [m for m in available_models if "whisper" not in m.lower()]
+            # Wir filtern reine Audio-Modelle (whisper) UND Sicherheits-Klassifizierer (guard) rigoros aus
+            text_models = [m for m in available_models if "whisper" not in m.lower() and "guard" not in m.lower()]
             
             preferred_model = None
             
-            # Unsere aktualisierte Wunschliste (von schlau nach dumm)
-            priorities = ["llama-3.1-70b", "llama3-70b", "mixtral", "llama-3.1-8b", "llama3-8b", "gemma2", "gemma"]
+            # Unsere aktualisierte Wunschliste
+            priorities = ["llama-3.1-70b", "llama-3.1-8b", "llama3-70b", "mixtral", "gemma2"]
             
             for prio in priorities:
                 for model_id in text_models:
@@ -143,7 +143,7 @@ class AgentZero:
                 preferred_model = text_models[0]
                 
             if not preferred_model:
-                raise ValueError("Keine Text-Modelle über die Groq-API verfügbar.")
+                raise ValueError("Keine Chat-Modelle über die Groq-API verfügbar.")
                 
             print(f"[SYSTEM] Nutze Modell: {preferred_model}")
             
