@@ -111,7 +111,7 @@ class AgentZero:
             from langchain_openai import ChatOpenAI
             from langchain_core.messages import SystemMessage, HumanMessage
             
-            # --- NEU: Dynamische Modellauswahl ---
+            # --- NEU: Dynamische Modellauswahl (Audio-Modelle gefiltert) ---
             headers = {"Authorization": f"Bearer {self.api_key}"}
             models_url = "https://api.groq.com/openai/v1/models"
             
@@ -121,19 +121,28 @@ class AgentZero:
             data = response.json()
             available_models = [m["id"] for m in data.get("data", [])]
             
+            # 1. Wir filtern reine Audio-Modelle (wie whisper) rigoros aus!
+            text_models = [m for m in available_models if "whisper" not in m.lower()]
+            
             preferred_model = None
-            # Sucht bevorzugt nach starken Llama Modellen
-            for model_id in available_models:
-                if "llama-3.3" in model_id.lower() or "llama-3.1" in model_id.lower() or "llama3" in model_id.lower() or "mixtral" in model_id.lower():
-                    preferred_model = model_id
+            
+            # 2. Unsere Wunschliste (von schlau nach dumm)
+            priorities = ["llama-3.3", "llama-3.1", "llama3", "mixtral", "gemma2", "gemma"]
+            
+            for prio in priorities:
+                for model_id in text_models:
+                    if prio in model_id.lower():
+                        preferred_model = model_id
+                        break
+                if preferred_model: # Bricht ab, sobald das beste gefunden wurde
                     break
                     
-            # Fallback: Nimmt das erstbeste Modell, wenn keine Präferenz gefunden wurde
-            if not preferred_model and available_models:
-                preferred_model = available_models[0]
+            # 3. Absoluter Fallback: Das erste Modell, das KEIN Audio-Modell ist
+            if not preferred_model and text_models:
+                preferred_model = text_models[0]
                 
             if not preferred_model:
-                raise ValueError("Keine Modelle über die Groq-API verfügbar.")
+                raise ValueError("Keine Text-Modelle über die Groq-API verfügbar.")
                 
             print(f"[SYSTEM] Nutze Modell: {preferred_model}")
             
@@ -160,6 +169,7 @@ class AgentZero:
             
         except Exception as e:
             print(f"[SYSTEM WARNUNG] Denkprozess fehlgeschlagen. Grund: {e}")
+
 
     def run(self):
         print("[SYSTEM] Boot-Vorgang abgeschlossen.")
