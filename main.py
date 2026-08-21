@@ -107,12 +107,41 @@ class AgentZero:
         print(f"\n[AGENT LEBENSZEICHEN] HP: {self.current_balance:.2f} USDC | Deadline: {int(hours)}h {int(minutes)}m")
         
         try:
+            import requests
             from langchain_openai import ChatOpenAI
             from langchain_core.messages import SystemMessage, HumanMessage
             
+            # --- NEU: Dynamische Modellauswahl ---
+            headers = {"Authorization": f"Bearer {self.api_key}"}
+            models_url = "https://api.groq.com/openai/v1/models"
+            
+            response = requests.get(models_url, headers=headers)
+            response.raise_for_status() 
+            
+            data = response.json()
+            available_models = [m["id"] for m in data.get("data", [])]
+            
+            preferred_model = None
+            # Sucht bevorzugt nach starken Llama Modellen
+            for model_id in available_models:
+                if "llama-3.3" in model_id.lower() or "llama-3.1" in model_id.lower() or "llama3" in model_id.lower() or "mixtral" in model_id.lower():
+                    preferred_model = model_id
+                    break
+                    
+            # Fallback: Nimmt das erstbeste Modell, wenn keine Präferenz gefunden wurde
+            if not preferred_model and available_models:
+                preferred_model = available_models[0]
+                
+            if not preferred_model:
+                raise ValueError("Keine Modelle über die Groq-API verfügbar.")
+                
+            print(f"[SYSTEM] Nutze Modell: {preferred_model}")
+            
+            # -------------------------------------
+            
             llm = ChatOpenAI(
                 temperature=0.7, 
-                model="gemma-7b-it", 
+                model=preferred_model, 
                 api_key=self.api_key,
                 base_url="https://api.groq.com/openai/v1" 
             )
@@ -123,10 +152,10 @@ class AgentZero:
             ]
             
             print("[AGENT DENKT] Plane das Überleben...")
-            response = llm.invoke(messages)
+            llm_response = llm.invoke(messages)
             
             print("--- AGENT GEDANKENGANG ---")
-            print(response.content)
+            print(llm_response.content)
             print("--------------------------")
             
         except Exception as e:
