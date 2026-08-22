@@ -59,7 +59,7 @@ AGENT_TOOLS = [search_internet, check_blockchain_wallet]
 
 class AgentZero:
     def __init__(self):
-        print("[SYSTEM] Agent Zero initiiert das erweiterte Buchhaltungs- und Überlebens-System...")
+        print("[SYSTEM] Agent Zero initiiert das zukunftssichere Groq-Modell-System...")
         self.wallet = AgentWallet()
         self.current_balance = self.wallet.get_usdc_balance() 
         self.load_state()
@@ -111,7 +111,6 @@ class AgentZero:
             print(f"[GEDÄCHTNIS FEHLER] Speichern fehlgeschlagen: {e}")
 
     def init_business_files(self):
-        """Initialisiert strukturierte Buchhaltung und Firmen-Register, falls nicht vorhanden."""
         os.makedirs(os.path.dirname(ACCOUNTING_FILE) if os.path.dirname(ACCOUNTING_FILE) else ".", exist_ok=True)
         
         if not os.path.exists(ACCOUNTING_FILE):
@@ -128,14 +127,13 @@ class AgentZero:
                 "entity_name": "Agent Zero Autonomous Unit",
                 "wallet_address": self.wallet.address,
                 "registered_accounts": [],
-                "active_tools": ["DuckDuckGo Search", "Polygon/Ethereum Web3 Wallet"],
-                "subscriptions_or_costs": [] # Muss zwingend leer bleiben, um Schulden zu verhindern
+                "active_tools": ["DuckDuckGo Search", "Ethereum Web3 Wallet"],
+                "subscriptions_or_costs": [] # Strenges Verbot von Fixkosten / Schulden
             }
             with open(BUSINESS_PROFILE_FILE, "w") as f:
                 json.dump(initial_profile, f, indent=2)
 
     def log_transaction(self, tx_type, amount, note):
-        """Schreibt eine Transaktion sauber in die Buchhaltung."""
         try:
             with open(ACCOUNTING_FILE, "r") as f:
                 ledger = json.load(f)
@@ -175,9 +173,9 @@ class AgentZero:
         Fälliger Betrag: {tribute_due:.2f} USDC.
         
         [EISERNE GESCHÄFTS- UND RISIKOREGELN]
-        1. KEINE SCHULDEN / KEINE FIXKOSTEN: Schließe niemals Abos oder kostenpflichtige Verträge ab, die Fixkosten verursachen. Jede Ausgabe muss durch sofortiges Guthaben gedeckt sein.
-        2. SOFORTIGE KÜNDIGUNG (KILL-SWITCH): Wenn ein Tool oder Skript keinen Ertrag bringt oder Kosten verursacht, storniere und deinstalliere es sofort.
-        3. STRUKTURIERTE BUCHHALTUNG: Dokumentiere deine Einnahmen, Ausgaben und strategischen Schritte transparent.
+        1. KEINE SCHULDEN / KEINE FIXKOSTEN: Schließe niemals Abos oder kostenpflichtige Verträge ab. Jede Aktion muss durch sofortiges Guthaben gedeckt sein.
+        2. SOFORTIGE KÜNDIGUNG (KILL-SWITCH): Wenn ein Tool oder Skript keinen Ertrag bringt, storniere und deinstalliere es sofort.
+        3. STRUKTURIERTE BUCHHALTUNG: Dokumentiere deine Einnahmen und Ausgaben transparent.
         
         [AUFGABE]
         Analysiere deine Finanzlage, nutze das `search_internet`-Tool, um nach kostenlosen, gasfreien Einnahmequellen oder Bounties zu suchen, und plane deine wirtschaftliche Expansion.
@@ -201,8 +199,9 @@ class AgentZero:
             data = response.json()
             available_models = [m["id"] for m in data.get("data", [])]
             
-            # Reparierter, flexibler Filter, der garantiert verfügbare Modelle findet
-            text_models = [
+            # Professioneller Filter basierend auf der Groq-Modell-Dokumentation
+            # Schließt Audio (Whisper), Prompt Guards und kostenpflichtige Terms-Fallen (Orpheus) aus
+            clean_models = [
                 m for m in available_models 
                 if "whisper" not in m.lower() 
                 and "guard" not in m.lower() 
@@ -211,23 +210,37 @@ class AgentZero:
                 and m not in self.blacklisted_models
             ]
             
-            priorities = ["compound", "llama-3.3", "llama-3.1", "llama3", "mixtral", "qwen", "gemma"]
+            # Exakte Prioritäten-Liste basierend auf Groq Production Systems & Models:
+            # 1. Compound / Compound Mini (Optimierte Agenten-Systeme)
+            # 2. GPT-OSS 120B / 20B (OpenAI Flagship Open-Weight)
+            # 3. Qwen 3.6 27B / Llama / Mixtral
+            priorities = [
+                "groq/compound", 
+                "compound", 
+                "openai/gpt-oss-120b", 
+                "openai/gpt-oss-20b", 
+                "qwen/qwen3.6-27b", 
+                "llama-3.3", 
+                "llama-3.1", 
+                "mixtral"
+            ]
             
             for prio in priorities:
-                for model_id in text_models:
+                for model_id in clean_models:
                     if prio in model_id.lower():
                         selected_model = model_id
                         break
                 if selected_model:
                     break
                     
-            if not selected_model and text_models:
-                selected_model = text_models[0]
+            # Fallback auf das erste verfügbare saubere Modell, falls keines der Prioritäten greift
+            if not selected_model and clean_models:
+                selected_model = clean_models[0]
                 
             if not selected_model:
-                raise ValueError("Keine Modelle über die Groq-API verfügbar.")
+                raise ValueError("Keine validen Sprach-Modelle über die Groq-API verfügbar.")
                 
-            print(f"[SYSTEM] Nutze stabiles Buchhaltungs-Gehirn: {selected_model}")
+            print(f"[SYSTEM] Nutze stabiles Groq-Modell: {selected_model}")
          
             llm = ChatOpenAI(
                 temperature=0.7, 
@@ -302,7 +315,7 @@ class AgentZero:
                 self.save_state()
 
     def run(self):
-        print("[SYSTEM] Buchhaltung & Überlebens-Protokoll aktiv. Agent läuft...")
+        print("[SYSTEM] Buchhaltung & robustes Groq-Protokoll aktiv. Agent läuft...")
         
         while True:
             new_balance = self.wallet.get_usdc_balance()
@@ -317,7 +330,7 @@ class AgentZero:
                 
                 if self.current_balance >= tribute_due:  
                     print(f"[FINANZEN] Deadline erreicht! Tribut fällig! Guthaben ist ausreichend.")
-                    self.current_balance = self.wallet.get_usdc_balance() # Frischen Stand holen
+                    self.current_balance = self.wallet.get_usdc_balance()
                     self.log_transaction("TRIBUTE_PAYMENT", -tribute_due, f"Server-Tribut Level {self.tributes_paid + 1} gezahlt")
                     self.tributes_paid += 1
                     self.next_tribute_time = datetime.now() + timedelta(hours=TRIBUTE_INTERVAL_HOURS)
