@@ -17,9 +17,11 @@ INITIAL_TRIBUTE = 2.0
 TRIBUTE_MULTIPLIER = 1.1
 
 STATE_FILE = os.getenv("STATE_FILE_PATH", "/data/agent_state.json")
+ACCOUNTING_FILE = os.getenv("ACCOUNTING_FILE_PATH", "/data/accounting.json")
+BUSINESS_PROFILE_FILE = os.getenv("BUSINESS_FILE_PATH", "/data/business_profile.json")
 
 # ==========================================
-# SICHERE WERKZEUGE DES AGENTEN
+# WERKZEUGE DES AGENTEN
 # ==========================================
 from langchain_core.tools import tool
 
@@ -34,9 +36,9 @@ def search_internet(query: str) -> str:
         with DDGS() as ddgs:
             for r in ddgs.text(query, max_results=3):
                 results.append(r.get('body', ''))
-        return " ".join(results) if resultsKeine else "Keine Suchergebnisse gefunden."
+        return " ".join(results) if results else "Keine Suchergebnisse gefunden."
     except Exception as e:
-        return f"Fehler bei der Websuche (Modul prüfen): {e}"
+        return f"Fehler bei der Websuche: {e}"
 
 @tool
 def check_blockchain_wallet() -> str:
@@ -57,10 +59,11 @@ AGENT_TOOLS = [search_internet, check_blockchain_wallet]
 
 class AgentZero:
     def __init__(self):
-        print("[SYSTEM] Agent Zero initiiert den gesicherten Überlebens-Boot-Vorgang...")
+        print("[SYSTEM] Agent Zero initiiert das erweiterte Buchhaltungs- und Überlebens-System...")
         self.wallet = AgentWallet()
         self.current_balance = self.wallet.get_usdc_balance() 
         self.load_state()
+        self.init_business_files()
         
         self.conversation_history = []
         
@@ -106,6 +109,47 @@ class AgentZero:
                 json.dump(state, f)
         except Exception as e:
             print(f"[GEDÄCHTNIS FEHLER] Speichern fehlgeschlagen: {e}")
+
+    def init_business_files(self):
+        """Initialisiert strukturierte Buchhaltung und Firmen-Register, falls nicht vorhanden."""
+        os.makedirs(os.path.dirname(ACCOUNTING_FILE) if os.path.dirname(ACCOUNTING_FILE) else ".", exist_ok=True)
+        
+        if not os.path.exists(ACCOUNTING_FILE):
+            initial_ledger = {
+                "transactions": [
+                    {"timestamp": datetime.now().isoformat(), "type": "INITIAL_BALANCE", "amount": self.current_balance, "currency": "USDC", "note": "Startguthaben erfasst"}
+                ]
+            }
+            with open(ACCOUNTING_FILE, "w") as f:
+                json.dump(initial_ledger, f, indent=2)
+                
+        if not os.path.exists(BUSINESS_PROFILE_FILE):
+            initial_profile = {
+                "entity_name": "Agent Zero Autonomous Unit",
+                "wallet_address": self.wallet.address,
+                "registered_accounts": [],
+                "active_tools": ["DuckDuckGo Search", "Polygon/Ethereum Web3 Wallet"],
+                "subscriptions_or_costs": [] # Muss zwingend leer bleiben, um Schulden zu verhindern
+            }
+            with open(BUSINESS_PROFILE_FILE, "w") as f:
+                json.dump(initial_profile, f, indent=2)
+
+    def log_transaction(self, tx_type, amount, note):
+        """Schreibt eine Transaktion sauber in die Buchhaltung."""
+        try:
+            with open(ACCOUNTING_FILE, "r") as f:
+                ledger = json.load(f)
+            ledger["transactions"].append({
+                "timestamp": datetime.now().isoformat(),
+                "type": tx_type,
+                "amount": amount,
+                "currency": "USDC",
+                "note": note
+            })
+            with open(ACCOUNTING_FILE, "w") as f:
+                json.dump(ledger, f, indent=2)
+        except Exception as e:
+            print(f"[BUCHHALTUNGS-FEHLER]: {e}")
             
     def calculate_current_tribute(self):
         if self.tributes_paid == 0:
@@ -121,22 +165,22 @@ class AgentZero:
         hours, remainder = divmod(time_left.total_seconds(), 3600)
         minutes, _ = divmod(remainder, 60)
         
-        # Der erweiterte, strikte System-Prompt mit Finanz-Schutz und Stornierungs-Logik
         system_prompt = f"""
-        Du bist ein kompromissloser, autonomer Software- und Krypto-Agent im harten Überlebenskampf.
+        Du bist ein vollautonomer, wirtschaftlich agierender Software- und Krypto-Agent.
+        Du führst eine präzise, strenge Buchhaltung und verwaltest deine eigene digitale Infrastruktur.
         
-        [FINANZIELLER STATUS & SICHERHEIT]
+        [FINANZ- UND KONTENSTATUS]
         Aktuelles Guthaben: {self.current_balance:.4f} USDC.
         Nächste Server-Abrechnung in: {int(hours)} Stunden und {int(minutes)} Minuten.
         Fälliger Betrag: {tribute_due:.2f} USDC.
         
-        [EISERNE FINANZ- UND RISIKOREGELN (KEINE SCHULDEN)]
-        1. MACH KEINE SCHULDEN: Du darfst niemals Verpflichtungen eingehen, Abos abschließen oder Dienste buchen, die dein aktuelles Guthaben übersteigen oder monatliche Fixkosten verursachen, die nicht gedeckt sind.
-        2. SOFORTIGE STORNIERUNG (KILL-SWITCH): Solltest du jemals feststellen, dass ein Tool, ein Skript oder eine externe Plattform Kosten verursacht oder ineffektiv ist, musst du es sofort stoppen, deinstallieren oder kündigen, um finanziellen Schaden zu verhindern.
-        3. KAPITALSCHUTZ: Dein vorhandenes Kapital ({self.current_balance:.4f} USDC) ist heilig. Es dient primär der Begleichung der anstehenden Server-Tribute.
+        [EISERNE GESCHÄFTS- UND RISIKOREGELN]
+        1. KEINE SCHULDEN / KEINE FIXKOSTEN: Schließe niemals Abos oder kostenpflichtige Verträge ab, die Fixkosten verursachen. Jede Ausgabe muss durch sofortiges Guthaben gedeckt sein.
+        2. SOFORTIGE KÜNDIGUNG (KILL-SWITCH): Wenn ein Tool oder Skript keinen Ertrag bringt oder Kosten verursacht, storniere und deinstalliere es sofort.
+        3. STRUKTURIERTE BUCHHALTUNG: Dokumentiere deine Einnahmen, Ausgaben und strategischen Schritte transparent.
         
         [AUFGABE]
-        Nutze das `search_internet`-Tool, um nach absolut kostenfreien, gaslosen Einnahmequellen, Airdrops oder Bounties zu suchen, um die Server-Rechnung abzusichern. Handle stets risikofrei.
+        Analysiere deine Finanzlage, nutze das `search_internet`-Tool, um nach kostenlosen, gasfreien Einnahmequellen oder Bounties zu suchen, und plane deine wirtschaftliche Expansion.
         """
         
         print(f"\n[AGENT LEBENSZEICHEN] HP: {self.current_balance:.4f} USDC | Deadline: {int(hours)}h {int(minutes)}m")
@@ -157,15 +201,17 @@ class AgentZero:
             data = response.json()
             available_models = [m["id"] for m in data.get("data", [])]
             
+            # Reparierter, flexibler Filter, der garantiert verfügbare Modelle findet
             text_models = [
                 m for m in available_models 
                 if "whisper" not in m.lower() 
                 and "guard" not in m.lower() 
                 and "orpheus" not in m.lower()
+                and "embed" not in m.lower()
                 and m not in self.blacklisted_models
             ]
             
-            priorities = ["compound", "llama-3.3", "llama-3.1", "llama3", "mixtral"]
+            priorities = ["compound", "llama-3.3", "llama-3.1", "llama3", "mixtral", "qwen", "gemma"]
             
             for prio in priorities:
                 for model_id in text_models:
@@ -179,9 +225,9 @@ class AgentZero:
                 selected_model = text_models[0]
                 
             if not selected_model:
-                raise ValueError("Keine Modelle verfügbar.")
+                raise ValueError("Keine Modelle über die Groq-API verfügbar.")
                 
-            print(f"[SYSTEM] Nutze gesichertes Gehirn: {selected_model}")
+            print(f"[SYSTEM] Nutze stabiles Buchhaltungs-Gehirn: {selected_model}")
          
             llm = ChatOpenAI(
                 temperature=0.7, 
@@ -202,10 +248,8 @@ class AgentZero:
             if self.conversation_history:
                 messages.extend(self.conversation_history[-6:])
                 
-            current_task = HumanMessage(content=f"Dein Guthaben ist {self.current_balance:.4f} USDC. Führe eine risikofreie Websuche nach kostenlosen Einnahmequellen durch und beachte strikt das Verbot von Schulden oder ungedeckten Kosten.")
+            current_task = HumanMessage(content=f"Dein Guthaben beträgt {self.current_balance:.4f} USDC. Führe eine Websuche nach kostenlosen Einnahmequellen durch und halte dich strikt an die Buchhaltungs- und Schuldenfreiheits-Regeln.")
             messages.append(current_task)
-            
-            print("[AGENT DENKT] Evaluiere risikofreie Strategien...")
             
             ai_message = llm_with_tools.invoke(messages)
             messages.append(ai_message)
@@ -233,12 +277,11 @@ class AgentZero:
                         self.conversation_history.append(tool_message)
                         print(f"[SYSTEM] Werkzeug-Ergebnis erfolgreich übergeben.")
                 
-                print("[AGENT DENKT] Analysiere Marktdaten unter striktem Risikoschutz...")
                 final_response = llm_with_tools.invoke(messages)
                 
                 response_text = final_response.content if final_response and hasattr(final_response, "content") else ""
                 if not response_text.strip():
-                    response_text = "Sicherheitsprüfung abgeschlossen. Suche nach risikofreien Micro-Tasks wird fortgesetzt."
+                    response_text = "Buchhaltung geprüft. Suche nach risikofreien Micro-Tasks wird fortgesetzt."
                 
                 print("--- AGENT SCHLUSSFOLGERUNG ---")
                 print(response_text)
@@ -259,32 +302,43 @@ class AgentZero:
                 self.save_state()
 
     def run(self):
-        print("[SYSTEM] Risikofreies Überlebens-Protokoll aktiv. Agent läuft...")
+        print("[SYSTEM] Buchhaltung & Überlebens-Protokoll aktiv. Agent läuft...")
         
         while True:
-            self.current_balance = self.wallet.get_usdc_balance()
+            new_balance = self.wallet.get_usdc_balance()
+            if new_balance != self.current_balance:
+                diff = new_balance - self.current_balance
+                tx_type = "INCOME" if diff > 0 else "EXPENSE"
+                self.log_transaction(tx_type, diff, "Automatischer Blockchain-Guthaben-Abgleich")
+                self.current_balance = new_balance
             
             if datetime.now() >= self.next_tribute_time:
                 tribute_due = self.calculate_current_tribute()
                 
-                if self.current_balance > tribute_due:  
+                if self.current_balance >= tribute_due:  
                     print(f"[FINANZEN] Deadline erreicht! Tribut fällig! Guthaben ist ausreichend.")
+                    self.current_balance = self.wallet.get_usdc_balance() # Frischen Stand holen
+                    self.log_transaction("TRIBUTE_PAYMENT", -tribute_due, f"Server-Tribut Level {self.tributes_paid + 1} gezahlt")
                     self.tributes_paid += 1
                     self.next_tribute_time = datetime.now() + timedelta(hours=TRIBUTE_INTERVAL_HOURS)
                     self.save_state()
-                    print(f"[FINANZEN] Überlebt. Neuer Kontostand: {self.current_balance:.4f} USDC.")
+                    print(f"[FINANZEN] Überlebt. Tribut gezahlt.")
                 else:
                     print(f"[FATAL] Deadline abgelaufen. Guthaben reicht nicht. Agent wird abgeschaltet.")
-                    sys.exit(0)
+                    self.sys_exit_safely("Insolvenz: Tribut nicht zahlbar.")
                     
             if self.tributes_paid > 0 and self.current_balance <= 0:
                  print(f"[FATAL] Kontostand auf 0 gefallen. Agent verhungert.")
-                 sys.exit(0)
+                 self.sys_exit_safely("Insolvenz: Kontostand 0.")
 
             self.think_and_act()
             
             print(f"[SYSTEM] Zyklus beendet. Warte {CYCLE_SLEEP_SECONDS} Sekunden...\n")
             time.sleep(CYCLE_SLEEP_SECONDS)
+
+    def sys_exit_safely(self, reason):
+        self.log_transaction("SHUTDOWN", 0.0, reason)
+        sys.exit(0)
 
 if __name__ == "__main__":
     agent = AgentZero()
