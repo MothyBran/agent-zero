@@ -141,8 +141,7 @@ class AgentZero:
             priorities = [
                 "llama-3.3", 
                 "llama-3.1", 
-                "llama3",
-                "mixtral"
+                "llama3"
             ]
             
             for prio in priorities:
