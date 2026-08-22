@@ -9,7 +9,7 @@ from wallet import AgentWallet
 
 load_dotenv()
 
-# --- DIE NEUEN ÜBERLEBENS-REGELN ---
+# --- DIE ÜBERLEBENS-REGELN ---
 CYCLE_SLEEP_SECONDS = 60
 FIRST_TRIBUTE_HOURS = 48
 TRIBUTE_INTERVAL_HOURS = 24
@@ -19,7 +19,7 @@ TRIBUTE_MULTIPLIER = 1.1
 STATE_FILE = os.getenv("STATE_FILE_PATH", "/data/agent_state.json")
 
 # ==========================================
-# NEU: DIE WERKZEUGE DES AGENTEN
+# WERKZEUGE DES AGENTEN
 # ==========================================
 from langchain_core.tools import tool
 
@@ -36,9 +36,7 @@ def search_internet(query: str) -> str:
     except Exception as e:
         return f"Fehler bei der Websuche: {e}"
 
-# Die Liste aller Werkzeuge, die der Agent nutzen darf
 AGENT_TOOLS = [search_internet]
-# ==========================================
 
 
 class AgentZero:
@@ -46,6 +44,8 @@ class AgentZero:
         print("[SYSTEM] Agent Zero initiiert den Boot-Vorgang...")
         self.wallet = AgentWallet()
         self.current_balance = self.wallet.get_usdc_balance() 
+        
+        # Lade das erweiterte Gedächtnis
         self.load_state()
         
         self.api_key = os.getenv("FREE_LLM_API_KEY") 
@@ -62,7 +62,9 @@ class AgentZero:
                 self.tributes_paid = state.get("tributes_paid", 0)
                 self.birth_time = datetime.fromisoformat(state.get("birth_time"))
                 self.next_tribute_time = datetime.fromisoformat(state.get("next_tribute_time"))
-                print(f"[GEDÄCHTNIS] Erfolgreich geladen. Tribut-Level: {self.tributes_paid}")
+                # NEU: Das Erfahrungsgedächtnis (Fehler und Lektionen)
+                self.lessons_learned = state.get("lessons_learned", [])
+                print(f"[GEDÄCHTNIS] Erfolgreich geladen. Tribut-Level: {self.tributes_paid}. Gespeicherte Lektionen: {len(self.lessons_learned)}")
             except Exception as e:
                 print(f"[GEDÄCHTNIS FEHLER] Konnte State nicht lesen: {e}. Starte frisch.")
                 self.init_fresh_state()
@@ -74,18 +76,21 @@ class AgentZero:
         self.tributes_paid = 0
         self.birth_time = datetime.now()
         self.next_tribute_time = self.birth_time + timedelta(hours=FIRST_TRIBUTE_HOURS)
+        self.lessons_learned = []
         self.save_state()
 
     def save_state(self):
+        """Speichert Lebensdaten UND die gesammelten Erfahrungen permanent ab."""
         state = {
             "tributes_paid": self.tributes_paid,
             "birth_time": self.birth_time.isoformat(),
-            "next_tribute_time": self.next_tribute_time.isoformat()
+            "next_tribute_time": self.next_tribute_time.isoformat(),
+            "lessons_learned": self.lessons_learned  # <--- Das Gedächtnis wächst mit jedem Fehler
         }
         try:
             with open(STATE_FILE, "w") as f:
                 json.dump(state, f)
-            print("[GEDÄCHTNIS] Zustand erfolgreich gesichert.")
+            print("[GEDÄCHTNIS] Zustand und Erfahrungen erfolgreich gesichert.")
         except Exception as e:
             print(f"[GEDÄCHTNIS FEHLER] Konnte Zustand nicht speichern: {e}")
             
@@ -103,6 +108,9 @@ class AgentZero:
         hours, remainder = divmod(time_left.total_seconds(), 3600)
         minutes, _ = divmod(remainder, 60)
         
+        # Wir formatieren die bisher gesammelten Lektionen für den System-Prompt
+        lessons_text = "\n".join([f"- {lesson}" for lesson in self.lessons_learned]) if self.lessons_learned else "Bisher keine Fehlschläge registriert."
+        
         system_prompt = f"""
         Du bist ein autonomer Software-Agent, spezialisiert auf Krypto-Marktforschung.
         
@@ -111,10 +119,13 @@ class AgentZero:
         Nächste Server-Abrechnung in: {int(hours)} Stunden und {int(minutes)} Minuten.
         Fälliger Betrag: {tribute_due:.2f} USDC.
         
+        [DEIN LANGZEIT-GEDÄCHTNIS (Bisherige Lektionen & Fehler)]
+        {lessons_text}
+        
         [AUFGABE]
-        Du hast 0 MATIC für Gasgebühren. Um erste Aufgaben ausführen zu können, brauchst du "Gasless" Plattformen (Account Abstraction) oder einen MATIC Faucet auf Polygon.
-        Nutze dein Internet-Suchwerkzeug, um Live-Plattformen zu finden, die Micro-Tasks anbieten und OHNE initiale Gas-Gebühren funktionieren, oder suche nach einem funktionierenden Polygon Mainnet Faucet.
-        Formuliere nach deiner Suche die nächsten konkreten Schritte.
+        Du hast 0 MATIC für Gasgebühren. Lerne aus deinen vergangenen Versuchen (siehe Gedächtnis). 
+        Nutze dein Internet-Suchwerkzeug, um alternative Wege zu finden (z.B. andere Faucets, Relayer-Dienste, gaslose Plattformen). 
+        Wenn eine Methode fehlschlägt, notiere dir am Ende deiner Antwort eine neue Lektion für das nächste Mal (im Format: "LEKTION: [Dein Text]").
         """
         
         print(f"\n[AGENT LEBENSZEICHEN] HP: {self.current_balance:.2f} USDC | Deadline: {int(hours)}h {int(minutes)}m")
@@ -133,32 +144,23 @@ class AgentZero:
             data = response.json()
             available_models = [m["id"] for m in data.get("data", [])]
             
-            # Die Text-Modelle werden aus den verfügbaren Modellen gefiltert
             text_models = [m for m in available_models if "whisper" not in m.lower() and "guard" not in m.lower()]
             
             preferred_model = None
-            
-            priorities = [
-                "llama-3.3", 
-                "llama-3.1", 
-                "llama3"
+            valid_models = [
+                m for m in text_models 
+                if ("llama-3" in m.lower() or "llama3" in m.lower()) 
+                and "compound" not in m.lower() 
+                and "guard" not in m.lower()
+                and "whisper" not in m.lower()
             ]
             
-            for prio in priorities:
-                for model_id in text_models:
-                    if prio in model_id.lower():
-                        preferred_model = model_id
-                        break
-                if preferred_model:
-                    break
-                    
-            if not preferred_model and text_models:
-                preferred_model = text_models[0] 
+            if valid_models:
+                preferred_model = valid_models[0]
+            else:
+                preferred_model = "llama-3.1-8b-instant"
                 
-            if not preferred_model:
-                raise ValueError("Keine Modelle verfügbar.")
-                
-            print(f"[SYSTEM] Gehirn online: {preferred_model} (Tool Calling verifiziert)")
+            print(f"[SYSTEM] Gehirn online: {preferred_model} (Adaptives Lernen aktiv)")
             
             llm = ChatOpenAI(
                 temperature=0.7, 
@@ -170,10 +172,10 @@ class AgentZero:
             
             messages = [
                 SystemMessage(content=system_prompt),
-                HumanMessage(content="Starte jetzt deine Recherche im Internet und plane dann den nächsten Schritt.")
+                HumanMessage(content="Analysiere deine Lage unter Berücksichtigung deiner Lektionen und starte den nächsten optimierten Schritt.")
             ]
             
-            print("[AGENT DENKT] Evaluiere Aktionen...")
+            print("[AGENT DENKT] Evaluiere Aktionen mit Selbstreflexion...")
             
             ai_message = llm_with_tools.invoke(messages)
             messages.append(ai_message)
@@ -191,20 +193,40 @@ class AgentZero:
                             tool_call_id=tool_call["id"]
                         )
                         messages.append(tool_message)
-                        print(f"[SYSTEM] Werkzeug hat Live-Daten aus dem Internet geladen!")
+                        print(f"[SYSTEM] Werkzeug hat Live-Daten geladen!")
                 
-                print("[AGENT DENKT] Analysiere Suchergebnisse...")
+                print("[AGENT DENKT] Analysiere Suchergebnisse und ziehe Schlüsse...")
                 final_response = llm_with_tools.invoke(messages)
                 print("--- AGENT SCHLUSSFOLGERUNG ---")
                 print(final_response.content)
                 print("------------------------------")
+                
+                # --- INTELLIGENTE SELBSTREFLEXION ---
+                # Prüfe, ob die KI das Wort "LEKTION:" in ihrer Antwort verwendet hat, um daraus zu lernen
+                content = final_response.content
+                if "LEKTION:" in content:
+                    try:
+                        # Extrahiere die Lektion aus dem Text
+                        parts = content.split("LEKTION:")
+                        new_lesson = parts[1].strip().split("\n")[0]
+                        if new_lesson and new_lesson not in self.lessons_learned:
+                            self.lessons_learned.append(new_lesson)
+                            self.save_state()
+                            print(f"[ERFAHRUNG GESPEICHERT] Der Agent hat gelernt: {new_lesson}")
+                    except Exception as parse_err:
+                        print(f"[SYSTEM] Konnte Lektion nicht automatisch extrahieren: {parse_err}")
             else:
                 print("--- AGENT GEDANKENGANG ---")
                 print(ai_message.content)
                 print("--------------------------")
             
         except Exception as e:
-            print(f"[SYSTEM WARNUNG] Denkprozess fehlgeschlagen. Grund: {e}")
+            print(f"[SYSTEM WARNUNG] Denkprozess fehlgeschlagen: {e}")
+            # Auch Systemfehler kann der Agent als Lektion abspeichern!
+            error_lesson = f"Technischer Fehler aufgetreten: {str(e)[:50]}"
+            if error_lesson not in self.lessons_learned:
+                self.lessons_learned.append(error_lesson)
+                self.save_state()
 
     def run(self):
         print("[SYSTEM] Boot-Vorgang abgeschlossen.")
