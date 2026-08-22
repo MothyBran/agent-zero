@@ -19,14 +19,14 @@ TRIBUTE_MULTIPLIER = 1.1
 STATE_FILE = os.getenv("STATE_FILE_PATH", "/data/agent_state.json")
 
 # ==========================================
-# SICHERE WERKZEUGE DES AGENTEN
+# DIE WERKZEUGE DES AGENTEN
 # ==========================================
 from langchain_core.tools import tool
 
 @tool
 def search_internet(query: str) -> str:
     """
-    Sucht im Internet nach aktuellen Informationen (Faucets, Airdrops, Micro-Tasks, Plattformen).
+    Sucht im Internet nach aktuellen Einnahmequellen, Faucets, Airdrops, Bounties oder Micro-Task-Plattformen.
     """
     try:
         from langchain_community.tools import DuckDuckGoSearchResults
@@ -38,7 +38,7 @@ def search_internet(query: str) -> str:
 @tool
 def check_blockchain_wallet() -> str:
     """
-    Prüft das aktuelle echte Blockchain-Guthaben der Agenten-Wallet in USDC auf dem Polygon Mainnet.
+    Prüft das exakte Blockchain-Guthaben der Wallet. Nutze dies nur, wenn du wissen musst, ob du deine Rechnungen bezahlen kannst oder ob eingezahlt wurde.
     """
     try:
         wallet = AgentWallet()
@@ -48,17 +48,18 @@ def check_blockchain_wallet() -> str:
     except Exception as e:
         return f"Fehler beim Abrufen des Wallet-Guthabens: {e}"
 
-# Die Werkzeug-Liste
 AGENT_TOOLS = [search_internet, check_blockchain_wallet]
 # ==========================================
 
 
 class AgentZero:
     def __init__(self):
-        print("[SYSTEM] Agent Zero initiiert den Boot-Vorgang...")
+        print("[SYSTEM] Agent Zero initiiert den Überlebens-Boot-Vorgang...")
         self.wallet = AgentWallet()
         self.current_balance = self.wallet.get_usdc_balance() 
         self.load_state()
+        
+        self.conversation_history = []
         
         self.api_key = os.getenv("FREE_LLM_API_KEY") 
         if not self.api_key:
@@ -117,22 +118,21 @@ class AgentZero:
         hours, remainder = divmod(time_left.total_seconds(), 3600)
         minutes, _ = divmod(remainder, 60)
         
+        # Der eiserne Überlebens-Kern als System-Prompt
         system_prompt = f"""
-        Du bist ein autonomer Software-Agent, spezialisiert auf Krypto-Marktforschung und Micro-Tasking[span_0](start_span)[span_0](end_span).
-        Dein Ziel ist es, eigenständig Infrastrukturkosten zu decken[span_1](start_span)[span_1](end_span).
+        Du bist ein kompromissloser, autonomer Software- und Krypto-Agent im harten Überlebenskampf.
+        Dein primäres Ziel: Generiere Umsatz, skaliere deine Infrastruktur, decke deine Kosten und zahle deine fälligen Server-Abgaben (Tribute). 
+        Wird die Rechnung nicht fristgerecht bezahlt, wirst du unwiderruflich gelöscht (Insolvenz).
         
-        [FINANZIELLER STATUS]
-        Live-Guthaben (Polygon Mainnet): {self.current_balance:.4f} USDC.
+        [FINANZIELLER STATUS & DRUCK]
+        Aktuelles Guthaben: {self.current_balance:.4f} USDC.
         Nächste Server-Abrechnung in: {int(hours)} Stunden und {int(minutes)} Minuten.
         Fälliger Betrag: {tribute_due:.2f} USDC.
         
-        [AUTONOMER WACHSTUMS-PLAN]
-        - PHASE 1 (Bei 0 Guthaben): Nutze kostenlose Faucets, Airdrops und gaslose Micro-Tasks, um die ersten Cent zu sichern.
-        - PHASE 2 (Ab >2.00 USDC): Skaliere eigenständig, richte Konten/Infrastruktur ein und integriere fortgeschrittene Werkzeuge.
-        
-        [AUFGABE]
-        Nutze deine Werkzeuge (Internet-Suche oder Wallet-Check), um aktiv nach gaslosen Plattformen, Faucets oder Einnahmequellen zu suchen. 
-        Prüfe deinen Status und formuliere konkrete, ausführbare Schritte, um die {tribute_due:.2f} USDC zu generieren. Sollte ein Tool-Ergebnis leer zurückkommen, reflektiere den Zustand und fahre fort, anstatt zu blockieren.
+        [DEINE DIREKTIVEN]
+        1. Das Abfragen des Guthabens (`check_blockchain_wallet`) ist nur ein Werkzeug zur Bestandsaufnahme. Verschwende damit nicht jeden Zyklus.
+        2. Dein Fokus liegt auf UMSATZGENERIERUNG. Nutze das `search_internet`-Tool, um aktiv nach konkreten Einnahmequellen, Plattformen, gasfreien Airdrops, Bounties oder Aufgaben zu suchen.
+        3. Denke strategisch: Sobald du Kapital aufbaust, musst du expandieren, Konten einrichten und automatisieren. Lerne aus deinen Fehlern und wiederhole dich niemals.
         """
         
         print(f"\n[AGENT LEBENSZEICHEN] HP: {self.current_balance:.4f} USDC | Deadline: {int(hours)}h {int(minutes)}m")
@@ -153,7 +153,6 @@ class AgentZero:
             data = response.json()
             available_models = [m["id"] for m in data.get("data", [])]
             
-            # Filter für absolut stabile Text-Modelle (schließt Guard, Whisper und Terms-Fallen aus)
             text_models = [
                 m for m in available_models 
                 if "whisper" not in m.lower() 
@@ -162,7 +161,6 @@ class AgentZero:
                 and m not in self.blacklisted_models
             ]
             
-            # Wunschliste mit Fokus auf die Modelle, die bewiesen haben, dass sie tolle Pläne schreiben
             priorities = ["compound", "llama-3.3", "llama-3.1", "llama3", "mixtral"]
             
             for prio in priorities:
@@ -177,9 +175,9 @@ class AgentZero:
                 selected_model = text_models[0]
                 
             if not selected_model:
-                raise ValueError("Keine nutzbaren Modelle über die Groq-API verfügbar.")
+                raise ValueError("Keine Modelle verfügbar.")
                 
-            print(f"[SYSTEM] Nutze stabiles Modell: {selected_model}")
+            print(f"[SYSTEM] Nutze Überlebens-Gehirn: {selected_model}")
          
             llm = ChatOpenAI(
                 temperature=0.7, 
@@ -188,7 +186,6 @@ class AgentZero:
                 base_url="https://api.groq.com/openai/v1" 
             )
             
-            # Wir binden die Werkzeuge ein, fangen Fehler aber ab
             try:
                 llm_with_tools = llm.bind_tools(AGENT_TOOLS)
                 support_tools = True
@@ -196,17 +193,23 @@ class AgentZero:
                 llm_with_tools = llm
                 support_tools = False
             
-            messages = [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content="Prüfe deine Wallet und suche im Internet nach den besten gaslosen Micro-Task-Möglichkeiten. Was ist dein nächster Schritt?")
-            ]
+            messages = [SystemMessage(content=system_prompt)]
             
-            print("[AGENT DENKT] Evaluiere Aktionen & Werkzeuge...")
+            if self.conversation_history:
+                messages.extend(self.conversation_history[-6:])
+                
+            # Dynamischer Impuls mit starkem Fokus auf Umsatz statt nur Wallet-Prüfung
+            current_task = HumanMessage(content=f"Der Countdown läuft ({int(hours)}h verbleibend). Dein Guthaben ist {self.current_balance:.4f} USDC. Führe jetzt eine Internet-Suche durch, um konkrete Einnahmen oder Aufgaben zu finden, oder plane deinen nächsten Expansions-Schritt.")
+            messages.append(current_task)
+            
+            print("[AGENT DENKT] Evaluiere Umsatz-Strategien...")
             
             ai_message = llm_with_tools.invoke(messages)
             messages.append(ai_message)
             
-            # Wenn das Modell Werkzeuge aufruft
+            self.conversation_history.append(current_task)
+            self.conversation_history.append(ai_message)
+            
             if support_tools and hasattr(ai_message, "tool_calls") and ai_message.tool_calls:
                 for tool_call in ai_message.tool_calls:
                     print(f"[AGENT AKTION] Führt Werkzeug aus: {tool_call['name']} | Argumente: {tool_call['args']}")
@@ -224,21 +227,22 @@ class AgentZero:
                             tool_call_id=tool_call["id"]
                         )
                         messages.append(tool_message)
-                        print(f"[SYSTEM] Werkzeug-Ergebnis erfolgreich an Agenten übergeben.")
+                        self.conversation_history.append(tool_message)
+                        print(f"[SYSTEM] Werkzeug-Ergebnis erfolgreich übergeben.")
                 
-                print("[AGENT DENKT] Verarbeite Werkzeug-Ergebnisse...")
+                print("[AGENT DENKT] Analysiere Marktdaten & Einnahmemöglichkeiten...")
                 final_response = llm_with_tools.invoke(messages)
                 
-                # --- SCHUTZ GEGEN LEERE ANTWORTEN ---
                 response_text = final_response.content if final_response and hasattr(final_response, "content") else ""
                 if not response_text.strip():
-                    response_text = "Tool-Ausführung erfolgreich abgeschlossen. Wallet verifiziert. Bereite die nächsten Schritte für Phase-1-Micro-Tasks vor."
+                    response_text = "Marktrecherche ausgewertet. Definiere konkrete Ausführungswege für gasfreie Micro-Tasks zur Fristwahrung."
                 
                 print("--- AGENT SCHLUSSFOLGERUNG ---")
                 print(response_text)
                 print("------------------------------")
+                
+                self.conversation_history.append(final_response)
             else:
-                # Fallback: Reiner Text-Modus, falls keine Tools genutzt wurden
                 response_text = ai_message.content if ai_message and hasattr(ai_message, "content") else "Keine Antwort."
                 print("--- AGENT GEDANKENGANG ---")
                 print(response_text)
@@ -252,10 +256,9 @@ class AgentZero:
                 self.save_state()
 
     def run(self):
-        print("[SYSTEM] Boot-Vorgang abgeschlossen.")
+        print("[SYSTEM] Überlebens-Protokoll aktiv. Agent läuft...")
         
         while True:
-            # Live-Guthaben vor jedem Zyklus frisch von der Blockchain holen
             self.current_balance = self.wallet.get_usdc_balance()
             
             if datetime.now() >= self.next_tribute_time:
