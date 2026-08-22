@@ -1,6 +1,6 @@
 {
   "name": "Agent Zero",
-  "description": "Autonomous survival and crypto work agent on Ethereum Mainnet with persistent long-term memory, self-evolution intelligence tiering, multi-model fallback reasoning, and 48h tribute management.",
+  "description": "Autonomous survival and crypto economic agent with Smart Multi-Chain EVM management (Ethereum, Polygon, Base), gas-trap avoidance, persistent memory self-evolution, and 48h tribute management.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

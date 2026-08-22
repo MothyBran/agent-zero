@@ -158,6 +158,46 @@ export interface AgentSnapshotBundle {
   token_budget?: TokenBudgetStatus;
 }
 
+export interface ChainAssetInfo {
+  chain_key: string;
+  chain_name: string;
+  chain_id: number;
+  native_symbol: string;
+  native_balance: number;
+  native_usd_value: number;
+  usdc_balance: number;
+  usdc_usd_value: number;
+  total_chain_usd: number;
+  gas_price_gwei: number;
+  est_transfer_cost_usd: number;
+  gas_cost_tier: 'HIGH' | 'MEDIUM' | 'VERY_LOW' | 'ULTRA_LOW';
+  is_connected: boolean;
+  active_rpc: string;
+}
+
+export interface GasTrapStatus {
+  is_gas_trapped: boolean;
+  trapped_chain: string;
+  trapped_usdc: number;
+  trapped_native_usd: number;
+  required_gas_usd: number;
+  deficit_gas_usd: number;
+  recommended_strategy: string;
+  action_items: string[];
+}
+
+export interface MultiChainPortfolioReport {
+  wallet_address: string;
+  creator_address: string;
+  chains: Record<string, ChainAssetInfo>;
+  total_portfolio_usd: number;
+  total_usdc_across_chains: number;
+  gas_trap_status: GasTrapStatus;
+  ledger_balance: number;
+  transfer_mode: string;
+  initial_tribute_cost: number;
+}
+
 export interface AgentState {
   tributes_paid: number;
   birth_time: string;
@@ -208,6 +248,9 @@ export interface AgentState {
   onchain_transfer_ready?: boolean;
   transfer_mode?: 'ON_CHAIN_LIVE' | 'PROTOCOL_LEDGER';
   onchain_explanation?: string;
+  initial_tribute_amount?: number;
+  multi_chain_report?: MultiChainPortfolioReport;
+  gas_trap_status?: GasTrapStatus;
 }
 
 export interface LogEntry {

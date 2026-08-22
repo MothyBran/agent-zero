@@ -11,7 +11,8 @@ import { MilestonesCard } from './components/MilestonesCard';
 import { TokenBudgetCard } from './components/TokenBudgetCard';
 import { RailwayStorageCard } from './components/RailwayStorageCard';
 import { MemoryEvolutionCard } from './components/MemoryEvolutionCard';
-import { LayoutDashboard, Target, Gauge, HardDrive, FileText, Wrench, Shield, Cpu, AlertTriangle, Brain } from 'lucide-react';
+import { MultiChainWalletCard } from './components/MultiChainWalletCard';
+import { LayoutDashboard, Target, Gauge, HardDrive, FileText, Wrench, Shield, Cpu, AlertTriangle, Brain, Layers } from 'lucide-react';
 
 export function App() {
   const [state, setState] = useState<AgentState | null>(null);
@@ -21,7 +22,7 @@ export function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [isProcessingCycle, setIsProcessingCycle] = useState(false);
   const [isSyncingWallet, setIsSyncingWallet] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'milestones' | 'memory' | 'tokens' | 'storage' | 'models' | 'ledger' | 'tools' | 'profile'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'multichain' | 'milestones' | 'memory' | 'tokens' | 'storage' | 'models' | 'ledger' | 'tools' | 'profile'>('dashboard');
 
   const [localBackupSnapshot, setLocalBackupSnapshot] = useState<any>(null);
   const [isRestoringBackup, setIsRestoringBackup] = useState(false);
@@ -390,6 +391,18 @@ export function App() {
           </button>
 
           <button
+            onClick={() => setActiveTab('multichain')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all ${
+              activeTab === 'multichain'
+                ? 'bg-slate-900 text-cyan-400 border-t-2 border-cyan-500 border-x border-slate-800'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Smart Multi-Chain & Gas Manager</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('milestones')}
             className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all ${
               activeTab === 'milestones'
@@ -489,6 +502,7 @@ export function App() {
         {/* Tab Contents */}
         {activeTab === 'dashboard' && (
           <div className="space-y-6">
+            <MultiChainWalletCard state={state} onRefreshState={fetchAllData} />
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2 space-y-6">
                 <MemoryEvolutionCard
@@ -519,6 +533,12 @@ export function App() {
                 />
               </div>
             </div>
+          </div>
+        )}
+
+        {activeTab === 'multichain' && (
+          <div className="space-y-6">
+            <MultiChainWalletCard state={state} onRefreshState={fetchAllData} />
           </div>
         )}
 
