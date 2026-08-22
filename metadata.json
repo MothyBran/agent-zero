@@ -1,6 +1,6 @@
 {
   "name": "Agent Zero",
-  "description": "Autonomous economic survival and crypto agency protocol with multi-model fallback reasoning, Ethereum Web3 USDC wallet, and financial ledger.",
+  "description": "Autonomous survival and crypto work agent on Ethereum Mainnet with persistent long-term memory, self-evolution intelligence tiering, multi-model fallback reasoning, and 48h tribute management.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

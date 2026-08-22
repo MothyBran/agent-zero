@@ -48,14 +48,46 @@ export interface Milestone {
   action_plan: string;
 }
 
+export interface TaskMemoryRecord {
+  id: string;
+  timestamp: string;
+  tool_id: string;
+  tool_name: string;
+  category: string;
+  status: 'SUCCESS' | 'FAILURE' | 'PARTIAL';
+  reward_usdc: number;
+  execution_ms: number;
+  details: string;
+  error_reason?: string;
+  recovery_action?: string;
+  lesson_derived?: string;
+}
+
 export interface KnowledgeItem {
   id: string;
   timestamp: string;
-  category: 'TOOL_ROI' | 'SURVIVAL_STRATEGY' | 'TOKEN_EFFICIENCY' | 'MARKET_CONDITION' | 'ERROR_RECOVERY';
+  category: 'TOOL_ROI' | 'SURVIVAL_STRATEGY' | 'TOKEN_EFFICIENCY' | 'MARKET_CONDITION' | 'ERROR_RECOVERY' | 'SUCCESS_PATTERN' | 'FAILURE_LESSON';
   title: string;
   insight: string;
   confidence_score: number;
+  times_applied?: number;
+  success_reinforcements?: number;
   source: string;
+}
+
+export interface MemoryRecallStatus {
+  last_boot_time: string;
+  last_recall_summary: string;
+  recalled_insights_count: number;
+  recalled_tasks_count: number;
+  total_historical_earnings: number;
+  success_rate_percent: number;
+  evolution_tier: string;
+  evolution_iq_score: number;
+  top_success_patterns: string[];
+  top_failure_avoidances: string[];
+  last_checkpoint_event: string;
+  last_checkpoint_time: string;
 }
 
 export interface TokenBudgetStatus {
@@ -117,6 +149,11 @@ export interface AgentState {
   token_budget?: TokenBudgetStatus;
   active_milestones_count?: number;
   completed_milestones_count?: number;
+  evolution_iq_score?: number;
+  evolution_tier?: string;
+  total_memories_count?: number;
+  total_task_records_count?: number;
+  memory_recall_summary?: string;
 }
 
 export interface LogEntry {
