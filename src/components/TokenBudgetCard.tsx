@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Zap, ShieldCheck, AlertCircle, RefreshCw, Sparkles, Gauge, Cpu } from 'lucide-react';
 import { TokenBudgetStatus } from '../types';
+import { safeFetchJson, safePostJson } from '../lib/api';
 
 export function TokenBudgetCard() {
   const [status, setStatus] = useState<TokenBudgetStatus | null>(null);
@@ -8,14 +9,9 @@ export function TokenBudgetCard() {
   const [isResetting, setIsResetting] = useState(false);
 
   const fetchStatus = async () => {
-    try {
-      const res = await fetch('/api/tokens/status');
-      if (res.ok) {
-        const data = await res.json();
-        setStatus(data);
-      }
-    } catch (e) {
-      console.error('Failed to fetch token budget status:', e);
+    const res = await safeFetchJson<TokenBudgetStatus>('/api/tokens/status');
+    if (res.ok && res.data) {
+      setStatus(res.data);
     }
   };
 
@@ -27,17 +23,11 @@ export function TokenBudgetCard() {
 
   const handleReset = async () => {
     setIsResetting(true);
-    try {
-      const res = await fetch('/api/tokens/reset-daily', { method: 'POST' });
-      if (res.ok) {
-        const data = await res.json();
-        setStatus(data.status);
-      }
-    } catch (e) {
-      console.error('Failed to reset daily tokens:', e);
-    } finally {
-      setIsResetting(false);
+    const res = await safePostJson<{ success: boolean; status: TokenBudgetStatus }>('/api/tokens/reset-daily');
+    if (res.ok && res.data?.status) {
+      setStatus(res.data.status);
     }
+    setIsResetting(false);
   };
 
   if (!status) {

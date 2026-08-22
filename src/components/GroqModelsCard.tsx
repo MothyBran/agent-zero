@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { GroqModelsResponse, GroqModelInfo } from '../types';
 import { Cpu, Zap, Play, CheckCircle2, AlertCircle, RefreshCw, ShieldAlert, Sparkles, Terminal } from 'lucide-react';
+import { safeFetchJson, safePostJson } from '../lib/api';
 
 interface GroqModelsCardProps {
   onModelTested?: (model: string) => void;
@@ -22,20 +23,14 @@ export const GroqModelsCard: React.FC<GroqModelsCardProps> = ({ onModelTested })
 
   const fetchGroqModels = async () => {
     setIsLoading(true);
-    try {
-      const res = await fetch('/api/groq/models');
-      if (res.ok) {
-        const data: GroqModelsResponse = await res.json();
-        setGroqData(data);
-        if (data.official_models?.length > 0 && !selectedModel) {
-          setSelectedModel(data.official_models[0].id);
-        }
+    const res = await safeFetchJson<GroqModelsResponse>('/api/groq/models');
+    if (res.ok && res.data) {
+      setGroqData(res.data);
+      if (res.data.official_models?.length > 0 && !selectedModel) {
+        setSelectedModel(res.data.official_models[0].id);
       }
-    } catch (e) {
-      console.error('Failed to fetch Groq models:', e);
-    } finally {
-      setIsLoading(false);
     }
+    setIsLoading(false);
   };
 
   useEffect(() => {
@@ -48,43 +43,28 @@ export const GroqModelsCard: React.FC<GroqModelsCardProps> = ({ onModelTested })
     setIsTesting(true);
     setTestResult(null);
 
-    try {
-      const res = await fetch('/api/groq/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: selectedModel,
-          prompt: testPrompt
-        })
-      });
+    const res = await safePostJson<{ success: boolean; latency_ms: number; response?: string; error?: string }>('/api/groq/test', {
+      model: selectedModel,
+      prompt: testPrompt
+    });
 
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setTestResult({
-          success: true,
-          latency_ms: data.latency_ms,
-          response: data.response,
-          model: selectedModel
-        });
-        if (onModelTested) onModelTested(selectedModel);
-      } else {
-        setTestResult({
-          success: false,
-          latency_ms: data.latency_ms || 0,
-          error: data.error || 'Inferenz-Fehler bei Groq',
-          model: selectedModel
-        });
-      }
-    } catch (err: any) {
+    if (res.ok && res.data?.success) {
       setTestResult({
-        success: false,
-        latency_ms: 0,
-        error: err.message,
+        success: true,
+        latency_ms: res.data.latency_ms,
+        response: res.data.response,
         model: selectedModel
       });
-    } finally {
-      setIsTesting(false);
+      if (onModelTested) onModelTested(selectedModel);
+    } else {
+      setTestResult({
+        success: false,
+        latency_ms: res.data?.latency_ms || 0,
+        error: res.data?.error || res.error || 'Inferenz-Fehler bei Groq',
+        model: selectedModel
+      });
     }
+    setIsTesting(false);
   };
 
   const officialModels = groqData?.official_models || [

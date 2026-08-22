@@ -16,6 +16,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { RailwayStorageStatus, KnowledgeItem } from '../types';
+import { safeFetchJson, safePostJson } from '../lib/api';
 
 export function RailwayStorageCard() {
   const [storage, setStorage] = useState<RailwayStorageStatus | null>(null);
@@ -36,23 +37,16 @@ export function RailwayStorageCard() {
   const [newCategory, setNewCategory] = useState<KnowledgeItem['category']>('SURVIVAL_STRATEGY');
 
   const fetchData = async () => {
-    try {
-      const [storageRes, knowledgeRes] = await Promise.all([
-        fetch('/api/storage/status'),
-        fetch('/api/knowledge')
-      ]);
+    const [storageRes, knowledgeRes] = await Promise.all([
+      safeFetchJson<RailwayStorageStatus>('/api/storage/status'),
+      safeFetchJson<{ learnings: KnowledgeItem[] }>('/api/knowledge')
+    ]);
 
-      if (storageRes.ok) {
-        setStorage(await storageRes.json());
-      }
-      if (knowledgeRes.ok) {
-        const data = await knowledgeRes.json();
-        if (data.learnings) {
-          setLearnings(data.learnings);
-        }
-      }
-    } catch (e) {
-      console.error('Failed to fetch storage & knowledge data:', e);
+    if (storageRes.ok && storageRes.data) {
+      setStorage(storageRes.data);
+    }
+    if (knowledgeRes.ok && knowledgeRes.data?.learnings) {
+      setLearnings(knowledgeRes.data.learnings);
     }
   };
 
@@ -65,21 +59,17 @@ export function RailwayStorageCard() {
   const handleCompactStorage = async () => {
     setIsCompacting(true);
     setCompactResult(null);
-    try {
-      const res = await fetch('/api/storage/compact', { method: 'POST' });
-      if (res.ok) {
-        const data = await res.json();
-        setCompactResult(data.result?.message || 'Storage erfolgreich bereinigt.');
-        if (data.status) {
-          setStorage(data.status);
-        }
-        fetchData();
+    const res = await safePostJson<{ result?: { message: string }; status?: RailwayStorageStatus }>('/api/storage/compact');
+    if (res.ok && res.data) {
+      setCompactResult(res.data.result?.message || 'Storage erfolgreich bereinigt.');
+      if (res.data.status) {
+        setStorage(res.data.status);
       }
-    } catch (e) {
-      console.error('Failed to compact storage:', e);
-    } finally {
-      setIsCompacting(false);
+      fetchData();
+    } else {
+      setCompactResult(`Fehler bei Bereinigung: ${res.error || 'Server nicht erreichbar'}`);
     }
+    setIsCompacting(false);
   };
 
   const handleExportSnapshot = () => {
@@ -89,20 +79,14 @@ export function RailwayStorageCard() {
   const handleQuickRestore = async () => {
     setIsRestoring(true);
     setCompactResult(null);
-    try {
-      const res = await fetch('/api/storage/snapshot/quick-restore', { method: 'POST' });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setCompactResult(`🎉 ${data.message || 'Snapshot erfolgreich wiederhergestellt!'}`);
-        fetchData();
-      } else {
-        setCompactResult(`❌ Wiederherstellung fehlgeschlagen: ${data.error || data.message}`);
-      }
-    } catch (e: any) {
-      setCompactResult(`❌ Fehler: ${e.message}`);
-    } finally {
-      setIsRestoring(false);
+    const res = await safePostJson<{ success: boolean; message?: string; error?: string }>('/api/storage/snapshot/quick-restore');
+    if (res.ok && res.data?.success) {
+      setCompactResult(`🎉 ${res.data.message || 'Snapshot erfolgreich wiederhergestellt!'}`);
+      fetchData();
+    } else {
+      setCompactResult(`❌ Wiederherstellung fehlgeschlagen: ${res.data?.error || res.error || 'Fehler'}`);
     }
+    setIsRestoring(false);
   };
 
   const handleImportSubmit = async (jsonContent: string) => {
@@ -110,19 +94,17 @@ export function RailwayStorageCard() {
     setImportFeedback(null);
     try {
       const parsed = JSON.parse(jsonContent);
-      const res = await fetch('/api/storage/snapshot/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ snapshot: parsed, source: 'Benutzer Upload' })
+      const res = await safePostJson<{ success: boolean; message?: string; error?: string }>('/api/storage/snapshot/import', {
+        snapshot: parsed,
+        source: 'Benutzer Upload'
       });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setCompactResult(`🎉 ${data.message}`);
+      if (res.ok && res.data?.success) {
+        setCompactResult(`🎉 ${res.data.message}`);
         setShowImportModal(false);
         setImportJsonText('');
         fetchData();
       } else {
-        setImportFeedback(`❌ Fehler: ${data.message || 'Ungültiger Snapshot'}`);
+        setImportFeedback(`❌ Fehler: ${res.data?.message || res.error || 'Ungültiger Snapshot'}`);
       }
     } catch (e: any) {
       setImportFeedback(`❌ JSON-Parse-Fehler: ${e.message}`);
@@ -148,25 +130,17 @@ export function RailwayStorageCard() {
     e.preventDefault();
     if (!newTitle.trim() || !newInsight.trim()) return;
 
-    try {
-      const res = await fetch('/api/knowledge/add', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: newTitle.trim(),
-          insight: newInsight.trim(),
-          category: newCategory
-        })
-      });
+    const res = await safePostJson('/api/knowledge/add', {
+      title: newTitle.trim(),
+      insight: newInsight.trim(),
+      category: newCategory
+    });
 
-      if (res.ok) {
-        setNewTitle('');
-        setNewInsight('');
-        setShowAddInsight(false);
-        fetchData();
-      }
-    } catch (e) {
-      console.error('Failed to add insight:', e);
+    if (res.ok) {
+      setNewTitle('');
+      setNewInsight('');
+      setShowAddInsight(false);
+      fetchData();
     }
   };
 

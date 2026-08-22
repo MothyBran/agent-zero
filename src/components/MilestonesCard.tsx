@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Target, CheckCircle2, Clock, Plus, ArrowRight, ShieldAlert, Sparkles, TrendingUp, RefreshCw } from 'lucide-react';
 import { Milestone } from '../types';
+import { safeFetchJson, safePostJson } from '../lib/api';
 
 export function MilestonesCard() {
   const [milestones, setMilestones] = useState<Milestone[]>([]);
@@ -17,16 +18,9 @@ export function MilestonesCard() {
   const [newPlan, setNewPlan] = useState('');
 
   const fetchMilestones = async () => {
-    try {
-      const res = await fetch('/api/milestones');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.milestones) {
-          setMilestones(data.milestones);
-        }
-      }
-    } catch (e) {
-      console.error('Failed to fetch milestones:', e);
+    const res = await safeFetchJson<{ milestones?: Milestone[] }>('/api/milestones');
+    if (res.ok && res.data?.milestones) {
+      setMilestones(res.data.milestones);
     }
   };
 
@@ -38,47 +32,31 @@ export function MilestonesCard() {
 
   const handleEvaluate = async () => {
     setIsEvaluating(true);
-    try {
-      const res = await fetch('/api/milestones/evaluate', { method: 'POST' });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.milestones) {
-          setMilestones(data.milestones);
-        }
-      }
-    } catch (e) {
-      console.error('Failed to evaluate milestones:', e);
-    } finally {
-      setIsEvaluating(false);
+    const res = await safePostJson<{ milestones?: Milestone[] }>('/api/milestones/evaluate');
+    if (res.ok && res.data?.milestones) {
+      setMilestones(res.data.milestones);
     }
+    setIsEvaluating(false);
   };
 
   const handleCreateMilestone = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
 
-    try {
-      const res = await fetch('/api/milestones/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: newTitle.trim(),
-          category: newCategory,
-          target_value: parseFloat(newTarget) || 1,
-          unit: newUnit.trim() || 'Einheit',
-          priority: newPriority,
-          action_plan: newPlan.trim() || 'Zielstrebige Ausführung im Autonomen Zyklus'
-        })
-      });
+    const res = await safePostJson('/api/milestones/create', {
+      title: newTitle.trim(),
+      category: newCategory,
+      target_value: parseFloat(newTarget) || 1,
+      unit: newUnit.trim() || 'Einheit',
+      priority: newPriority,
+      action_plan: newPlan.trim() || 'Zielstrebige Ausführung im Autonomen Zyklus'
+    });
 
-      if (res.ok) {
-        setNewTitle('');
-        setNewPlan('');
-        setShowAddForm(false);
-        fetchMilestones();
-      }
-    } catch (e) {
-      console.error('Failed to create milestone:', e);
+    if (res.ok) {
+      setNewTitle('');
+      setNewPlan('');
+      setShowAddForm(false);
+      fetchMilestones();
     }
   };
 

@@ -15,6 +15,7 @@ import {
   Compass
 } from 'lucide-react';
 import { KnowledgeItem, TaskMemoryRecord, MemoryRecallStatus } from '../types';
+import { safeFetchJson, safePostJson } from '../lib/api';
 
 interface MemoryEvolutionCardProps {
   iqScore?: number;
@@ -47,23 +48,18 @@ export const MemoryEvolutionCard: React.FC<MemoryEvolutionCardProps> = ({
   const [newCategory, setNewCategory] = useState<KnowledgeItem['category']>('SUCCESS_PATTERN');
 
   const fetchMemoryData = async () => {
-    try {
-      setLoading(true);
-      const [resK, resT, resS] = await Promise.all([
-        fetch('/api/knowledge').then(r => r.json()),
-        fetch('/api/memory/tasks?limit=40').then(r => r.json()),
-        fetch('/api/memory/status').then(r => r.json())
-      ]);
+    setLoading(true);
+    const [resK, resT, resS] = await Promise.all([
+      safeFetchJson<{ learnings?: KnowledgeItem[] }>('/api/knowledge'),
+      safeFetchJson<{ tasks?: TaskMemoryRecord[]; stats?: any }>('/api/memory/tasks?limit=40'),
+      safeFetchJson<{ checkpoint?: MemoryRecallStatus }>('/api/memory/status')
+    ]);
 
-      if (resK.learnings) setLearnings(resK.learnings);
-      if (resT.tasks) setTasks(resT.tasks);
-      if (resT.stats) setTaskStats(resT.stats);
-      if (resS.checkpoint) setRecallStatus(resS.checkpoint);
-    } catch (e) {
-      console.error('Failed to fetch memory status:', e);
-    } finally {
-      setLoading(false);
-    }
+    if (resK.ok && resK.data?.learnings) setLearnings(resK.data.learnings);
+    if (resT.ok && resT.data?.tasks) setTasks(resT.data.tasks);
+    if (resT.ok && resT.data?.stats) setTaskStats(resT.data.stats);
+    if (resS.ok && resS.data?.checkpoint) setRecallStatus(resS.data.checkpoint);
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -71,73 +67,50 @@ export const MemoryEvolutionCard: React.FC<MemoryEvolutionCardProps> = ({
   }, []);
 
   const handleReflect = async () => {
-    try {
-      setReflecting(true);
-      setReflectMessage(null);
-      const res = await fetch('/api/memory/reflect', { method: 'POST' });
-      const data = await res.json();
-      if (data.success) {
-        setReflectMessage(`✨ ${data.summary}`);
-        await fetchMemoryData();
-        if (onRefresh) onRefresh();
-      }
-    } catch (e: any) {
-      setReflectMessage(`Fehler bei Reflexion: ${e.message}`);
-    } finally {
-      setReflecting(false);
+    setReflecting(true);
+    setReflectMessage(null);
+    const res = await safePostJson<{ success: boolean; summary?: string }>('/api/memory/reflect');
+    if (res.ok && res.data?.success) {
+      setReflectMessage(`✨ ${res.data.summary}`);
+      await fetchMemoryData();
+      if (onRefresh) onRefresh();
+    } else {
+      setReflectMessage(`Fehler bei Reflexion: ${res.error || 'Serverfehler'}`);
     }
+    setReflecting(false);
   };
 
   const handleRecallNow = async () => {
-    try {
-      setLoading(true);
-      const res = await fetch('/api/memory/recall-now', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason: 'RESTART' })
-      });
-      const data = await res.json();
-      if (data.success) {
-        setRecallStatus(data.checkpoint);
-        await fetchMemoryData();
-        if (onRefresh) onRefresh();
-      }
-    } catch (e) {
-      console.error('Recall error:', e);
-    } finally {
-      setLoading(false);
+    setLoading(true);
+    const res = await safePostJson<{ success: boolean; checkpoint?: MemoryRecallStatus }>('/api/memory/recall-now', { reason: 'RESTART' });
+    if (res.ok && res.data?.success) {
+      if (res.data.checkpoint) setRecallStatus(res.data.checkpoint);
+      await fetchMemoryData();
+      if (onRefresh) onRefresh();
     }
+    setLoading(false);
   };
 
   const handleAddLesson = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim() || !newInsight.trim()) return;
 
-    try {
-      setLoading(true);
-      const res = await fetch('/api/memory/add-lesson', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: newTitle.trim(),
-          insight: newInsight.trim(),
-          category: newCategory,
-          source: 'User Guidance'
-        })
-      });
-      const data = await res.json();
-      if (data.success) {
-        setNewTitle('');
-        setNewInsight('');
-        setActiveTab('KNOWLEDGE');
-        await fetchMemoryData();
-        if (onRefresh) onRefresh();
-      }
-    } catch (e) {
-      console.error('Failed to add lesson:', e);
-    } finally {
-      setLoading(false);
+    setLoading(true);
+    const res = await safePostJson('/api/memory/add-lesson', {
+      title: newTitle.trim(),
+      insight: newInsight.trim(),
+      category: newCategory,
+      source: 'Benutzer Eingabe'
+    });
+
+    if (res.ok) {
+      setNewTitle('');
+      setNewInsight('');
+      setActiveTab('KNOWLEDGE');
+      await fetchMemoryData();
+      if (onRefresh) onRefresh();
     }
+    setLoading(false);
   };
 
   const filteredLearnings = learnings.filter(l => {

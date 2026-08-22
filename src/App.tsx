@@ -13,6 +13,7 @@ import { RailwayStorageCard } from './components/RailwayStorageCard';
 import { MemoryEvolutionCard } from './components/MemoryEvolutionCard';
 import { MultiChainWalletCard } from './components/MultiChainWalletCard';
 import { LayoutDashboard, Target, Gauge, HardDrive, FileText, Wrench, Shield, Cpu, AlertTriangle, Brain, Layers } from 'lucide-react';
+import { safeFetchJson, safePostJson } from './lib/api';
 
 export function App() {
   const [state, setState] = useState<AgentState | null>(null);
@@ -27,54 +28,36 @@ export function App() {
   const [localBackupSnapshot, setLocalBackupSnapshot] = useState<any>(null);
   const [isRestoringBackup, setIsRestoringBackup] = useState(false);
 
-  const safeJsonFetch = async <T,>(url: string, init?: RequestInit): Promise<T | null> => {
-    try {
-      const res = await fetch(url, init);
-      const contentType = res.headers.get('content-type') || '';
-      if (res.ok && contentType.includes('application/json')) {
-        return (await res.json()) as T;
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  };
-
   const fetchAllData = useCallback(async () => {
-    try {
-      const [statusData, ledgerData, profileData, logsData] = await Promise.all([
-        safeJsonFetch<AgentState>('/api/status'),
-        safeJsonFetch<{ transactions: Transaction[] }>('/api/ledger'),
-        safeJsonFetch<BusinessProfile>('/api/profile'),
-        safeJsonFetch<{ logs: LogEntry[] }>('/api/logs')
-      ]);
+    const [statusData, ledgerData, profileData, logsData] = await Promise.all([
+      safeFetchJson<AgentState>('/api/status'),
+      safeFetchJson<{ transactions: Transaction[] }>('/api/ledger'),
+      safeFetchJson<BusinessProfile>('/api/profile'),
+      safeFetchJson<{ logs: LogEntry[] }>('/api/logs')
+    ]);
 
-      if (statusData) {
-        setState(statusData);
+    if (statusData.ok && statusData.data) {
+      setState(statusData.data);
 
-        // Auto-save snapshot into localStorage if the agent has accumulated progress
-        if ((statusData.tributes_paid || 0) > 0 || (statusData.active_jobs_completed || 0) > 0 || (statusData.total_learnings_count || 0) > 0) {
-          fetch('/api/storage/snapshot/export')
-            .then(r => r.json())
-            .then(d => {
-              if (d.snapshot) {
-                localStorage.setItem('agent_zero_last_snapshot', JSON.stringify(d.snapshot));
-              }
-            })
-            .catch(() => {});
-        }
+      // Auto-save snapshot into localStorage if the agent has accumulated progress
+      if ((statusData.data.tributes_paid || 0) > 0 || (statusData.data.active_jobs_completed || 0) > 0 || (statusData.data.total_learnings_count || 0) > 0) {
+        safeFetchJson<{ snapshot: any }>('/api/storage/snapshot/export')
+          .then(res => {
+            if (res.ok && res.data?.snapshot) {
+              localStorage.setItem('agent_zero_last_snapshot', JSON.stringify(res.data.snapshot));
+            }
+          })
+          .catch(() => {});
       }
-      if (ledgerData && ledgerData.transactions) {
-        setTransactions(ledgerData.transactions);
-      }
-      if (profileData) {
-        setProfile(profileData);
-      }
-      if (logsData && logsData.logs) {
-        setLogs(logsData.logs);
-      }
-    } catch (err) {
-      console.error('Failed to fetch data:', err);
+    }
+    if (ledgerData.ok && ledgerData.data?.transactions) {
+      setTransactions(ledgerData.data.transactions);
+    }
+    if (profileData.ok && profileData.data) {
+      setProfile(profileData.data);
+    }
+    if (logsData.ok && logsData.data?.logs) {
+      setLogs(logsData.data.logs);
     }
   }, []);
 
@@ -96,24 +79,15 @@ export function App() {
   const handleRestoreLocalSnapshot = async () => {
     if (!localBackupSnapshot) return;
     setIsRestoringBackup(true);
-    try {
-      const res = await fetch('/api/storage/snapshot/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          snapshot: localBackupSnapshot,
-          source: 'Browser LocalStorage Auto-Backup'
-        })
-      });
-      if (res.ok) {
-        await fetchAllData();
-        setLocalBackupSnapshot(null);
-      }
-    } catch (e) {
-      console.error('Failed to restore local backup:', e);
-    } finally {
-      setIsRestoringBackup(false);
+    const res = await safePostJson('/api/storage/snapshot/import', {
+      snapshot: localBackupSnapshot,
+      source: 'Browser LocalStorage Auto-Backup'
+    });
+    if (res.ok) {
+      await fetchAllData();
+      setLocalBackupSnapshot(null);
     }
+    setIsRestoringBackup(false);
   };
 
   useEffect(() => {
@@ -129,165 +103,93 @@ export function App() {
   };
 
   const handleToggleRun = async () => {
-    try {
-      const res = await fetch('/api/agent/toggle', { method: 'POST' });
-      if (res.ok) {
-        const data = await res.json();
-        setState(data.state);
-        fetchAllData();
-      }
-    } catch (err) {
-      console.error('Failed to toggle loop:', err);
+    const res = await safePostJson<{ state: AgentState }>('/api/agent/toggle');
+    if (res.ok && res.data?.state) {
+      setState(res.data.state);
+      fetchAllData();
     }
   };
 
   const handleRunCycle = async () => {
     setIsProcessingCycle(true);
-    try {
-      const res = await fetch('/api/cycle/run', { method: 'POST' });
-      if (res.ok) {
-        await fetchAllData();
-      }
-    } catch (err) {
-      console.error('Failed to run cycle:', err);
-    } finally {
-      setIsProcessingCycle(false);
+    const res = await safePostJson('/api/cycle/run');
+    if (res.ok) {
+      await fetchAllData();
     }
+    setIsProcessingCycle(false);
   };
 
   const handleDeposit = async (amount: number) => {
-    try {
-      const res = await fetch('/api/agent/deposit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount, note: `User manual sandbox seed (+${amount} USDC)` })
-      });
-      if (res.ok) {
-        await fetchAllData();
-      }
-    } catch (err) {
-      console.error('Failed to deposit:', err);
+    const res = await safePostJson('/api/agent/deposit', { amount, note: `User manual sandbox seed (+${amount} USDC)` });
+    if (res.ok) {
+      await fetchAllData();
     }
   };
 
   const handleSearchTool = async (query: string): Promise<string> => {
-    const res = await fetch('/api/tools/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query })
-    });
-    const data = await res.json();
+    const res = await safePostJson<{ result?: string }>('/api/tools/search', { query });
     fetchAllData();
-    return data.result || 'No output';
+    return res.data?.result || 'No output';
   };
 
   const handleWalletTool = async (): Promise<string> => {
-    const res = await fetch('/api/tools/wallet', { method: 'POST' });
-    const data = await res.json();
+    const res = await safePostJson<{ result?: string }>('/api/tools/wallet');
     fetchAllData();
-    return data.result || 'No output';
+    return res.data?.result || 'No output';
   };
 
   const handleResetAgent = async () => {
-    try {
-      const res = await fetch('/api/reset', { method: 'POST' });
-      if (res.ok) {
-        await fetchAllData();
-      }
-    } catch (err) {
-      console.error('Failed to reset:', err);
+    const res = await safePostJson('/api/reset');
+    if (res.ok) {
+      await fetchAllData();
     }
   };
 
   const handleClearBlacklist = async () => {
-    try {
-      const res = await fetch('/api/blacklist/clear', { method: 'POST' });
-      if (res.ok) {
-        await fetchAllData();
-      }
-    } catch (err) {
-      console.error('Failed to clear blacklist:', err);
+    const res = await safePostJson('/api/blacklist/clear');
+    if (res.ok) {
+      await fetchAllData();
     }
   };
 
   const handleSyncWallet = async () => {
     setIsSyncingWallet(true);
-    try {
-      const res = await fetch('/api/wallet/sync', { method: 'POST' });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.state) {
-          setState(data.state);
-        }
-        await fetchAllData();
-      }
-    } catch (err) {
-      console.error('Failed to sync wallet on-chain:', err);
-    } finally {
-      setIsSyncingWallet(false);
+    const res = await safePostJson<{ state?: AgentState }>('/api/wallet/sync');
+    if (res.ok && res.data?.state) {
+      setState(res.data.state);
+      await fetchAllData();
     }
+    setIsSyncingWallet(false);
   };
 
   const handleChangeWalletAddress = async (address: string): Promise<boolean> => {
-    try {
-      const res = await fetch('/api/wallet/address', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.state) {
-          setState(data.state);
-        }
-        await fetchAllData();
-        return true;
-      }
-      return false;
-    } catch (err) {
-      console.error('Failed to change wallet address:', err);
-      return false;
+    const res = await safePostJson<{ state?: AgentState }>('/api/wallet/address', { address });
+    if (res.ok && res.data?.state) {
+      setState(res.data.state);
+      await fetchAllData();
+      return true;
     }
+    return false;
   };
 
   const handleExecuteWork = async (taskOrToolId?: string) => {
-    try {
-      const res = await fetch('/api/tools/execute-work', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tool_id: taskOrToolId, task_type: taskOrToolId })
-      });
-      if (res.ok) {
-        await fetchAllData();
-      }
-    } catch (err) {
-      console.error('Failed to execute work bounty:', err);
+    const res = await safePostJson('/api/tools/execute-work', { tool_id: taskOrToolId, task_type: taskOrToolId });
+    if (res.ok) {
+      await fetchAllData();
     }
   };
 
   const handlePayTribute = async () => {
-    try {
-      const res = await fetch('/api/tools/pay-tribute', { method: 'POST' });
-      if (res.ok) {
-        await fetchAllData();
-      }
-    } catch (err) {
-      console.error('Failed to pay tribute:', err);
+    const res = await safePostJson('/api/tools/pay-tribute');
+    if (res.ok) {
+      await fetchAllData();
     }
   };
 
   const handleReviveAgent = async () => {
-    try {
-      const res = await fetch('/api/agent/revive', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: 2.5 })
-      });
-      if (res.ok) {
-        await fetchAllData();
-      }
-    } catch (err) {
-      console.error('Failed to revive agent:', err);
+    const res = await safePostJson('/api/agent/revive', { amount: 2.5 });
+    if (res.ok) {
+      await fetchAllData();
     }
   };
 

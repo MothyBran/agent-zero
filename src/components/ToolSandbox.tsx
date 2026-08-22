@@ -144,7 +144,7 @@ export const ToolSandbox: React.FC<ToolSandboxProps> = ({
     try {
       await onExecuteWork(target);
       const chosen = tools.find(t => t.id === target);
-      setWorkResult(`✅ Tool "${chosen?.name || target}" erfolgreich ausgeführt! Ertrag gutgeschrieben.`);
+      setWorkResult(`✅ Reales Tool "${chosen?.name || target}" erfolgreich ausgeführt! Output im Log verzeichnet.`);
       fetchCatalog();
     } catch (err: any) {
       setWorkResult(`Fehler: ${err.message}`);
@@ -158,7 +158,7 @@ export const ToolSandbox: React.FC<ToolSandboxProps> = ({
     setIsPayingTribute(true);
     try {
       await onPayTribute();
-      setTributeResult(`👑 Server-Tribut erfolgreich an Creator überwiesen! 48h Überlebensfrist neu gestartet.`);
+      setTributeResult(`👑 Server-Tribut real on-chain an Creator überwiesen! 48h Überlebensfrist neu gestartet.`);
       fetchCatalog();
     } catch (err: any) {
       setTributeResult(`Fehler: ${err.message}`);

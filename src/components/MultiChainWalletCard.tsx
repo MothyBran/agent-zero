@@ -14,6 +14,7 @@ import {
   Flame,
   Wallet
 } from 'lucide-react';
+import { safeFetchJson, safePostJson } from '../lib/api';
 
 interface MultiChainWalletCardProps {
   state: AgentState | null;
@@ -28,19 +29,11 @@ export const MultiChainWalletCard: React.FC<MultiChainWalletCardProps> = ({ stat
 
   const fetchMultiChainData = async () => {
     setIsLoading(true);
-    try {
-      const res = await fetch('/api/wallet/multichain');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.report) {
-          setMultichainReport(data.report);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load multichain data:', err);
-    } finally {
-      setIsLoading(false);
+    const res = await safeFetchJson<{ report?: MultiChainPortfolioReport }>('/api/wallet/multichain');
+    if (res.ok && res.data?.report) {
+      setMultichainReport(res.data.report);
     }
+    setIsLoading(false);
   };
 
   useEffect(() => {
@@ -50,23 +43,13 @@ export const MultiChainWalletCard: React.FC<MultiChainWalletCardProps> = ({ stat
   const handleL2Harvest = async (chain: 'polygon' | 'base', taskType: string) => {
     setIsHarvesting(chain);
     setHarvestSuccess(null);
-    try {
-      const res = await fetch('/api/strategy/l2-harvest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chain, task_type: taskType })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setHarvestSuccess({ chain, reward: data.reward_usdc });
-        onRefreshState();
-        fetchMultiChainData();
-      }
-    } catch (err) {
-      console.error('L2 harvest failed:', err);
-    } finally {
-      setIsHarvesting(null);
+    const res = await safePostJson<{ reward_usdc: number }>('/api/strategy/l2-harvest', { chain, task_type: taskType });
+    if (res.ok && res.data) {
+      setHarvestSuccess({ chain, reward: res.data.reward_usdc });
+      onRefreshState();
+      fetchMultiChainData();
     }
+    setIsHarvesting(null);
   };
 
   const trap = multichainReport?.gas_trap_status;
