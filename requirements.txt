@@ -9,4 +9,3 @@ pydantic
 python-dotenv
 duckduckgo-search
 duckduckgo_search
-ddgs
