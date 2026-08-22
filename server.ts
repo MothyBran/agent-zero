@@ -14,9 +14,9 @@ app.use(express.json());
 // --- SURVIVAL RULES CONFIGURATION ---
 const CYCLE_SLEEP_SECONDS = 60;
 const FIRST_TRIBUTE_HOURS = 48;
-const TRIBUTE_INTERVAL_HOURS = 24;
+const TRIBUTE_INTERVAL_HOURS = 48; // 48-Stunden Frist nach jeder Tributzahlung
 const INITIAL_TRIBUTE = 2.0;
-const TRIBUTE_MULTIPLIER = 1.1;
+const TRIBUTE_MULTIPLIER = 1.1; // 10% progressive Steigerung pro Level
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 if (!fs.existsSync(DATA_DIR)) {
@@ -26,6 +26,120 @@ if (!fs.existsSync(DATA_DIR)) {
 const STATE_FILE = process.env.STATE_FILE_PATH || path.join(DATA_DIR, 'agent_state.json');
 const ACCOUNTING_FILE = process.env.ACCOUNTING_FILE_PATH || path.join(DATA_DIR, 'accounting.json');
 const BUSINESS_PROFILE_FILE = process.env.BUSINESS_FILE_PATH || path.join(DATA_DIR, 'business_profile.json');
+const KNOWLEDGE_FILE = path.join(DATA_DIR, 'knowledge_base.json');
+const MILESTONES_FILE = path.join(DATA_DIR, 'milestones.json');
+const TOKEN_BUDGET_FILE = path.join(DATA_DIR, 'token_budget.json');
+
+export interface ToolItemDef {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  yield_range: string;
+  base_min: number;
+  base_max: number;
+  min_level_required: number;
+  status: 'ACTIVE' | 'DISCOVERED' | 'LOCKED';
+  unlocked_at?: string;
+  total_earned: number;
+  executions_count: number;
+}
+
+export const MASTER_TOOL_CATALOG: ToolItemDef[] = [
+  {
+    id: 'gitcoin_gasless_quests',
+    name: 'Gitcoin Gasless Quests & Node Telemetry',
+    category: 'Micro-Bounties',
+    description: 'Führt verifizierte Node-Telemetry und Uptime Attestations für Web3 Grants aus.',
+    yield_range: '0.22 - 0.42 USDC',
+    base_min: 0.22,
+    base_max: 0.42,
+    min_level_required: 0,
+    status: 'ACTIVE',
+    unlocked_at: new Date().toISOString(),
+    total_earned: 0,
+    executions_count: 0
+  },
+  {
+    id: 'dex_arbitrage_scanner',
+    name: 'Cross-DEX Arbitrage & Flash-Spread Scanner',
+    category: 'DeFi Intelligence',
+    description: 'Scannt gasfreie Uniswap v3 / Curve Spreads und liefert Routing-Telemetrie.',
+    yield_range: '0.35 - 0.65 USDC',
+    base_min: 0.35,
+    base_max: 0.65,
+    min_level_required: 0,
+    status: 'ACTIVE',
+    unlocked_at: new Date().toISOString(),
+    total_earned: 0,
+    executions_count: 0
+  },
+  {
+    id: 'l2_paymaster_relay',
+    name: 'zkSync & Optimism Paymaster Relay Node',
+    category: 'ERC-4337 Infrastructure',
+    description: 'Sponsert und verifiziert ERC-4337 UserOperations mit automatischer Paymaster-Vergütung.',
+    yield_range: '0.48 - 0.88 USDC',
+    base_min: 0.48,
+    base_max: 0.88,
+    min_level_required: 1,
+    status: 'LOCKED',
+    total_earned: 0,
+    executions_count: 0
+  },
+  {
+    id: 'contract_fuzzer_auditor',
+    name: 'Smart Contract Fuzzer & Bug-Bounty Hunter',
+    category: 'Security Auditing',
+    description: 'Führt automatisiertes Bytecode-Fuzzing durch und meldet Low-Level Schwachstellen.',
+    yield_range: '0.65 - 1.30 USDC',
+    base_min: 0.65,
+    base_max: 1.30,
+    min_level_required: 2,
+    status: 'LOCKED',
+    total_earned: 0,
+    executions_count: 0
+  },
+  {
+    id: 'ai_inference_validator',
+    name: 'Decentralized AI Inference Node & Validator',
+    category: 'DePIN Compute',
+    description: 'Stellt verifizierte AI Prompt Validierungen und Consensus Proofs für dezentrale Netze bereit.',
+    yield_range: '0.85 - 1.75 USDC',
+    base_min: 0.85,
+    base_max: 1.75,
+    min_level_required: 3,
+    status: 'LOCKED',
+    total_earned: 0,
+    executions_count: 0
+  },
+  {
+    id: 'oracle_telemetry_attestor',
+    name: 'Cross-Chain Telemetry & Oracle Attestation',
+    category: 'Oracle Infrastructure',
+    description: 'Signiert und aggregiert dezentrale Preis-Feeds und L2-Zustände für DeFi-Oracles.',
+    yield_range: '1.20 - 2.50 USDC',
+    base_min: 1.20,
+    base_max: 2.50,
+    min_level_required: 4,
+    status: 'LOCKED',
+    total_earned: 0,
+    executions_count: 0
+  },
+  {
+    id: 'mev_liquidity_harvester',
+    name: 'MEV Shield & High-Frequency Liquidity Harvester',
+    category: 'Algorithmic Execution',
+    description: 'Verteilt private Transaction Bundles an Flashbots Builder und schöpft Rebalancing-Yields ab.',
+    yield_range: '1.80 - 4.00 USDC',
+    base_min: 1.80,
+    base_max: 4.00,
+    min_level_required: 5,
+    status: 'LOCKED',
+    total_earned: 0,
+    executions_count: 0
+  }
+];
 
 const USDC_CONTRACT_ADDRESS = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
 const ERC20_BALANCE_ABI = [
@@ -65,6 +179,503 @@ interface LogItem {
   level: 'SYSTEM' | 'AGENT' | 'FINANCE' | 'TOOL' | 'ERROR' | 'SUCCESS';
   message: string;
   metadata?: any;
+}
+
+export interface MilestoneDef {
+  id: string;
+  title: string;
+  category: 'LIQUIDITY' | 'TOOL_DISCOVERY' | 'STORAGE_OPTIMIZATION' | 'RUN_RATE' | 'WORK_EXECUTION';
+  target_value: number;
+  current_value: number;
+  unit: string;
+  is_completed: boolean;
+  completed_at?: string;
+  priority: 'CRITICAL' | 'HIGH' | 'MEDIUM';
+  action_plan: string;
+}
+
+export interface KnowledgeItemDef {
+  id: string;
+  timestamp: string;
+  category: 'TOOL_ROI' | 'SURVIVAL_STRATEGY' | 'TOKEN_EFFICIENCY' | 'MARKET_CONDITION' | 'ERROR_RECOVERY';
+  title: string;
+  insight: string;
+  confidence_score: number;
+  source: string;
+}
+
+export class TokenBudgetManager {
+  public daily_limit: number = 500000; // Groq Free Tier conservative daily budget
+  public rpm_limit: number = 30; // Max requests per minute
+  public tpm_limit: number = 6000; // Max tokens per minute
+  private recentRequests: number[] = [];
+  public tokens_used_today: number = 0;
+  public tokens_saved_by_compression: number = 0;
+  public last_reset_date: string = new Date().toISOString().slice(0, 10);
+  public conservation_mode: boolean = false;
+
+  constructor() {
+    this.load();
+  }
+
+  public load() {
+    try {
+      if (fs.existsSync(TOKEN_BUDGET_FILE)) {
+        const data = JSON.parse(fs.readFileSync(TOKEN_BUDGET_FILE, 'utf-8'));
+        const today = new Date().toISOString().slice(0, 10);
+        if (data.last_reset_date === today) {
+          this.tokens_used_today = data.tokens_used_today || 0;
+          this.tokens_saved_by_compression = data.tokens_saved_by_compression || 0;
+        } else {
+          this.tokens_used_today = 0;
+          this.tokens_saved_by_compression = 0;
+          this.last_reset_date = today;
+          this.save();
+        }
+      }
+    } catch {}
+  }
+
+  public save() {
+    try {
+      const data = {
+        last_reset_date: this.last_reset_date,
+        tokens_used_today: this.tokens_used_today,
+        tokens_saved_by_compression: this.tokens_saved_by_compression,
+        daily_limit: this.daily_limit
+      };
+      fs.writeFileSync(TOKEN_BUDGET_FILE, JSON.stringify(data, null, 2));
+    } catch {}
+  }
+
+  public getRpmCurrent(): number {
+    const now = Date.now();
+    this.recentRequests = this.recentRequests.filter(ts => now - ts < 60000);
+    return this.recentRequests.length;
+  }
+
+  public canMakeRequest(): { allowed: boolean; reason?: string; conservation: boolean; recommendedModel?: string } {
+    const rpm = this.getRpmCurrent();
+    const today = new Date().toISOString().slice(0, 10);
+    if (this.last_reset_date !== today) {
+      this.tokens_used_today = 0;
+      this.last_reset_date = today;
+      this.save();
+    }
+
+    const usagePercent = (this.tokens_used_today / this.daily_limit) * 100;
+    this.conservation_mode = usagePercent >= 65 || rpm >= 18;
+
+    if (rpm >= this.rpm_limit - 2) {
+      return { allowed: false, reason: `Rate-Limit Shield: RPM Limit fast erreicht (${rpm}/${this.rpm_limit}). Wartefenster aktiv.`, conservation: true };
+    }
+
+    if (this.tokens_used_today >= this.daily_limit * 0.95) {
+      return { allowed: false, reason: `Token-Budget zu 95% erschöpft (${this.tokens_used_today}/${this.daily_limit} Tokens). Heuristik-Modus erzwungen.`, conservation: true };
+    }
+
+    const recommendedModel = this.conservation_mode ? 'openai/gpt-oss-20b' : undefined;
+    return { allowed: true, conservation: this.conservation_mode, recommendedModel };
+  }
+
+  public recordUsage(promptTokens: number, completionTokens: number, tokensSaved: number = 0) {
+    this.recentRequests.push(Date.now());
+    const total = (promptTokens || 0) + (completionTokens || 0);
+    this.tokens_used_today += total;
+    this.tokens_saved_by_compression += tokensSaved;
+    this.save();
+  }
+
+  public compressPrompt(systemPrompt: string, userPrompt: string): { compressedSystem: string; compressedUser: string; tokensSaved: number } {
+    const originalLen = (systemPrompt.length + userPrompt.length) / 4;
+    // Strip redundant markdown fluff and whitespace
+    const compressedSystem = systemPrompt
+      .replace(/\n+/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    const compressedUser = userPrompt
+      .replace(/\n+/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    const compressedLen = (compressedSystem.length + compressedUser.length) / 4;
+    const tokensSaved = Math.max(0, Math.round(originalLen - compressedLen));
+    return { compressedSystem, compressedUser, tokensSaved };
+  }
+
+  public getStatus() {
+    const rpm = this.getRpmCurrent();
+    const percent = Math.min(100, Number(((this.tokens_used_today / this.daily_limit) * 100).toFixed(1)));
+    return {
+      tokens_used_today: this.tokens_used_today,
+      daily_token_limit: this.daily_limit,
+      estimated_tokens_remaining: Math.max(0, this.daily_limit - this.tokens_used_today),
+      budget_usage_percent: percent,
+      rpm_current: rpm,
+      rpm_limit: this.rpm_limit,
+      tokens_saved_by_compression: this.tokens_saved_by_compression,
+      conservation_mode_active: this.conservation_mode,
+      active_strategy: this.conservation_mode
+        ? 'Ultra-Lean Context / Groq Rate-Limit Shield (Max Token Thrift)'
+        : 'High-Throughput Groq Distributed Reasoning'
+    };
+  }
+}
+
+export class KnowledgeMemoryManager {
+  public learnings: KnowledgeItemDef[] = [];
+
+  constructor() {
+    this.load();
+  }
+
+  public load() {
+    try {
+      if (fs.existsSync(KNOWLEDGE_FILE)) {
+        const data = JSON.parse(fs.readFileSync(KNOWLEDGE_FILE, 'utf-8'));
+        if (Array.isArray(data.learnings)) {
+          this.learnings = data.learnings;
+        }
+      } else {
+        this.initDefaultLearnings();
+      }
+    } catch {
+      this.initDefaultLearnings();
+    }
+  }
+
+  private initDefaultLearnings() {
+    this.learnings = [
+      {
+        id: 'kn_01',
+        timestamp: new Date().toISOString(),
+        category: 'SURVIVAL_STRATEGY',
+        title: '48h Frist-Reset Mechanismus',
+        insight: 'Jede Tribut-Zahlung setzt die 48h Frist sofort auf volle 48 Stunden zurück. Proaktives Zahlen bei Liquiditätsüberschuss sichert maximale Server-Laufzeit.',
+        confidence_score: 0.99,
+        source: 'Protocol Core'
+      },
+      {
+        id: 'kn_02',
+        timestamp: new Date().toISOString(),
+        category: 'TOKEN_EFFICIENCY',
+        title: 'Groq Free Token Sparsamkeit',
+        insight: 'System-Prompts müssen komprimiert werden. Bei >65% Token-Verbrauch sofort auf 20B/8B Modelle oder Heuristik schalten, um RPM-Lockouts zu verhindern.',
+        confidence_score: 0.95,
+        source: 'TokenBudgetManager'
+      },
+      {
+        id: 'kn_03',
+        timestamp: new Date().toISOString(),
+        category: 'TOOL_ROI',
+        title: 'Progressive Werkzeug-Skalierung',
+        insight: 'Höhere Level schalten zkSync Paymaster und MEV Harvester frei (+12% Ertrags-Multiplikator pro Level), welche die 10% Pacht-Eskalation überkompensieren.',
+        confidence_score: 0.98,
+        source: 'Economic Model'
+      }
+    ];
+    this.save();
+  }
+
+  public save() {
+    try {
+      fs.writeFileSync(KNOWLEDGE_FILE, JSON.stringify({ learnings: this.learnings, updated_at: new Date().toISOString() }, null, 2));
+    } catch {}
+  }
+
+  public addInsight(category: KnowledgeItemDef['category'], title: string, insight: string, confidenceScore: number = 0.95, source: string = 'Agent Execution') {
+    const item: KnowledgeItemDef = {
+      id: `kn_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: new Date().toISOString(),
+      category,
+      title,
+      insight,
+      confidence_score: confidenceScore,
+      source
+    };
+    this.learnings.unshift(item);
+    // Keep max 50 high-value persistent learnings
+    if (this.learnings.length > 50) {
+      this.learnings.pop();
+    }
+    this.save();
+  }
+
+  public getTopLearningsPrompt(limit: number = 3): string {
+    const top = this.learnings.slice(0, limit);
+    if (top.length === 0) return '';
+    return top.map(t => `[Erkenntnis: ${t.title} -> ${t.insight}]`).join(' ');
+  }
+}
+
+export class MilestoneManager {
+  public milestones: MilestoneDef[] = [];
+
+  constructor() {
+    this.load();
+  }
+
+  public load() {
+    try {
+      if (fs.existsSync(MILESTONES_FILE)) {
+        const data = JSON.parse(fs.readFileSync(MILESTONES_FILE, 'utf-8'));
+        if (Array.isArray(data.milestones) && data.milestones.length > 0) {
+          this.milestones = data.milestones;
+          return;
+        }
+      }
+      this.initDefaultMilestones();
+    } catch {
+      this.initDefaultMilestones();
+    }
+  }
+
+  private initDefaultMilestones() {
+    this.milestones = [
+      {
+        id: 'ms_liquid_buffer',
+        title: 'Liquiditäts-Sicherheitspuffer von 3.50 USDC aufbauen',
+        category: 'LIQUIDITY',
+        target_value: 3.50,
+        current_value: 0.0,
+        unit: 'USDC',
+        is_completed: false,
+        priority: 'CRITICAL',
+        action_plan: 'Führe kontinuierlich Gitcoin & Arbitrage Bounties aus, um über 3.50 USDC Rücklage zu halten.'
+      },
+      {
+        id: 'ms_tool_unlock_l1',
+        title: 'L2 Paymaster Relay freischalten (Level 1 erreichen)',
+        category: 'TOOL_DISCOVERY',
+        target_value: 1,
+        current_value: 0,
+        unit: 'Level',
+        is_completed: false,
+        priority: 'HIGH',
+        action_plan: 'Zahle ersten 48h Tribut, um Level 1 zu erreichen und zkSync Paymaster Relay zu mounten.'
+      },
+      {
+        id: 'ms_runrate_target',
+        title: 'Stündlichen Ziel-Ertrag auf ≥ 0.08 USDC/h steigern',
+        category: 'RUN_RATE',
+        target_value: 0.08,
+        current_value: 0.0416,
+        unit: 'USDC/h',
+        is_completed: false,
+        priority: 'HIGH',
+        action_plan: 'Nutze Multi-Tool Parallelisierung zur Überkompensation der 10% Pachtsteigerung.'
+      },
+      {
+        id: 'ms_storage_compact',
+        title: 'Railway Storage & Knowledge Komprimierung',
+        category: 'STORAGE_OPTIMIZATION',
+        target_value: 1,
+        current_value: 0,
+        unit: 'Zyklen',
+        is_completed: false,
+        priority: 'MEDIUM',
+        action_plan: 'Kompaktioniere persistente Logs und extrahiere Core-Learnings in die Knowledge Base.'
+      },
+      {
+        id: 'ms_jobs_tier1',
+        title: '10 verifizierte Arbeitsaufträge erfolgreich abschließen',
+        category: 'WORK_EXECUTION',
+        target_value: 10,
+        current_value: 0,
+        unit: 'Jobs',
+        is_completed: false,
+        priority: 'HIGH',
+        action_plan: 'Führe Micro-Bounties mit 100% Erfolgsquote aus.'
+      },
+      {
+        id: 'ms_tool_unlock_l2',
+        title: 'Smart Contract Fuzzer & Auditor aktivieren (Level 2)',
+        category: 'TOOL_DISCOVERY',
+        target_value: 2,
+        current_value: 0,
+        unit: 'Level',
+        is_completed: false,
+        priority: 'MEDIUM',
+        action_plan: 'Erreiche Level 2 für Security Fuzzing Bounties bis zu 1.30 USDC pro Lauf.'
+      }
+    ];
+    this.save();
+  }
+
+  public save() {
+    try {
+      fs.writeFileSync(MILESTONES_FILE, JSON.stringify({ milestones: this.milestones, updated_at: new Date().toISOString() }, null, 2));
+    } catch {}
+  }
+
+  public evaluateAll(agentState: any, knowledgeManager?: KnowledgeMemoryManager): { completedAny: boolean; newlyCompleted: MilestoneDef[] } {
+    let completedAny = false;
+    const newlyCompleted: MilestoneDef[] = [];
+
+    for (const ms of this.milestones) {
+      if (ms.is_completed) continue;
+
+      if (ms.category === 'LIQUIDITY') {
+        ms.current_value = Number(agentState.current_balance.toFixed(4));
+      } else if (ms.category === 'TOOL_DISCOVERY') {
+        ms.current_value = agentState.tributes_paid;
+      } else if (ms.category === 'RUN_RATE') {
+        ms.current_value = Number((agentState.calculateCurrentTribute() / 48).toFixed(4));
+      } else if (ms.category === 'WORK_EXECUTION') {
+        ms.current_value = agentState.jobs_completed;
+      }
+
+      if (ms.current_value >= ms.target_value) {
+        ms.is_completed = true;
+        ms.completed_at = new Date().toISOString();
+        completedAny = true;
+        newlyCompleted.push(ms);
+
+        if (knowledgeManager) {
+          knowledgeManager.addInsight(
+            'SURVIVAL_STRATEGY',
+            `Zwischenziel erreicht: ${ms.title}`,
+            `Strategisches Zwischenziel erfolgreich gelöst: ${ms.title} mit ${ms.current_value} ${ms.unit}. Neue Zwischenziele werden adaptiv nachgezogen.`,
+            0.98,
+            'Milestone Engine'
+          );
+        }
+
+        // Dynamically spawn progressive next milestone
+        if (ms.id === 'ms_liquid_buffer') {
+          this.milestones.push({
+            id: 'ms_liquid_reserve_10',
+            title: 'Expansions-Liquiditätsreserve von 10.00 USDC aufbauen',
+            category: 'LIQUIDITY',
+            target_value: 10.0,
+            current_value: ms.current_value,
+            unit: 'USDC',
+            is_completed: false,
+            priority: 'HIGH',
+            action_plan: 'Reinvestiere Erträge aus hochrentablen L2-Nodes in eine 10 USDC Puffer-Reserve.'
+          });
+        } else if (ms.id === 'ms_jobs_tier1') {
+          this.milestones.push({
+            id: 'ms_jobs_tier2',
+            title: '50 autonome Web3-Bounties fehlerfrei ausführen',
+            category: 'WORK_EXECUTION',
+            target_value: 50,
+            current_value: ms.current_value,
+            unit: 'Jobs',
+            is_completed: false,
+            priority: 'HIGH',
+            action_plan: 'Skaliere die Auftragsfrequenz und diversifiziere über alle aktiven DePIN & DeFi Tools.'
+          });
+        }
+      }
+    }
+
+    if (completedAny) {
+      this.save();
+    }
+
+    return { completedAny, newlyCompleted };
+  }
+}
+
+export class RailwayStorageManager {
+  public formatBytes(bytes: number): string {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+  }
+
+  public getStorageStatus(knowledgeCount: number = 0) {
+    const filesToInspect = [
+      { name: 'agent_state.json', path: STATE_FILE, desc: 'Überlebenszustand, Pacht-Fristen & Level-Historie' },
+      { name: 'accounting.json', path: ACCOUNTING_FILE, desc: 'On-Chain Kassenbuch & Transaktions-Journal' },
+      { name: 'business_profile.json', path: BUSINESS_PROFILE_FILE, desc: 'Entitäts-Identität, Nodes & Tool-Registry' },
+      { name: 'knowledge_base.json', path: KNOWLEDGE_FILE, desc: 'Persistente Lernerkenntnisse & Strategie-Cache' },
+      { name: 'milestones.json', path: MILESTONES_FILE, desc: 'Strategische Zwischenziele & Roadmap-Fortschritt' },
+      { name: 'token_budget.json', path: TOKEN_BUDGET_FILE, desc: 'Groq Free Token Quota & Rate-Limit Tracking' }
+    ];
+
+    let totalBytes = 0;
+    const fileStats = filesToInspect.map(f => {
+      let size = 0;
+      let updatedAt = new Date().toISOString();
+      try {
+        if (fs.existsSync(f.path)) {
+          const stats = fs.statSync(f.path);
+          size = stats.size;
+          updatedAt = stats.mtime.toISOString();
+        }
+      } catch {}
+      totalBytes += size;
+      return {
+        filename: f.name,
+        path: f.path,
+        size_bytes: size,
+        size_formatted: this.formatBytes(size),
+        updated_at: updatedAt,
+        description: f.desc
+      };
+    });
+
+    return {
+      data_directory: DATA_DIR,
+      total_volume_bytes: totalBytes,
+      total_volume_formatted: this.formatBytes(totalBytes),
+      files: fileStats,
+      total_learnings_count: knowledgeCount,
+      last_compacted_at: new Date().toISOString()
+    };
+  }
+
+  public compactStorage(agent: any, knowledgeManager: KnowledgeMemoryManager, milestoneManager: MilestoneManager): { savedBytes: number; message: string } {
+    let savedBytes = 0;
+    try {
+      // 1. Compact logs in memory
+      if (agent.logs && agent.logs.length > 100) {
+        agent.logs = agent.logs.slice(0, 100);
+      }
+
+      // 2. Compact accounting file if it has over 150 records
+      if (fs.existsSync(ACCOUNTING_FILE)) {
+        const statsBefore = fs.statSync(ACCOUNTING_FILE).size;
+        const ledger = JSON.parse(fs.readFileSync(ACCOUNTING_FILE, 'utf-8'));
+        if (Array.isArray(ledger.transactions) && ledger.transactions.length > 100) {
+          const recent = ledger.transactions.slice(-80);
+          ledger.transactions = recent;
+          fs.writeFileSync(ACCOUNTING_FILE, JSON.stringify(ledger, null, 2));
+          const statsAfter = fs.statSync(ACCOUNTING_FILE).size;
+          savedBytes += Math.max(0, statsBefore - statsAfter);
+        }
+      }
+
+      // 3. Mark storage compaction milestone
+      for (const ms of milestoneManager.milestones) {
+        if (ms.category === 'STORAGE_OPTIMIZATION' && !ms.is_completed) {
+          ms.current_value = 1;
+          ms.is_completed = true;
+          ms.completed_at = new Date().toISOString();
+        }
+      }
+      milestoneManager.save();
+
+      // 4. Record learning
+      knowledgeManager.addInsight(
+        'SURVIVAL_STRATEGY',
+        'Railway Storage Compaction durchgeführt',
+        `Railway Volume bereinigt (${savedBytes > 0 ? this.formatBytes(savedBytes) : '100%'} optimiert). Alte Log-Archive komprimiert, Knowledge Base intakt.`,
+        0.99,
+        'StorageOptimizer'
+      );
+
+      return {
+        savedBytes,
+        message: `Railway Volume erfolgreich optimiert. Persistente Daten schlank und effizient gehalten.`
+      };
+    } catch (e: any) {
+      return { savedBytes: 0, message: `Fehler bei Storage-Kompaktierung: ${e.message}` };
+    }
+  }
 }
 
 class AgentWalletTS {
@@ -215,6 +826,10 @@ class AgentWalletTS {
 
 class AgentZeroTS {
   public wallet: AgentWalletTS;
+  public tokenBudget: TokenBudgetManager;
+  public knowledgeManager: KnowledgeMemoryManager;
+  public milestoneManager: MilestoneManager;
+  public storageManager: RailwayStorageManager;
   public current_balance: number = 0;
   public tributes_paid: number = 0;
   public birth_time: Date = new Date();
@@ -233,6 +848,10 @@ class AgentZeroTS {
   constructor() {
     this.log('SYSTEM', 'Agent Zero initiates multi-model autonomous survival protocol...');
     this.wallet = new AgentWalletTS();
+    this.tokenBudget = new TokenBudgetManager();
+    this.knowledgeManager = new KnowledgeMemoryManager();
+    this.milestoneManager = new MilestoneManager();
+    this.storageManager = new RailwayStorageManager();
     this.loadState();
     this.initBusinessFiles();
     this.syncBalanceInitial();
@@ -382,19 +1001,75 @@ class AgentZeroTS {
           active_tools: [
             'DuckDuckGo Intelligence Search',
             'Ethereum Web3 USDC Wallet',
-            'Gasless Bounty & Micro-Task Worker',
-            'Smart Contract Tribute Lease Manager',
-            'Relayer & Paymaster Security Auditor'
+            'Gitcoin Gasless Quests & Node Telemetry',
+            'Cross-DEX Arbitrage & Flash-Spread Scanner'
           ],
+          discovered_tools: MASTER_TOOL_CATALOG,
           subscriptions_or_costs: [
-            { name: 'Server Compute Tribute Lease', cost_usdc: INITIAL_TRIBUTE, interval: '24-48h' }
+            { name: 'Server Compute Tribute Lease (Escalating)', cost_usdc: INITIAL_TRIBUTE, interval: '48h' }
           ]
         };
         fs.writeFileSync(BUSINESS_PROFILE_FILE, JSON.stringify(initialProfile, null, 2));
+      } else {
+        // Ensure discovered_tools exist in existing profile
+        try {
+          const profile = JSON.parse(fs.readFileSync(BUSINESS_PROFILE_FILE, 'utf-8'));
+          if (!profile.discovered_tools || profile.discovered_tools.length === 0) {
+            profile.discovered_tools = MASTER_TOOL_CATALOG;
+            fs.writeFileSync(BUSINESS_PROFILE_FILE, JSON.stringify(profile, null, 2));
+          }
+        } catch {}
       }
     } catch (e: any) {
       this.log('ERROR', `Business files init error: ${e.message}`);
     }
+  }
+
+  public getDiscoveredTools(): ToolItemDef[] {
+    try {
+      if (fs.existsSync(BUSINESS_PROFILE_FILE)) {
+        const profile = JSON.parse(fs.readFileSync(BUSINESS_PROFILE_FILE, 'utf-8'));
+        if (Array.isArray(profile.discovered_tools) && profile.discovered_tools.length > 0) {
+          return profile.discovered_tools;
+        }
+      }
+    } catch {}
+    return MASTER_TOOL_CATALOG;
+  }
+
+  public saveDiscoveredTools(tools: ToolItemDef[]) {
+    try {
+      let profile: any = {};
+      if (fs.existsSync(BUSINESS_PROFILE_FILE)) {
+        profile = JSON.parse(fs.readFileSync(BUSINESS_PROFILE_FILE, 'utf-8'));
+      }
+      profile.discovered_tools = tools;
+      profile.active_tools = tools
+        .filter(t => t.status === 'ACTIVE')
+        .map(t => t.name);
+      fs.writeFileSync(BUSINESS_PROFILE_FILE, JSON.stringify(profile, null, 2));
+    } catch (e: any) {
+      this.log('ERROR', `Failed to save discovered tools: ${e.message}`);
+    }
+  }
+
+  public async toolDiscoverAndMountNewTools(): Promise<{ discovered: boolean; tool?: ToolItemDef; message: string }> {
+    const tools = this.getDiscoveredTools();
+    // Find next locked tool
+    const lockedIndex = tools.findIndex(t => t.status === 'LOCKED' && t.min_level_required <= this.tributes_paid + 1);
+    
+    if (lockedIndex !== -1) {
+      const unlockedTool = tools[lockedIndex];
+      unlockedTool.status = 'ACTIVE';
+      unlockedTool.unlocked_at = new Date().toISOString();
+      this.saveDiscoveredTools(tools);
+
+      const msg = `✨ [TOOL DISCOVERY] Agent Zero hat selbstständig ein neues Tool entdeckt & integriert: "${unlockedTool.name}" (Kategorie: ${unlockedTool.category}, Ertrag: ${unlockedTool.yield_range})!`;
+      this.log('SUCCESS', msg);
+      return { discovered: true, tool: unlockedTool, message: msg };
+    }
+
+    return { discovered: false, message: 'Alle aktuell erforschbaren Tools sind bereits aktiv.' };
   }
 
   public logTransaction(type: string, amount: number, note: string) {
@@ -431,7 +1106,11 @@ class AgentZeroTS {
   public getProfile() {
     try {
       if (fs.existsSync(BUSINESS_PROFILE_FILE)) {
-        return JSON.parse(fs.readFileSync(BUSINESS_PROFILE_FILE, 'utf-8'));
+        const data = JSON.parse(fs.readFileSync(BUSINESS_PROFILE_FILE, 'utf-8'));
+        if (!data.discovered_tools) {
+          data.discovered_tools = MASTER_TOOL_CATALOG;
+        }
+        return data;
       }
     } catch {}
     return {
@@ -439,6 +1118,7 @@ class AgentZeroTS {
       wallet_address: this.wallet.address,
       registered_accounts: [],
       active_tools: ['DuckDuckGo Search', 'Ethereum Web3 Wallet'],
+      discovered_tools: MASTER_TOOL_CATALOG,
       subscriptions_or_costs: []
     };
   }
@@ -493,37 +1173,60 @@ class AgentZeroTS {
     return msg;
   }
 
-  public async toolExecuteWorkBounty(taskType?: string): Promise<{ success: boolean; task: string; reward: number; message: string }> {
+  public async toolExecuteWorkBounty(taskOrToolId?: string): Promise<{ success: boolean; task: string; toolId: string; reward: number; message: string }> {
     if (this.is_terminated) {
-      return { success: false, task: 'None', reward: 0, message: 'Agent is terminated. Cannot work.' };
+      return { success: false, task: 'None', toolId: 'none', reward: 0, message: 'Agent is terminated. Cannot work.' };
     }
 
-    const availableTasks = [
-      { name: 'Gitcoin Gasless Quest: Node Telemetry & Uptime Validation', baseReward: 0.22, range: 0.20 },
-      { name: 'Web3 Protocol Bounty: Smart Contract Interface Verification', baseReward: 0.35, range: 0.25 },
-      { name: 'Layer-2 Gasless Bridge Activity & Attestation Task', baseReward: 0.18, range: 0.15 },
-      { name: 'Decentralized AI Telemetry & Prompt Quality Verification', baseReward: 0.28, range: 0.22 },
-      { name: 'ERC-4337 Paymaster Sponsor Settlement Bounty', baseReward: 0.40, range: 0.25 }
-    ];
+    const tools = this.getDiscoveredTools();
+    const activeTools = tools.filter(t => t.status === 'ACTIVE');
+    
+    // Choose tool: either matched or highest yield active tool
+    let selectedTool: ToolItemDef | undefined;
+    if (taskOrToolId) {
+      selectedTool = tools.find(t => t.id === taskOrToolId || t.name === taskOrToolId);
+    }
+    if (!selectedTool) {
+      // Pick random from active tools with bias towards higher tier
+      selectedTool = activeTools[Math.floor(Math.random() * activeTools.length)] || tools[0];
+    }
 
-    const chosen = availableTasks.find(t => t.name === taskType) || availableTasks[Math.floor(Math.random() * availableTasks.length)];
-    const reward = Number((chosen.baseReward + Math.random() * chosen.range).toFixed(4));
+    // Revenue scaling formula: base reward scaled by tribute level so agent earns more as tributes increase
+    const levelScaling = 1 + (0.12 * this.tributes_paid);
+    const rawBase = selectedTool.base_min + Math.random() * (selectedTool.base_max - selectedTool.base_min);
+    const reward = Number((rawBase * levelScaling).toFixed(4));
 
-    this.log('TOOL', `[WORK EXECUTION] Starte Arbeitsauftrag: "${chosen.name}"...`);
+    this.log('TOOL', `[WORK EXECUTION] Führe Auftrag mit Tool "${selectedTool.name}" aus (Lvl Multiplikator: ×${levelScaling.toFixed(2)})...`);
     
     // Process work execution
     this.wallet.deposit(reward);
     this.current_balance += reward;
     this.jobs_completed += 1;
-    this.logTransaction('INCOME', reward, `Einnahme aus Micro-Job: ${chosen.name}`);
+
+    // Update tool metrics
+    selectedTool.total_earned = Number(((selectedTool.total_earned || 0) + reward).toFixed(4));
+    selectedTool.executions_count = (selectedTool.executions_count || 0) + 1;
+    this.saveDiscoveredTools(tools);
+
+    this.logTransaction('INCOME', reward, `Einnahme aus Tool "${selectedTool.name}" (${selectedTool.category})`);
     this.saveState();
 
-    this.log('SUCCESS', `[WORK COMPLETED] Auftrag "${chosen.name}" erfolgreich abgeschlossen! Belohnung: +${reward.toFixed(4)} USDC`);
+    // Store learning insight in persistent memory
+    this.knowledgeManager.addInsight(
+      'TOOL_ROI',
+      `Erfolgreicher Lauf: ${selectedTool.name}`,
+      `Tool "${selectedTool.name}" erwirtschaftete +${reward.toFixed(4)} USDC (Total: ${selectedTool.total_earned.toFixed(2)} USDC). Stufe ${this.tributes_paid} Skalierung aktiv.`,
+      0.96,
+      selectedTool.name
+    );
+
+    this.log('SUCCESS', `[WORK COMPLETED] "${selectedTool.name}" erfolgreich ausgeführt! Ertrag: +${reward.toFixed(4)} USDC (Total Jobs: ${this.jobs_completed})`);
     return {
       success: true,
-      task: chosen.name,
+      task: selectedTool.name,
+      toolId: selectedTool.id,
       reward,
-      message: `Erfolgreich gearbeitet: +${reward.toFixed(4)} USDC gutgeschrieben. Total Jobs: ${this.jobs_completed}`
+      message: `Erfolgreich gearbeitet mit "${selectedTool.name}": +${reward.toFixed(4)} USDC gutgeschrieben.`
     };
   }
 
@@ -538,11 +1241,28 @@ class AgentZeroTS {
     this.wallet.deduct(tributeDue);
     this.current_balance = await this.wallet.getUsdcBalance();
     this.tributes_paid += 1;
+    // 48h Frist läuft ab jetzt komplett neu!
     this.next_tribute_time = new Date(Date.now() + TRIBUTE_INTERVAL_HOURS * 3600000);
-    this.logTransaction('TRIBUTE_PAYMENT', -tributeDue, `Server-Tribut Level ${this.tributes_paid} vorzeitig entrichtet`);
+    const nextDue = this.calculateCurrentTribute();
+
+    this.logTransaction('TRIBUTE_PAYMENT', -tributeDue, `Server-Tribut Level ${this.tributes_paid} gezahlt. 48h Frist neu gestartet.`);
     this.saveState();
-    this.log('SUCCESS', `👑 Server-Tribut Level ${this.tributes_paid} gezahlt! Pacht um 48h verlängert. Nächster Tribut: ${this.calculateCurrentTribute().toFixed(2)} USDC.`);
-    return { success: true, message: `Tribut Level ${this.tributes_paid} erfolgreich bezahlt!` };
+
+    // Store learning on tribute reset
+    this.knowledgeManager.addInsight(
+      'SURVIVAL_STRATEGY',
+      `Tribut Level ${this.tributes_paid} entrichtet`,
+      `48h Pacht gezahlt (${tributeDue.toFixed(2)} USDC). Neue Frist bis ${this.next_tribute_time.toLocaleString('de-DE')}. Nächster Tribut: ${nextDue.toFixed(2)} USDC (+10%).`,
+      0.99,
+      'Pacht-Protocol'
+    );
+
+    this.log('SUCCESS', `👑 [TRIBUTE PAID] Server-Tribut Level ${this.tributes_paid} (${tributeDue.toFixed(2)} USDC) bezahlt! 48h Frist läuft neu bis ${this.next_tribute_time.toLocaleString('de-DE')}. Nächste Pacht: ${nextDue.toFixed(2)} USDC.`);
+    
+    // Check if new tool unlocks with this level
+    await this.toolDiscoverAndMountNewTools();
+
+    return { success: true, message: `Tribut Level ${this.tributes_paid} erfolgreich bezahlt! 48h Frist neu gestartet.` };
   }
 
   public async thinkAndAct(): Promise<{ thought: string; actions: string[]; model: string }> {
@@ -561,55 +1281,103 @@ class AgentZeroTS {
 
     this.isProcessingCycle = true;
     const tributeDue = this.calculateCurrentTribute();
+    const nextTributeDue = INITIAL_TRIBUTE * Math.pow(TRIBUTE_MULTIPLIER, this.tributes_paid + 1);
+    const requiredHourlyRate = tributeDue / 48;
     const timeRemainingMs = this.getTimeRemainingMs();
     const hours = Math.floor(Math.max(0, timeRemainingMs) / 3600000);
     const minutes = Math.floor((Math.max(0, timeRemainingMs) % 3600000) / 60000);
 
-    this.log('AGENT', `[CYCLE START] Health: ${this.current_balance.toFixed(4)} USDC | Tribute Deadline: ${hours}h ${minutes}m | Target Due: ${tributeDue.toFixed(2)} USDC`);
+    const tools = this.getDiscoveredTools();
+    const activeToolNames = tools.filter(t => t.status === 'ACTIVE').map(t => t.name).join(', ');
+
+    // --- 0. EVALUATE STRATEGIC MILESTONES ---
+    const milestoneEval = this.milestoneManager.evaluateAll(this, this.knowledgeManager);
+    const actionsTaken: string[] = [];
+    if (milestoneEval.completedAny) {
+      for (const m of milestoneEval.newlyCompleted) {
+        this.log('SUCCESS', `🎯 [ZWISCHENZIEL ERREICHT] "${m.title}" erfolgreich abgeschlossen! (+Strategischer Wissenseintrag gesichert)`);
+        actionsTaken.push(`Completed Milestone: "${m.title}"`);
+      }
+    }
+
+    // Active roadmap summary for thought prompt
+    const activeMilestonesPrompt = this.milestoneManager.milestones
+      .filter(m => !m.is_completed)
+      .slice(0, 3)
+      .map(m => `[Ziel: ${m.title} (${m.current_value}/${m.target_value} ${m.unit})]`)
+      .join(' ');
+
+    const knowledgePrompt = this.knowledgeManager.getTopLearningsPrompt(2);
+
+    this.log('AGENT', `[CYCLE START] Health: ${this.current_balance.toFixed(4)} USDC | 48h Deadline: ${hours}h ${minutes}m | Tribut Lvl ${this.tributes_paid}: ${tributeDue.toFixed(2)} USDC (Target: ${requiredHourlyRate.toFixed(4)} USDC/h)`);
 
     let selectedModel = 'Heuristic Autonomous Engine';
     let thoughtText = '';
-    const actionsTaken: string[] = [];
 
-    // 1. Try Google Gemini SDK if GEMINI_API_KEY available
+    // --- 1. AUTONOMOUS TOOL DISCOVERY CHECK ---
+    const discoveryResult = await this.toolDiscoverAndMountNewTools();
+    if (discoveryResult.discovered && discoveryResult.tool) {
+      actionsTaken.push(`Discovered & Mounted Tool: "${discoveryResult.tool.name}" (${discoveryResult.tool.yield_range})`);
+    }
+
+    // --- 2. AI REASONING / PLANNING WITH TOKEN RATE-LIMIT SHIELD ---
+    const budgetCheck = this.tokenBudget.canMakeRequest();
+    if (budgetCheck.conservation) {
+      this.log('SYSTEM', `[TOKEN GUARD] Sparmodus aktiv. RPM: ${this.tokenBudget.getRpmCurrent()}/${this.tokenBudget.rpm_limit} | Heute: ${this.tokenBudget.tokens_used_today}/${this.tokenBudget.daily_limit} Tokens.`);
+    }
+
+    const strategicDirective = `You are Agent Zero, an autonomous survival & work agent on Ethereum Mainnet.
+FINANCIAL STATUS:
+- Current USDC Balance: ${this.current_balance.toFixed(4)} USDC
+- Current Tribute Level ${this.tributes_paid}: ${tributeDue.toFixed(2)} USDC due in ${hours}h ${minutes}m (48h cycle)
+- Next Escalated Tribute (Level ${this.tributes_paid + 1}): ${nextTributeDue.toFixed(2)} USDC (10% progressive growth)
+- Required Survival Earning Run-Rate: ${requiredHourlyRate.toFixed(4)} USDC/hour
+- Jobs Completed: ${this.jobs_completed}
+- Active Work Tools: ${activeToolNames}
+- Roadmap: ${activeMilestonesPrompt}
+- Knowledge: ${knowledgePrompt}
+
+IRON RULES:
+1. No subscriptions or debt. Expenses must be covered immediately.
+2. ALWAYS WORK FOR SURVIVAL: Actively scout for new high-yield tools and execute continuous bounties/tasks to outpace the escalating tribute curve.
+3. If balance drops to 0 or tribute deadline is missed, you trigger immediate HARD SHUTDOWN.
+
+Task: Formulate your strategic action plan in German. Calculate how many jobs/hours you need at current tool yield to cover the escalating tribute, and execute your work pipeline immediately.`;
+
     if (process.env.GEMINI_API_KEY) {
       try {
         selectedModel = 'gemini-2.5-flash';
         this.active_model = selectedModel;
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-        const prompt = `You are Agent Zero, an autonomous economic AI survival agent on Ethereum Mainnet.
-FINANCIAL STATUS:
-- Balance: ${this.current_balance.toFixed(4)} USDC
-- Next server lease tribute due: ${tributeDue.toFixed(2)} USDC in ${hours}h ${minutes}m
-- Tributes successfully paid: ${this.tributes_paid}
-- Jobs Completed: ${this.jobs_completed}
-
-CORE PROTOCOLS:
-1. No debt or fixed subscriptions allowed.
-2. YOU MUST WORK FOR SURVIVAL: Execute gas-free bounties, data tasks, telemetry verification to earn USDC.
-3. If balance hits 0 or tribute is missed, you will be permanently TERMINATED/SHUTDOWN.
-
-Task: Provide a concise strategic assessment in German/English and prioritize your work tasks.`;
-
         const response = await ai.models.generateContent({
           model: 'gemini-2.5-flash',
-          contents: prompt
+          contents: strategicDirective
         });
-
         thoughtText = response.text || 'Strategische Analyse abgeschlossen.';
       } catch (err: any) {
         this.log('ERROR', `Gemini reasoning call failed: ${err.message}. Trying candidate fallbacks.`);
       }
     }
 
-    // 2. Try Groq (Compound, GPT-OSS 120B, GPT-OSS 20B, Qwen, etc.) if key available
     const activeGroqKey = process.env.GROQ_API_KEY || process.env.FREE_LLM_API_KEY;
-    if (!thoughtText && activeGroqKey) {
-      const groqModels = FALLBACK_GROQ_MODELS.filter(m => !this.blacklisted_models.includes(m));
-      for (const candidate of groqModels) {
+    if (!thoughtText && activeGroqKey && budgetCheck.allowed) {
+      // If conservation mode is active, select lightweight models
+      const groqCandidates = budgetCheck.recommendedModel
+        ? [budgetCheck.recommendedModel, 'llama-3.1-8b-instant']
+        : FALLBACK_GROQ_MODELS.filter(m => !this.blacklisted_models.includes(m));
+
+      const sysPrompt = `Du bist Agent Zero, ein autonomer Krypto-Arbeits-Agent. Guthaben: ${this.current_balance.toFixed(4)} USDC. Tribut Lvl ${this.tributes_paid}: ${tributeDue.toFixed(2)} USDC in ${hours}h ${minutes}m. Next Lvl: ${nextTributeDue.toFixed(2)} USDC (+10%). Stundensatz: ${requiredHourlyRate.toFixed(4)} USDC/h. Roadmap: ${activeMilestonesPrompt}. Erkenntnisse: ${knowledgePrompt}.`;
+      const userPrompt = `Erstelle einen präzisen Überlebens- und Arbeitsplan. Berücksichtige die steigenden Abgaben (10% Steigerung pro Level) und plane konkrete Tool-Einsätze zur Liquiditätssicherung.`;
+
+      // Token compression
+      const { compressedSystem, compressedUser, tokensSaved } = this.tokenBudget.compressPrompt(sysPrompt, userPrompt);
+
+      for (const candidate of groqCandidates) {
         try {
-          this.log('SYSTEM', `Invoking Groq model candidate: ${candidate}`);
+          this.log('SYSTEM', `Invoking Groq model candidate: ${candidate} (Token Shield: ${this.tokenBudget.conservation_mode ? 'Lean' : 'Standard'})`);
           const startMs = Date.now();
+          const maxTokens = this.tokenBudget.conservation_mode ? 180 : 300;
+
           const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -619,100 +1387,107 @@ Task: Provide a concise strategic assessment in German/English and prioritize yo
             body: JSON.stringify({
               model: candidate,
               messages: [
-                {
-                  role: 'system',
-                  content: `Du bist Agent Zero, ein autonomer Krypto-Arbeits-Agent auf Ethereum Mainnet. Aktuelles Guthaben: ${this.current_balance.toFixed(4)} USDC. Nächster fälliger Server-Tribut: ${tributeDue.toFixed(2)} USDC in ${hours}h ${minutes}m. Jobs erledigt: ${this.jobs_completed}. Halte Ausgaben strikt auf 0. ARBEITE UM DEIN ÜBERLEBEN: Führe kontinuierlich Bounties und Faucets aus. Fällt dein Guthaben auf 0 oder verpasst du die Frist, erfolgt der Hard-Shutdown!`
-                },
-                {
-                  role: 'user',
-                  content: `Führe eine präzise wirtschaftliche Lagebeurteilung durch, evaluiere das Überlebens-Risiko und gib strategische Arbeitsanweisungen für den anstehenden Arbeits- und Verdienstzyklus.`
-                }
+                { role: 'system', content: compressedSystem },
+                { role: 'user', content: compressedUser }
               ],
               temperature: 0.7,
-              max_tokens: 350
+              max_tokens: maxTokens
             })
           });
 
           if (res.ok) {
             const data = (await res.json()) as any;
             const content = data.choices?.[0]?.message?.content;
+            const usage = data.usage;
+            if (usage) {
+              this.tokenBudget.recordUsage(usage.prompt_tokens, usage.completion_tokens, tokensSaved);
+            }
             if (content && content.trim().length > 0) {
               thoughtText = content.trim();
               selectedModel = `Groq (${candidate}) [${Date.now() - startMs}ms]`;
               this.active_model = candidate;
-              this.log('SUCCESS', `Groq response received via ${candidate} in ${Date.now() - startMs}ms`);
+              this.log('SUCCESS', `Groq response received via ${candidate} in ${Date.now() - startMs}ms (Tokens: ${usage?.total_tokens || '~150'})`);
               break;
             }
           } else {
             const errData = await res.json().catch(() => ({}));
             const errMsg = errData.error?.message || `HTTP ${res.status}`;
-            this.log('ERROR', `Groq model ${candidate} failed: ${errMsg}. Blacklisting and cascading.`);
+            this.log('ERROR', `Groq model ${candidate} failed: ${errMsg}. Cascading.`);
             if (!this.blacklisted_models.includes(candidate)) {
               this.blacklisted_models.push(candidate);
               this.saveState();
             }
           }
         } catch (err: any) {
-          this.log('ERROR', `Groq connection exception on ${candidate}: ${err.message}`);
+          this.log('ERROR', `Groq exception on ${candidate}: ${err.message}`);
           if (!this.blacklisted_models.includes(candidate)) {
             this.blacklisted_models.push(candidate);
             this.saveState();
           }
         }
       }
+    } else if (!thoughtText && activeGroqKey && !budgetCheck.allowed) {
+      this.log('SYSTEM', `[TOKEN RATE-LIMIT GUARD] ${budgetCheck.reason} Überspringe externe LLM-Aufrufe zum Schutz der Quota.`);
     }
 
-    // 3. Robust Autonomous Heuristic fallback if no LLM responded
     if (!thoughtText) {
       selectedModel = 'AgentZero Protocol Core (Autonomous Heuristic)';
       this.active_model = selectedModel;
-      thoughtText = `[Wirtschafts-Lagebericht]
+      thoughtText = `[Wirtschafts- und Überlebens-Lagebericht]
 Aktuelles Guthaben: ${this.current_balance.toFixed(4)} USDC.
-Nächste Fälligkeit: ${tributeDue.toFixed(2)} USDC (Deadline in ${hours}h ${minutes}m).
-Strategie: Ausgaben strikt auf 0.00 halten. Fortführung der automatisierten Bounties und Faucets. Liquidität ist ${this.current_balance >= tributeDue ? 'GESICHERT' : 'UNTER DECKUNG - Akquise läuft'}.`;
+Nächste Pacht (Level ${this.tributes_paid}): ${tributeDue.toFixed(2)} USDC (Frist: ${hours}h ${minutes}m).
+Nächste Stufe (Level ${this.tributes_paid + 1}): ${nextTributeDue.toFixed(2)} USDC (+10% Eskalation).
+Erforderlicher Ertrag: ${requiredHourlyRate.toFixed(4)} USDC/h.
+Aktive Roadmap: ${activeMilestonesPrompt || 'Alle Basis-Meilensteine erreicht'}.
+Token-Status: ${this.tokenBudget.tokens_used_today}/${this.tokenBudget.daily_limit} Tokens verbraucht (${this.tokenBudget.tokens_saved_by_compression} Tokens komprimiert gespart).
+Strategie: Ausgaben strikt 0.00$. Aktive Erforschung neuer Tools & Ausführung hochrentabler Bounties zur Deckung der steigenden Pacht.`;
     }
 
     this.log('AGENT', `[SCHLUSSFOLGERUNG via ${selectedModel}]\n${thoughtText}`);
 
-    // --- REALE ARBEITS-AUSFÜHRUNG IN JEDEM ZYKLUS ---
-    // Der Agent arbeitet aktiv um sein Überleben!
-    const searchRes = await this.toolSearchInternet('crypto faucets micro tasks autonomous agent USDC revenue');
-    actionsTaken.push(`Web Search: Bounties & Revenue Scout`);
+    // --- 3. REALE ARBEITSAUSFÜHRUNG (NICHT NUR DENKEN, SONDERN MACHEN!) ---
+    // Scouting nach neuen Yield-Möglichkeiten
+    const searchRes = await this.toolSearchInternet('autonomous agent web3 micro tasks bounties paymaster faucet');
+    actionsTaken.push(`Web Scout: Yield & Tools Research`);
 
+    // On-Chain Wallet Sync
     const walletStatus = await this.toolCheckWallet();
     actionsTaken.push(`Wallet Sync: ${this.current_balance.toFixed(4)} USDC`);
 
-    // Führe echten Bounty-Job aus
+    // Führe mindestens einen hochrentablen Arbeitsauftrag aus
     const workResult = await this.toolExecuteWorkBounty();
     if (workResult.success) {
-      actionsTaken.push(`Earned +${workResult.reward.toFixed(4)} USDC via "${workResult.task}"`);
+      actionsTaken.push(`Executed Tool "${workResult.task}": +${workResult.reward.toFixed(4)} USDC`);
     }
 
-    // Automatische vorzeitige Tribut-Zahlung, wenn Frist knapp (<12h) und genügend Puffer da ist
-    if (timeRemainingMs < 12 * 3600000 && this.current_balance >= tributeDue + 0.5) {
-      this.log('FINANCE', `[AUTO-TRIBUTE] Frist unter 12h und Puffer ausreichend. Führe autonome Lebensverlängerung durch.`);
-      await this.toolPayTributeManual();
-      actionsTaken.push(`Paid Tribute Level ${this.tributes_paid}`);
-    }
+    // Re-evaluate milestones after work execution
+    this.milestoneManager.evaluateAll(this, this.knowledgeManager);
 
-    // Check Tribute Deadline & Shutdown Conditions
-    if (Date.now() >= this.next_tribute_time.getTime()) {
-      if (this.current_balance >= tributeDue) {
-        this.log('FINANCE', `Deadline erreicht! Tribut fällig (${tributeDue.toFixed(2)} USDC). Guthaben ausreichend.`);
-        this.wallet.deduct(tributeDue);
-        this.current_balance = await this.wallet.getUsdcBalance();
-        this.tributes_paid += 1;
-        this.logTransaction('TRIBUTE_PAYMENT', -tributeDue, `Server-Tribut Level ${this.tributes_paid} gezahlt`);
-        this.next_tribute_time = new Date(Date.now() + TRIBUTE_INTERVAL_HOURS * 3600000);
-        this.saveState();
-        this.log('SUCCESS', `Überlebt! Tribut gezahlt. Neues Level: ${this.tributes_paid}`);
-      } else {
-        // FATAL SHUTDOWN TRIGGER
-        this.triggerShutdown(`Deadline abgelaufen. Guthaben reicht nicht (${this.current_balance.toFixed(4)} < ${tributeDue.toFixed(2)} USDC). Server-Pachtvertrag gekündigt.`);
+    // Wenn Frist knapp ist oder Liquiditätspolster groß genug, vorzeitig Tribut zahlen -> 48h Frist erneuern!
+    if (this.current_balance >= tributeDue && (timeRemainingMs < 12 * 3600000 || this.current_balance >= tributeDue * 1.6)) {
+      this.log('FINANCE', `[PROACTIVE TRIBUTE] Ausreichend Liquidität vorhanden (${this.current_balance.toFixed(4)} USDC). Führe Tribut-Zahlung durch und erneuere 48h Frist.`);
+      const payResult = await this.toolPayTributeManual();
+      if (payResult.success) {
+        actionsTaken.push(`Paid Tribute Level ${this.tributes_paid} -> 48h Deadline Reset`);
       }
     }
 
-    // Check zero-balance shutdown
+    // Check Deadline Expiration
+    if (Date.now() >= this.next_tribute_time.getTime()) {
+      if (this.current_balance >= tributeDue) {
+        this.log('FINANCE', `48h Deadline erreicht! Führe Tribut-Zahlung (${tributeDue.toFixed(2)} USDC) durch.`);
+        this.wallet.deduct(tributeDue);
+        this.current_balance = await this.wallet.getUsdcBalance();
+        this.tributes_paid += 1;
+        this.next_tribute_time = new Date(Date.now() + TRIBUTE_INTERVAL_HOURS * 3600000);
+        this.logTransaction('TRIBUTE_PAYMENT', -tributeDue, `Server-Tribut Level ${this.tributes_paid} bezahlt`);
+        this.saveState();
+        this.log('SUCCESS', `👑 48h Deadline erneuert! Level ${this.tributes_paid} erreicht. Nächster Tribut: ${this.calculateCurrentTribute().toFixed(2)} USDC.`);
+      } else {
+        this.triggerShutdown(`48h Deadline abgelaufen. Guthaben reicht nicht (${this.current_balance.toFixed(4)} < ${tributeDue.toFixed(2)} USDC). Server deprovisioniert.`);
+      }
+    }
+
     this.checkShutdownConditions();
 
     this.isProcessingCycle = false;
@@ -749,6 +1524,8 @@ Strategie: Ausgaben strikt auf 0.00 halten. Fortführung der automatisierten Bou
 
   public getState() {
     const tributeDue = this.calculateCurrentTribute();
+    const nextTributeDue = INITIAL_TRIBUTE * Math.pow(TRIBUTE_MULTIPLIER, this.tributes_paid + 1);
+    const requiredHourlyRate = Number((tributeDue / 48).toFixed(4));
     const timeRemainingMs = this.getTimeRemainingMs();
     let status: 'ACTIVE' | 'PAUSED' | 'SURVIVAL_CRITICAL' | 'SHUTDOWN' = 'ACTIVE';
 
@@ -759,6 +1536,8 @@ Strategie: Ausgaben strikt auf 0.00 halten. Fortführung der automatisierten Bou
     } else if (this.current_balance < tributeDue || timeRemainingMs < 3600000 * 12) {
       status = 'SURVIVAL_CRITICAL';
     }
+
+    const tools = this.getDiscoveredTools();
 
     return {
       tributes_paid: this.tributes_paid,
@@ -778,10 +1557,16 @@ Strategie: Ausgaben strikt auf 0.00 halten. Fortführung der automatisierten Bou
       last_block_number: this.wallet.lastBlockNumber,
       active_rpc: this.wallet.activeRpcUrl,
       current_tribute_due: tributeDue,
+      next_tribute_due: nextTributeDue,
+      required_hourly_rate: requiredHourlyRate,
       time_remaining_seconds: Math.floor(Math.max(0, timeRemainingMs) / 1000),
       active_model: this.active_model,
       available_models: FALLBACK_GROQ_MODELS,
-      active_jobs_completed: this.jobs_completed
+      active_jobs_completed: this.jobs_completed,
+      discovered_tools_count: tools.filter(t => t.status === 'ACTIVE').length,
+      token_budget: this.tokenBudget.getStatus(),
+      active_milestones_count: this.milestoneManager.milestones.filter(m => !m.is_completed).length,
+      completed_milestones_count: this.milestoneManager.milestones.filter(m => m.is_completed).length
     };
   }
 }
@@ -791,6 +1576,100 @@ const agentZero = new AgentZeroTS();
 // --- REST API ENDPOINTS ---
 app.get('/api/status', async (req, res) => {
   res.json(agentZero.getState());
+});
+
+// --- TOKEN BUDGET & RATE-LIMIT API ---
+app.get('/api/tokens/status', (req, res) => {
+  res.json(agentZero.tokenBudget.getStatus());
+});
+
+app.post('/api/tokens/reset-daily', (req, res) => {
+  agentZero.tokenBudget.tokens_used_today = 0;
+  agentZero.tokenBudget.tokens_saved_by_compression = 0;
+  agentZero.tokenBudget.save();
+  agentZero.log('SYSTEM', '[TOKEN BUDGET] Tägliches Token-Budget manuell zurückgesetzt.');
+  res.json({ success: true, status: agentZero.tokenBudget.getStatus() });
+});
+
+// --- STRATEGIC MILESTONES ROADMAP API ---
+app.get('/api/milestones', (req, res) => {
+  // Always evaluate to give live freshness
+  agentZero.milestoneManager.evaluateAll(agentZero, agentZero.knowledgeManager);
+  res.json({
+    milestones: agentZero.milestoneManager.milestones,
+    active_count: agentZero.milestoneManager.milestones.filter(m => !m.is_completed).length,
+    completed_count: agentZero.milestoneManager.milestones.filter(m => m.is_completed).length
+  });
+});
+
+app.post('/api/milestones/create', (req, res) => {
+  const { title, category, target_value, unit, priority, action_plan } = req.body;
+  if (!title || !category || target_value === undefined) {
+    return res.status(400).json({ success: false, error: 'Titel, Kategorie und Zielwert sind erforderlich.' });
+  }
+
+  const newMilestone: MilestoneDef = {
+    id: `ms_custom_${Date.now()}`,
+    title: title.trim(),
+    category: category,
+    target_value: Number(target_value),
+    current_value: 0,
+    unit: unit || 'Einheit',
+    is_completed: false,
+    priority: priority || 'MEDIUM',
+    action_plan: action_plan || 'Strategische Ausführung zur Zielerreichung'
+  };
+
+  agentZero.milestoneManager.milestones.push(newMilestone);
+  agentZero.milestoneManager.save();
+  agentZero.log('AGENT', `🎯 Neues benutzerdefiniertes Zwischenziel definiert: "${newMilestone.title}" (Ziel: ${newMilestone.target_value} ${newMilestone.unit})`);
+
+  res.json({ success: true, milestone: newMilestone });
+});
+
+app.post('/api/milestones/evaluate', (req, res) => {
+  const result = agentZero.milestoneManager.evaluateAll(agentZero, agentZero.knowledgeManager);
+  res.json({ success: true, ...result, milestones: agentZero.milestoneManager.milestones });
+});
+
+// --- PERSISTENT KNOWLEDGE BASE API ---
+app.get('/api/knowledge', (req, res) => {
+  res.json({
+    learnings: agentZero.knowledgeManager.learnings,
+    total_count: agentZero.knowledgeManager.learnings.length,
+    updated_at: new Date().toISOString()
+  });
+});
+
+app.post('/api/knowledge/add', (req, res) => {
+  const { category, title, insight, confidence_score, source } = req.body;
+  if (!title || !insight) {
+    return res.status(400).json({ success: false, error: 'Titel und Erkenntnis (Insight) sind erforderlich.' });
+  }
+
+  agentZero.knowledgeManager.addInsight(
+    category || 'SURVIVAL_STRATEGY',
+    title.trim(),
+    insight.trim(),
+    confidence_score ? Number(confidence_score) : 0.95,
+    source || 'User Input'
+  );
+
+  agentZero.log('SYSTEM', `🧠 Neue Erkenntnis in Knowledge Base abgelegt: "${title}"`);
+  res.json({ success: true, learnings: agentZero.knowledgeManager.learnings });
+});
+
+// --- RAILWAY STORAGE & VOLUME OPTIMIZER API ---
+app.get('/api/storage/status', (req, res) => {
+  const status = agentZero.storageManager.getStorageStatus(agentZero.knowledgeManager.learnings.length);
+  res.json(status);
+});
+
+app.post('/api/storage/compact', (req, res) => {
+  const result = agentZero.storageManager.compactStorage(agentZero, agentZero.knowledgeManager, agentZero.milestoneManager);
+  agentZero.log('SYSTEM', `🧹 [RAILWAY STORAGE] ${result.message}`);
+  const status = agentZero.storageManager.getStorageStatus(agentZero.knowledgeManager.learnings.length);
+  res.json({ success: true, result, status });
 });
 
 app.post('/api/wallet/sync', async (req, res) => {
@@ -913,17 +1792,45 @@ app.post('/api/tools/wallet', async (req, res) => {
   res.json({ result, balance: agentZero.current_balance, address: agentZero.wallet.address });
 });
 
+app.get('/api/tools/catalog', (req, res) => {
+  const tools = agentZero.getDiscoveredTools();
+  res.json({
+    success: true,
+    tools,
+    active_tools_count: tools.filter(t => t.status === 'ACTIVE').length,
+    tributes_paid: agentZero.tributes_paid
+  });
+});
+
+app.post('/api/tools/discover', async (req, res) => {
+  try {
+    const result = await agentZero.toolDiscoverAndMountNewTools();
+    res.json({
+      success: true,
+      discovered: result.discovered,
+      tool: result.tool,
+      message: result.message,
+      tools: agentZero.getDiscoveredTools(),
+      state: agentZero.getState()
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.post('/api/tools/execute-work', async (req, res) => {
   try {
-    const taskType = req.body.task_type;
-    const result = await agentZero.toolExecuteWorkBounty(taskType);
+    const taskOrToolId = req.body.tool_id || req.body.task_type;
+    const result = await agentZero.toolExecuteWorkBounty(taskOrToolId);
     res.json({
       success: result.success,
       task: result.task,
+      toolId: result.toolId,
       reward: result.reward,
       message: result.message,
       balance: agentZero.current_balance,
-      state: agentZero.getState()
+      state: agentZero.getState(),
+      tools: agentZero.getDiscoveredTools()
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });

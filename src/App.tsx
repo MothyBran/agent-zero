@@ -7,7 +7,10 @@ import { LedgerTable } from './components/LedgerTable';
 import { ToolSandbox } from './components/ToolSandbox';
 import { BusinessProfileCard } from './components/BusinessProfileCard';
 import { GroqModelsCard } from './components/GroqModelsCard';
-import { LayoutDashboard, FileText, Wrench, Shield, Cpu, AlertTriangle } from 'lucide-react';
+import { MilestonesCard } from './components/MilestonesCard';
+import { TokenBudgetCard } from './components/TokenBudgetCard';
+import { RailwayStorageCard } from './components/RailwayStorageCard';
+import { LayoutDashboard, Target, Gauge, HardDrive, FileText, Wrench, Shield, Cpu, AlertTriangle } from 'lucide-react';
 
 export function App() {
   const [state, setState] = useState<AgentState | null>(null);
@@ -17,7 +20,7 @@ export function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [isProcessingCycle, setIsProcessingCycle] = useState(false);
   const [isSyncingWallet, setIsSyncingWallet] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'models' | 'ledger' | 'tools' | 'profile'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'milestones' | 'tokens' | 'storage' | 'models' | 'ledger' | 'tools' | 'profile'>('dashboard');
 
   const safeJsonFetch = async <T,>(url: string, init?: RequestInit): Promise<T | null> => {
     try {
@@ -192,12 +195,12 @@ export function App() {
     }
   };
 
-  const handleExecuteWork = async (taskType?: string) => {
+  const handleExecuteWork = async (taskOrToolId?: string) => {
     try {
       const res = await fetch('/api/tools/execute-work', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ taskType })
+        body: JSON.stringify({ tool_id: taskOrToolId, task_type: taskOrToolId })
       });
       if (res.ok) {
         await fetchAllData();
@@ -295,7 +298,43 @@ export function App() {
             }`}
           >
             <LayoutDashboard className="w-3.5 h-3.5" />
-            <span>Agent Operations & Telemetry</span>
+            <span>Operations & Live Loop</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('milestones')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all ${
+              activeTab === 'milestones'
+                ? 'bg-slate-900 text-emerald-400 border-t-2 border-emerald-500 border-x border-slate-800'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
+            }`}
+          >
+            <Target className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Roadmap & Zwischenziele ({state?.active_milestones_count ?? 0})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('tokens')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all ${
+              activeTab === 'tokens'
+                ? 'bg-slate-900 text-amber-400 border-t-2 border-amber-500 border-x border-slate-800'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
+            }`}
+          >
+            <Gauge className="w-3.5 h-3.5 text-amber-400" />
+            <span>Token-Budget & Shield</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('storage')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all ${
+              activeTab === 'storage'
+                ? 'bg-slate-900 text-indigo-400 border-t-2 border-indigo-500 border-x border-slate-800'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
+            }`}
+          >
+            <HardDrive className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Railway Storage & Memory</span>
           </button>
 
           <button
@@ -307,7 +346,7 @@ export function App() {
             }`}
           >
             <Cpu className="w-3.5 h-3.5 text-amber-400" />
-            <span>Groq Intelligence & LLMs</span>
+            <span>Groq Intelligence</span>
           </button>
 
           <button
@@ -319,7 +358,7 @@ export function App() {
             }`}
           >
             <FileText className="w-3.5 h-3.5" />
-            <span>Accounting Ledger ({transactions.length})</span>
+            <span>Accounting ({transactions.length})</span>
           </button>
 
           <button
@@ -343,36 +382,60 @@ export function App() {
             }`}
           >
             <Shield className="w-3.5 h-3.5" />
-            <span>Business Entity & Governance</span>
+            <span>Business Entity</span>
           </button>
         </div>
 
         {/* Tab Contents */}
         {activeTab === 'dashboard' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 space-y-6">
-              <TerminalLogs logs={logs} />
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 space-y-6">
+                <MilestonesCard />
+                <TerminalLogs logs={logs} />
+              </div>
+              <div className="space-y-6">
+                <TokenBudgetCard />
+                <ToolSandbox
+                  onExecuteSearch={handleSearchTool}
+                  onExecuteWallet={handleWalletTool}
+                  onExecuteWork={handleExecuteWork}
+                  onPayTribute={handlePayTribute}
+                />
+                <RailwayStorageCard />
+                <BusinessProfileCard
+                  profile={profile}
+                  onResetAgent={handleResetAgent}
+                  onClearBlacklist={handleClearBlacklist}
+                  blacklistedCount={state?.blacklisted_models?.length || 0}
+                />
+              </div>
             </div>
-            <div className="space-y-6">
-              <GroqModelsCard />
-              <ToolSandbox
-                onExecuteSearch={handleSearchTool}
-                onExecuteWallet={handleWalletTool}
-                onExecuteWork={handleExecuteWork}
-                onPayTribute={handlePayTribute}
-              />
-              <BusinessProfileCard
-                profile={profile}
-                onResetAgent={handleResetAgent}
-                onClearBlacklist={handleClearBlacklist}
-                blacklistedCount={state?.blacklisted_models?.length || 0}
-              />
-            </div>
+          </div>
+        )}
+
+        {activeTab === 'milestones' && (
+          <div className="space-y-6">
+            <MilestonesCard />
+          </div>
+        )}
+
+        {activeTab === 'tokens' && (
+          <div className="space-y-6">
+            <TokenBudgetCard />
+            <GroqModelsCard />
+          </div>
+        )}
+
+        {activeTab === 'storage' && (
+          <div className="space-y-6">
+            <RailwayStorageCard />
           </div>
         )}
 
         {activeTab === 'models' && (
           <div className="space-y-6">
+            <TokenBudgetCard />
             <GroqModelsCard />
           </div>
         )}

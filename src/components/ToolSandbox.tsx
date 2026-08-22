@@ -1,32 +1,77 @@
-import React, { useState } from 'react';
-import { Search, Wallet, Play, CheckCircle2, AlertCircle, Globe, Terminal, Award, Shield, Zap } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, Wallet, Play, CheckCircle2, AlertCircle, Globe, Terminal, Award, Shield, Zap, Sparkles, Lock, Unlock, TrendingUp } from 'lucide-react';
+import { ToolItem } from '../types';
 
 interface ToolSandboxProps {
   onExecuteSearch: (query: string) => Promise<string>;
   onExecuteWallet: () => Promise<string>;
-  onExecuteWork?: (taskType?: string) => Promise<void>;
+  onExecuteWork?: (taskOrToolId?: string) => Promise<void>;
   onPayTribute?: () => Promise<void>;
+  tributesPaid?: number;
 }
 
 export const ToolSandbox: React.FC<ToolSandboxProps> = ({
   onExecuteSearch,
   onExecuteWallet,
   onExecuteWork,
-  onPayTribute
+  onPayTribute,
+  tributesPaid = 0
 }) => {
+  const [tools, setTools] = useState<ToolItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('crypto micro tasks bounties faucets usdc');
-  const [selectedTask, setSelectedTask] = useState('Gitcoin Gasless Quest: Node Telemetry & Uptime Validation');
+  const [selectedToolId, setSelectedToolId] = useState<string>('tool-gitcoin');
   const [isSearching, setIsSearching] = useState(false);
   const [isCheckingWallet, setIsCheckingWallet] = useState(false);
   const [isExecutingWork, setIsExecutingWork] = useState(false);
   const [isPayingTribute, setIsPayingTribute] = useState(false);
   const [isAuditing, setIsAuditing] = useState(false);
+  const [isDiscovering, setIsDiscovering] = useState(false);
   
   const [searchResult, setSearchResult] = useState<string | null>(null);
   const [walletResult, setWalletResult] = useState<string | null>(null);
   const [workResult, setWorkResult] = useState<string | null>(null);
   const [tributeResult, setTributeResult] = useState<string | null>(null);
   const [auditResult, setAuditResult] = useState<string | null>(null);
+  const [discoveryMsg, setDiscoveryMsg] = useState<string | null>(null);
+
+  const fetchCatalog = async () => {
+    try {
+      const res = await fetch('/api/tools/catalog');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.tools) {
+          setTools(data.tools);
+          const activeOnes = data.tools.filter((t: ToolItem) => t.status === 'ACTIVE');
+          if (activeOnes.length > 0 && !activeOnes.some((t: ToolItem) => t.id === selectedToolId)) {
+            setSelectedToolId(activeOnes[0].id);
+          }
+        }
+      }
+    } catch {}
+  };
+
+  useEffect(() => {
+    fetchCatalog();
+    const interval = setInterval(fetchCatalog, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleDiscoverNewTool = async () => {
+    setIsDiscovering(true);
+    setDiscoveryMsg(null);
+    try {
+      const res = await fetch('/api/tools/discover', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setDiscoveryMsg(data.message || 'Neues Tool erfolgreich erforscht!');
+        if (data.tools) setTools(data.tools);
+      }
+    } catch (err: any) {
+      setDiscoveryMsg(`Fehler bei Tool-Erforschung: ${err.message}`);
+    } finally {
+      setIsDiscovering(false);
+    }
+  };
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,12 +99,15 @@ export const ToolSandbox: React.FC<ToolSandboxProps> = ({
     }
   };
 
-  const handleWorkExecute = async () => {
+  const handleWorkExecute = async (toolIdToRun?: string) => {
     if (!onExecuteWork) return;
+    const target = toolIdToRun || selectedToolId;
     setIsExecutingWork(true);
     try {
-      await onExecuteWork(selectedTask);
-      setWorkResult(`✅ Arbeitsauftrag "${selectedTask}" erfolgreich abgeschlossen. Vergütung wurde gutgeschrieben.`);
+      await onExecuteWork(target);
+      const chosen = tools.find(t => t.id === target);
+      setWorkResult(`✅ Tool "${chosen?.name || target}" erfolgreich ausgeführt! Ertrag gutgeschrieben.`);
+      fetchCatalog();
     } catch (err: any) {
       setWorkResult(`Fehler: ${err.message}`);
     } finally {
@@ -72,7 +120,8 @@ export const ToolSandbox: React.FC<ToolSandboxProps> = ({
     setIsPayingTribute(true);
     try {
       await onPayTribute();
-      setTributeResult(`👑 Server-Tribut erfolgreich bezahlt! Pacht um 48h verlängert.`);
+      setTributeResult(`👑 Server-Tribut erfolgreich entrichtet! 48h Überlebensfrist neu gestartet.`);
+      fetchCatalog();
     } catch (err: any) {
       setTributeResult(`Fehler: ${err.message}`);
     } finally {
@@ -93,71 +142,115 @@ export const ToolSandbox: React.FC<ToolSandboxProps> = ({
     }
   };
 
+  const activeTools = tools.filter(t => t.status === 'ACTIVE');
+  const lockedTools = tools.filter(t => t.status === 'LOCKED');
+
   return (
     <div id="tool-sandbox-card" className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
         <div className="flex items-center gap-2">
           <Globe className="w-4 h-4 text-emerald-400" />
-          <h2 className="text-xs font-mono font-bold text-slate-200 uppercase tracking-wider">
-            Agent Zero Autonomous Tools Sandbox (Live Arbeitsplatz)
-          </h2>
+          <div>
+            <h2 className="text-xs font-mono font-bold text-slate-200 uppercase tracking-wider">
+              Agent Zero Autonomous Tool Catalog & Workbench
+            </h2>
+            <p className="text-[11px] text-slate-400">
+              Der Agent schaltet eigenständig neue Ertrags-Werkzeuge frei und setzt sie ein, um steigende Abgaben zu überbieten.
+            </p>
+          </div>
         </div>
-        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-          5 Work & Survival Tools Mounted
-        </span>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleDiscoverNewTool}
+            disabled={isDiscovering}
+            className="flex items-center gap-1.5 px-3 py-1 rounded bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 text-xs font-mono font-medium transition-all disabled:opacity-50 cursor-pointer"
+            title="Sucht und aktiviert das nächste freischaltbare Tool"
+          >
+            <Sparkles className={`w-3.5 h-3.5 ${isDiscovering ? 'animate-spin' : 'text-purple-400'}`} />
+            <span>{isDiscovering ? 'Scouting Tools...' : 'Scout & Discover Tool'}</span>
+          </button>
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            {activeTools.length} Active / {tools.length} Tools
+          </span>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Tool 1: execute_work_bounty */}
-        <div className="bg-slate-950/60 border border-blue-900/40 rounded-lg p-4 space-y-3 flex flex-col justify-between">
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-slate-200">
-                <Award className="w-3.5 h-3.5 text-blue-400" />
-                <span>execute_work_bounty(task)</span>
-              </div>
-              <span className="text-[10px] font-mono text-blue-400 bg-blue-950/80 border border-blue-800/60 px-1.5 py-0.5 rounded">
-                Revenue Earning Worker
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-400">
-              Führt einen verifizierten Arbeitsauftrag für Web3-Protokolle aus und bucht echte USDC-Erträge in das Ledger.
-            </p>
+      {discoveryMsg && (
+        <div className="p-2.5 rounded bg-purple-950/40 border border-purple-800/60 text-xs font-mono text-purple-200 flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />
+          <span>{discoveryMsg}</span>
+        </div>
+      )}
 
-            <div className="space-y-2 pt-1">
-              <select
-                value={selectedTask}
-                onChange={(e) => setSelectedTask(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-blue-500 font-mono"
-              >
-                <option value="Gitcoin Gasless Quest: Node Telemetry & Uptime Validation">Gitcoin Gasless Quest (~0.22 - 0.42 USDC)</option>
-                <option value="Web3 Protocol Bounty: Smart Contract Interface Verification">Web3 Protocol Bounty (~0.35 - 0.60 USDC)</option>
-                <option value="Layer-2 Gasless Bridge Activity & Attestation Task">Layer-2 Bridge Task (~0.18 - 0.33 USDC)</option>
-                <option value="Decentralized AI Telemetry & Prompt Quality Verification">AI Telemetry Verification (~0.28 - 0.50 USDC)</option>
-                <option value="ERC-4337 Paymaster Sponsor Settlement Bounty">Paymaster Settlement (~0.40 - 0.65 USDC)</option>
-              </select>
-
-              <button
-                type="button"
-                onClick={handleWorkExecute}
-                disabled={isExecutingWork}
-                className="w-full py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-md text-xs font-medium flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
-              >
-                <Play className={`w-3 h-3 ${isExecutingWork ? 'animate-spin' : ''}`} />
-                <span>{isExecutingWork ? 'Working & Verifying...' : 'Arbeitsauftrag ausführen (+USDC)'}</span>
-              </button>
-            </div>
-          </div>
-
-          {workResult && (
-            <div className="mt-2 p-2.5 bg-slate-900 border border-blue-900/60 rounded text-xs font-mono text-slate-300 whitespace-pre-wrap max-h-36 overflow-y-auto">
-              <div className="text-[10px] text-blue-400 font-bold mb-1">RESULT:</div>
-              {workResult}
-            </div>
-          )}
+      {/* Grid of Dynamic Discovered Tools */}
+      <div className="space-y-2">
+        <div className="text-[11px] font-mono uppercase tracking-wider text-slate-400 flex items-center justify-between">
+          <span>Verfügbare & Freigeschaltete Ertrags-Werkzeuge</span>
+          <span className="text-[10px] text-slate-500">Skaliert mit Survival-Level (+12% pro Lvl)</span>
         </div>
 
-        {/* Tool 2: pay_server_tribute */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {tools.map((tool) => {
+            const isActive = tool.status === 'ACTIVE';
+            return (
+              <div
+                key={tool.id}
+                className={`p-3 rounded-lg border flex flex-col justify-between transition-all ${
+                  isActive
+                    ? 'bg-slate-950/80 border-slate-700/80 hover:border-emerald-500/50'
+                    : 'bg-slate-950/30 border-slate-850 opacity-60'
+                }`}
+              >
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                      {tool.category}
+                    </span>
+                    <span
+                      className={`text-[10px] font-mono font-bold flex items-center gap-1 ${
+                        isActive ? 'text-emerald-400' : 'text-amber-400/80'
+                      }`}
+                    >
+                      {isActive ? <Unlock className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
+                      {isActive ? 'ACTIVE' : `Lvl ${tool.min_level_required}+`}
+                    </span>
+                  </div>
+
+                  <h3 className="text-xs font-bold font-mono text-slate-200 line-clamp-1">{tool.name}</h3>
+                  <p className="text-[11px] text-slate-400 line-clamp-2">{tool.description}</p>
+                </div>
+
+                <div className="pt-2 mt-2 border-t border-slate-800/80 space-y-2">
+                  <div className="flex items-center justify-between text-[10px] font-mono">
+                    <span className="text-slate-400">Ertrag:</span>
+                    <span className="text-emerald-400 font-bold">{tool.yield_range}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
+                    <span>Erledigt: {tool.executions_count || 0}×</span>
+                    <span>Verdienst: +{(tool.total_earned || 0).toFixed(4)} USDC</span>
+                  </div>
+
+                  {isActive && onExecuteWork && (
+                    <button
+                      onClick={() => handleWorkExecute(tool.id)}
+                      disabled={isExecutingWork}
+                      className="w-full py-1 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded text-[11px] font-mono font-medium flex items-center justify-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
+                    >
+                      <Play className="w-3 h-3" />
+                      <span>Ausführen (+USDC)</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Core Infrastructure Tools (Search, Wallet, Tribute) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-2">
+        {/* Tool: pay_server_tribute */}
         <div className="bg-slate-950/60 border border-amber-900/40 rounded-lg p-4 space-y-3 flex flex-col justify-between">
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -166,11 +259,11 @@ export const ToolSandbox: React.FC<ToolSandboxProps> = ({
                 <span>pay_server_tribute()</span>
               </div>
               <span className="text-[10px] font-mono text-amber-400 bg-amber-950/80 border border-amber-800/60 px-1.5 py-0.5 rounded">
-                Survival Life Extension
+                48h Frist-Erneuerung
               </span>
             </div>
             <p className="text-[11px] text-slate-400">
-              Begleicht den anstehenden Server-Tribut vorzeitig vom USDC-Guthaben, erhöht das Level und setzt die 48h-Deadline zurück.
+              Begleicht den aktuellen Pacht-Tribut vom On-Chain USDC Saldo, schaltet neue Tool-Stufen frei und <strong>setzt die 48h Überlebens-Frist komplett neu</strong>.
             </p>
 
             <div className="pt-1">
@@ -181,7 +274,7 @@ export const ToolSandbox: React.FC<ToolSandboxProps> = ({
                 className="w-full py-1.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white rounded-md text-xs font-medium flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
               >
                 <Play className={`w-3 h-3 ${isPayingTribute ? 'animate-spin' : ''}`} />
-                <span>{isPayingTribute ? 'Paying Tribute...' : 'Server-Pacht zahlen (+48h Überleben)'}</span>
+                <span>{isPayingTribute ? 'Paying Tribute...' : 'Server-Pacht zahlen (+48h Überlebensfrist neu starten)'}</span>
               </button>
             </div>
           </div>
@@ -194,50 +287,7 @@ export const ToolSandbox: React.FC<ToolSandboxProps> = ({
           )}
         </div>
 
-        {/* Tool 3: search_internet */}
-        <div className="bg-slate-950/60 border border-slate-800/80 rounded-lg p-4 space-y-3 flex flex-col justify-between">
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-slate-200">
-                <Search className="w-3.5 h-3.5 text-emerald-400" />
-                <span>search_internet(query)</span>
-              </div>
-              <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded">
-                DuckDuckGo Live Search
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-400">
-              Durchsucht Live-Quellen nach gasfreien Faucets, Bounties, Airdrops und Yield-Möglichkeiten.
-            </p>
-
-            <form onSubmit={handleSearch} className="flex gap-2 pt-1">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Suchbegriff eingeben..."
-                className="flex-1 bg-slate-900 border border-slate-700 rounded-md px-3 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-emerald-500 font-mono"
-              />
-              <button
-                type="submit"
-                disabled={isSearching}
-                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-md text-xs font-medium flex items-center gap-1 cursor-pointer transition-colors"
-              >
-                <Play className={`w-3 h-3 ${isSearching ? 'animate-spin' : ''}`} />
-                <span>Scout</span>
-              </button>
-            </form>
-          </div>
-
-          {searchResult && (
-            <div className="mt-2 p-2.5 bg-slate-900 border border-slate-800 rounded text-xs font-mono text-slate-300 whitespace-pre-wrap max-h-36 overflow-y-auto">
-              <div className="text-[10px] text-emerald-400 font-bold mb-1">OUTPUT:</div>
-              {searchResult}
-            </div>
-          )}
-        </div>
-
-        {/* Tool 4: check_blockchain_wallet */}
+        {/* Tool: check_blockchain_wallet & Audit */}
         <div className="bg-slate-950/60 border border-slate-800/80 rounded-lg p-4 space-y-3 flex flex-col justify-between">
           <div className="space-y-2">
             <div className="flex items-center justify-between">

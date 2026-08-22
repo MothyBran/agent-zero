@@ -175,7 +175,7 @@ export const VitalsGrid: React.FC<VitalsGridProps> = ({
         {/* Card 2: Next Server Tribute Due */}
         <div id="vital-tribute-card" className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-xs font-medium uppercase tracking-wider">Next Tribute Cost</span>
+            <span className="text-xs font-medium uppercase tracking-wider">Tribut Pacht (48h)</span>
             <div className="p-1.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20">
               <ShieldAlert className="w-4 h-4" />
             </div>
@@ -192,16 +192,23 @@ export const VitalsGrid: React.FC<VitalsGridProps> = ({
                 <button
                   onClick={handleManualTribute}
                   disabled={isPayingTribute}
-                  title="Tribut vorzeitig begleichen und Pacht um 48h verlängern"
-                  className="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-[10px] font-mono font-semibold transition-all disabled:opacity-50"
+                  title="Tribut zahlen und 48h Frist ab jetzt neu starten!"
+                  className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-[10px] font-mono font-semibold transition-all disabled:opacity-50 cursor-pointer"
                 >
-                  {isPayingTribute ? 'Paying...' : 'Pay Now'}
+                  {isPayingTribute ? 'Zahle...' : 'Zahlen (48h Reset)'}
                 </button>
               )}
             </div>
-            <p className="text-[11px] text-slate-400 mt-1">
-              Level {state?.tributes_paid ?? 0} → {((state?.tributes_paid ?? 0) + 1)} · 10% scaling
-            </p>
+            <div className="text-[11px] text-slate-400 mt-1 space-y-0.5">
+              <div className="flex justify-between">
+                <span>Nächste Stufe (+10%):</span>
+                <span className="text-amber-300/90 font-mono">{(state?.next_tribute_due ?? (tributeDue * 1.1)).toFixed(2)} USDC</span>
+              </div>
+              <div className="flex justify-between text-slate-500">
+                <span>Soll-Ertrag:</span>
+                <span className="font-mono text-emerald-400/90">{(state?.required_hourly_rate ?? (tributeDue / 48)).toFixed(4)} USDC/h</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -210,7 +217,7 @@ export const VitalsGrid: React.FC<VitalsGridProps> = ({
           isTerminated ? 'border-rose-900/60' : 'border-slate-800'
         }`}>
           <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-xs font-medium uppercase tracking-wider">Survival Deadline</span>
+            <span className="text-xs font-medium uppercase tracking-wider">48h Überlebens-Frist</span>
             <div className="p-1.5 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20">
               <Clock className="w-4 h-4" />
             </div>
@@ -226,7 +233,7 @@ export const VitalsGrid: React.FC<VitalsGridProps> = ({
               <span className="text-slate-400 text-xl">{String(seconds).padStart(2, '0')}</span>
             </div>
             <p className="text-[11px] text-slate-400 mt-1">
-              {isTerminated ? 'Expired · Host deprovisioned' : 'Hard shutdown if 0$ or missed'}
+              {isTerminated ? 'Frist abgelaufen · Server deprovisioniert' : 'Startet bei jeder Zahlung für volle 48h neu'}
             </p>
           </div>
         </div>
@@ -234,7 +241,7 @@ export const VitalsGrid: React.FC<VitalsGridProps> = ({
         {/* Card 4: Tributes Paid / Generations */}
         <div id="vital-generations-card" className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-xs font-medium uppercase tracking-wider">Survival Level & Jobs</span>
+            <span className="text-xs font-medium uppercase tracking-wider">Level & Tools</span>
             <div className="p-1.5 rounded-md bg-purple-500/10 text-purple-400 border border-purple-500/20">
               <Award className="w-4 h-4" />
             </div>
@@ -245,11 +252,11 @@ export const VitalsGrid: React.FC<VitalsGridProps> = ({
                 Lvl {state?.tributes_paid ?? 0}
               </span>
               <span className="text-xs text-purple-400 font-mono">
-                ({state?.active_jobs_completed ?? 0} Jobs Done)
+                ({state?.discovered_tools_count ?? 4} Tools aktiv)
               </span>
             </div>
             <p className="text-[11px] text-slate-400 mt-1">
-              Active: <span className="text-slate-300 font-mono">{state?.active_model || 'Groq / Gemini'}</span>
+              Erledigte Aufträge: <span className="text-slate-200 font-mono">{state?.active_jobs_completed ?? 0} Jobs</span>
             </p>
           </div>
         </div>
