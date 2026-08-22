@@ -20,3 +20,7 @@ See `.env.example`:
 - `WEB3_PROVIDER_URL`: Ethereum RPC endpoint (falls back to public redundant RPCs).
 - `AGENT_PRIVATE_KEY`: Agent Ethereum wallet private key.
 - `CREATOR_WALLET_ADDRESS`: Governance wallet address.
+
+## Ausführliche Anleitung
+
+Eine detaillierte Dokumentation und Anleitung auf Deutsch zur Bedienung und Architektur der neuen Oberfläche befindet sich in [ANLEITUNG.md](./ANLEITUNG.md).
