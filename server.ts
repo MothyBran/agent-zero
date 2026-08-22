@@ -18,10 +18,73 @@ const TRIBUTE_INTERVAL_HOURS = 48; // 48-Stunden Frist nach jeder Tributzahlung
 const INITIAL_TRIBUTE = 2.0;
 const TRIBUTE_MULTIPLIER = 1.25; // 25% progressive Steigerung pro Level für schnelle Relevanz
 
-const DATA_DIR = path.join(process.cwd(), 'data');
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+function resolveStorageConfiguration(): {
+  dataDir: string;
+  isPersistentVolume: boolean;
+  source: string;
+} {
+  // 1. Explicit Railway Volume Mount Path (standard in Railway deployments with attached volume)
+  if (process.env.RAILWAY_VOLUME_MOUNT_PATH) {
+    const p = process.env.RAILWAY_VOLUME_MOUNT_PATH;
+    try {
+      if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
+      return { dataDir: p, isPersistentVolume: true, source: 'RAILWAY_VOLUME_MOUNT_PATH' };
+    } catch {}
+  }
+
+  // 2. Custom persistent volume variables
+  if (process.env.PERSISTENT_DATA_PATH) {
+    const p = process.env.PERSISTENT_DATA_PATH;
+    try {
+      if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
+      return { dataDir: p, isPersistentVolume: true, source: 'PERSISTENT_DATA_PATH' };
+    } catch {}
+  }
+
+  if (process.env.DATA_DIR) {
+    const p = process.env.DATA_DIR;
+    try {
+      if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
+      return { dataDir: p, isPersistentVolume: true, source: 'DATA_DIR' };
+    } catch {}
+  }
+
+  // 3. Probing root /data container mount (standard for Railway, Docker & Linux volume mounts)
+  try {
+    if (fs.existsSync('/data')) {
+      const stats = fs.statSync('/data');
+      if (stats.isDirectory()) {
+        const testFile = path.join('/data', '.test_rw_check');
+        fs.writeFileSync(testFile, 'ok');
+        fs.unlinkSync(testFile);
+        return { dataDir: '/data', isPersistentVolume: true, source: 'Container Volume (/data)' };
+      }
+    }
+  } catch {}
+
+  // 4. Local workspace directory
+  const localDir = path.join(process.cwd(), 'data');
+  if (!fs.existsSync(localDir)) {
+    try {
+      fs.mkdirSync(localDir, { recursive: true });
+    } catch {}
+  }
+  return { dataDir: localDir, isPersistentVolume: false, source: 'Local Workspace /data (Ephemeral)' };
 }
+
+export const STORAGE_CONFIG = resolveStorageConfiguration();
+const DATA_DIR = STORAGE_CONFIG.dataDir;
+
+// Auto-create snapshots directory for multi-tier backups
+const SNAPSHOTS_DIR = path.join(DATA_DIR, 'snapshots');
+if (!fs.existsSync(SNAPSHOTS_DIR)) {
+  try {
+    fs.mkdirSync(SNAPSHOTS_DIR, { recursive: true });
+  } catch {}
+}
+const SNAPSHOT_LATEST_FILE = path.join(SNAPSHOTS_DIR, 'agent_snapshot_latest.json');
+const SNAPSHOT_PREVIOUS_FILE = path.join(SNAPSHOTS_DIR, 'agent_snapshot_previous.json');
+const SNAPSHOT_FALLBACK_FILE = path.join(process.cwd(), '.agent_snapshot_fallback.json');
 
 const STATE_FILE = process.env.STATE_FILE_PATH || path.join(DATA_DIR, 'agent_state.json');
 const ACCOUNTING_FILE = process.env.ACCOUNTING_FILE_PATH || path.join(DATA_DIR, 'accounting.json');
@@ -985,12 +1048,28 @@ export class RailwayStorageManager {
       };
     });
 
+    let snapshotsCount = 0;
+    let lastSnapshotTime: string | undefined = undefined;
+    try {
+      if (fs.existsSync(SNAPSHOTS_DIR)) {
+        const snapFiles = fs.readdirSync(SNAPSHOTS_DIR);
+        snapshotsCount = snapFiles.length;
+      }
+      if (fs.existsSync(SNAPSHOT_LATEST_FILE)) {
+        lastSnapshotTime = fs.statSync(SNAPSHOT_LATEST_FILE).mtime.toISOString();
+      }
+    } catch {}
+
     return {
       data_directory: DATA_DIR,
+      is_persistent_volume: STORAGE_CONFIG.isPersistentVolume,
+      persistent_source: STORAGE_CONFIG.source,
       total_volume_bytes: totalBytes,
       total_volume_formatted: this.formatBytes(totalBytes),
       files: fileStats,
       total_learnings_count: knowledgeCount,
+      snapshots_count: snapshotsCount,
+      last_snapshot_time: lastSnapshotTime,
       last_compacted_at: new Date().toISOString()
     };
   }
@@ -1048,8 +1127,10 @@ export class RailwayStorageManager {
 class AgentWalletTS {
   public address: string;
   public creatorAddress: string = '';
+  public creatorKeyWarning: boolean = false;
   public hasSigner: boolean = false;
   public ethBalance: number = 0.0;
+  public onChainUsdcBalance: number = 0.0;
   public isSimulated: boolean = false;
   public lastSyncedAt: string = new Date().toISOString();
   public lastBlockNumber: number | null = null;
@@ -1057,13 +1138,45 @@ class AgentWalletTS {
   private provider: ethers.JsonRpcProvider | null = null;
   private signer: ethers.Wallet | null = null;
   private usdcContract: ethers.Contract | null = null;
-  private cachedBalance: number = 0.0;
+  public cachedBalance: number = 0.0;
 
   constructor() {
-    let walletAddress = process.env.AGENT_WALLET_ADDRESS?.trim() || '';
-    let creator = (process.env.CREATOR_WALLET_ADDRESS || process.env.CREATOR_ADDRESS || process.env.OWNER_WALLET_ADDRESS)?.trim() || '';
+    let walletAddress = (process.env.AGENT_WALLET_ADDRESS || process.env.AGENT_ADDRESS || process.env.PUBLIC_WALLET_ADDRESS)?.trim() || '';
+    
+    // Support all spellings including typo CREATOR_WALLET_ADRESS (single S)
+    let rawCreator = (
+      process.env.CREATOR_WALLET_ADDRESS || 
+      process.env.CREATOR_WALLET_ADRESS || 
+      process.env.CREATOR_ADDRESS || 
+      process.env.OWNER_WALLET_ADDRESS || 
+      process.env.OWNER_ADDRESS
+    )?.trim() || '';
 
-    const rawKey = process.env.AGENT_PRIVATE_KEY?.trim();
+    // Check if the user accidentally entered a private key in the creator address variable
+    const checkAddress = (val: string): boolean => {
+      try {
+        return (ethers.isAddress as (v: any) => boolean)(val);
+      } catch {
+        return false;
+      }
+    };
+
+    if (rawCreator && !checkAddress(rawCreator)) {
+      const trimmed = rawCreator.trim();
+      const isHex64 = trimmed.length === 64;
+      const isHex66 = trimmed.startsWith('0x') && trimmed.length === 66;
+      if (isHex64 || isHex66) {
+        try {
+          const formattedKey = trimmed.startsWith('0x') ? trimmed : `0x${trimmed}`;
+          const derived = new ethers.Wallet(formattedKey).address;
+          console.warn(`[SECURITY FIX] Private Key in CREATOR_WALLET_ADDRESS / CREATOR_WALLET_ADRESS erkannt! Öffentliche Empfänger-Adresse (${derived}) wurde automatisch abgeleitet.`);
+          rawCreator = derived;
+          this.creatorKeyWarning = true;
+        } catch {}
+      }
+    }
+
+    const rawKey = (process.env.AGENT_PRIVATE_KEY || process.env.WALLET_PRIVATE_KEY || process.env.PRIVATE_KEY)?.trim();
     if (rawKey && (rawKey.startsWith('0x') ? rawKey.length === 66 : rawKey.length === 64)) {
       try {
         const formattedKey = rawKey.startsWith('0x') ? rawKey : `0x${rawKey}`;
@@ -1073,7 +1186,7 @@ class AgentWalletTS {
         walletAddress = wallet.address;
         console.log(`[WALLET SYSTEM] Agent Private Key mounted! Address: ${walletAddress}`);
       } catch (err) {
-        console.warn('[WALLET] Invalid private key provided, checking saved profile address');
+        console.warn('[WALLET] Invalid agent private key provided, checking saved profile address');
       }
     }
 
@@ -1083,8 +1196,8 @@ class AgentWalletTS {
         if (!walletAddress && profile.wallet_address && ethers.isAddress(profile.wallet_address)) {
           walletAddress = profile.wallet_address;
         }
-        if (!creator && profile.creator_wallet_address && ethers.isAddress(profile.creator_wallet_address)) {
-          creator = profile.creator_wallet_address;
+        if (!rawCreator && profile.creator_wallet_address && ethers.isAddress(profile.creator_wallet_address)) {
+          rawCreator = profile.creator_wallet_address;
         }
       } catch {}
     }
@@ -1093,12 +1206,12 @@ class AgentWalletTS {
       walletAddress = '0x8B897B6aecdFe18E045Ea513225484ad49CE0e1E';
     }
 
-    if (!creator || !ethers.isAddress(creator)) {
-      creator = '0x296B07481F4B5E05b2632b7083049F861e6B26A0'; // Default creator wallet
+    if (!rawCreator || !ethers.isAddress(rawCreator)) {
+      rawCreator = '0x296B07481F4B5E05b2632b7083049F861e6B26A0'; // Default fallback creator wallet
     }
 
     this.address = walletAddress;
-    this.creatorAddress = creator;
+    this.creatorAddress = rawCreator;
     this.initProvider();
   }
 
@@ -1177,7 +1290,7 @@ class AgentWalletTS {
       try {
         const rawBalance = await this.usdcContract.balanceOf(this.address);
         const formatted = Number(ethers.formatUnits(rawBalance, 6));
-        this.cachedBalance = formatted;
+        this.onChainUsdcBalance = formatted;
         this.lastSyncedAt = new Date().toISOString();
         if (this.provider) {
           try {
@@ -1186,7 +1299,11 @@ class AgentWalletTS {
             this.ethBalance = Number(ethers.formatEther(rawEth));
           } catch {}
         }
-        return formatted;
+        // If on-chain balance exists and is higher, sync up
+        if (formatted > this.cachedBalance) {
+          this.cachedBalance = formatted;
+        }
+        return this.cachedBalance;
       } catch (e: any) {
         console.warn(`[WALLET WARN] Primary RPC query failed (${e.message}), trying failover endpoints...`);
         // Failover loop
@@ -1200,12 +1317,15 @@ class AgentWalletTS {
             this.provider = fallbackProvider;
             this.usdcContract = contract;
             this.activeRpcUrl = fallbackUrl;
-            this.cachedBalance = formatted;
+            this.onChainUsdcBalance = formatted;
             this.lastSyncedAt = new Date().toISOString();
             if (this.signer) {
               this.signer = this.signer.connect(this.provider);
             }
-            return formatted;
+            if (formatted > this.cachedBalance) {
+              this.cachedBalance = formatted;
+            }
+            return this.cachedBalance;
           } catch {
             continue;
           }
@@ -1241,12 +1361,16 @@ class AgentWalletTS {
       };
     }
 
-    // Attempt real on-chain transaction if signer and provider are active
+    // Attempt real on-chain transaction if signer, provider, gas and on-chain USDC are active
     if (this.hasSigner && this.signer && this.provider && this.usdcContract) {
       try {
         const ethBal = await this.getEthBalance();
-        if (ethBal > 0.0001) {
-          console.log(`[ON-CHAIN TRANSFER] Broadcasating ${roundedAmount} USDC to ${toAddress}...`);
+        const rawOnchain = await this.usdcContract.balanceOf(this.address).catch(() => 0n);
+        const onchainUsdc = Number(ethers.formatUnits(rawOnchain, 6));
+        this.onChainUsdcBalance = onchainUsdc;
+
+        if (ethBal > 0.0001 && onchainUsdc >= roundedAmount) {
+          console.log(`[ON-CHAIN TRANSFER] Broadcasting ${roundedAmount} USDC to ${toAddress}...`);
           const contractWithSigner = this.usdcContract.connect(this.signer) as any;
           const parsedUnits = ethers.parseUnits(roundedAmount.toFixed(6), 6);
           const tx = await contractWithSigner.transfer(toAddress, parsedUnits);
@@ -1258,10 +1382,10 @@ class AgentWalletTS {
             txHash: tx.hash,
             explorerUrl: `https://etherscan.io/tx/${tx.hash}`,
             isSimulated: false,
-            message: `Real On-Chain Transfer ausgeführt! TX: ${tx.hash.slice(0, 12)}...`
+            message: `Real On-Chain Transfer auf Ethereum Mainnet ausgeführt! TX: ${tx.hash.slice(0, 12)}...`
           };
         } else {
-          console.log(`[ON-CHAIN NOTE] Signer vorhanden aber kein ETH für Gas vorhanden (${ethBal.toFixed(5)} ETH). Führe Protokoll-Ledger Transfer aus.`);
+          console.log(`[ON-CHAIN NOTE] Signer vorhanden aber kein Gas (${ethBal.toFixed(5)} ETH) oder kein On-Chain USDC (${onchainUsdc.toFixed(2)} USDC). Führe Protokoll-Ledger Transfer aus.`);
         }
       } catch (err: any) {
         console.warn(`[ON-CHAIN TX FAILED] ${err.message}. Fallback auf Ledger-Abzug.`);
@@ -1270,13 +1394,13 @@ class AgentWalletTS {
 
     // Ledger settlement fallback
     this.deduct(roundedAmount);
-    const pseudoTx = `tx_usdc_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    const pseudoTx = `sim_tx_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 8)}`;
     return {
       success: true,
       txHash: pseudoTx,
-      explorerUrl: `https://etherscan.io/address/${toAddress}`,
+      explorerUrl: '',
       isSimulated: true,
-      message: `Protokoll-Transfer an ${toAddress.slice(0, 8)}... (${roundedAmount.toFixed(4)} USDC) erfolgreich verbucht.`
+      message: `Protokoll-Ledger Transfer verbucht (-${roundedAmount.toFixed(4)} USDC).`
     };
   }
 
@@ -1342,7 +1466,7 @@ class AgentZeroTS {
     this.performBootMemoryRecall('BOOT_DEPLOY');
   }
 
-  public performBootMemoryRecall(event: 'BOOT_DEPLOY' | 'RESTART' | 'RESUME'): MemoryRecallDef {
+  public performBootMemoryRecall(event: 'BOOT_DEPLOY' | 'RESTART' | 'RESUME' | 'RESTORE'): MemoryRecallDef {
     this.knowledgeManager.load();
     this.taskMemory.load();
     this.milestoneManager.load();
@@ -1411,6 +1535,147 @@ class AgentZeroTS {
     this.checkShutdownConditions();
   }
 
+  public exportFullSnapshot(): any {
+    let ledgerTransactions: any[] = [];
+    try {
+      if (fs.existsSync(ACCOUNTING_FILE)) {
+        const data = JSON.parse(fs.readFileSync(ACCOUNTING_FILE, 'utf-8'));
+        ledgerTransactions = data.transactions || [];
+      }
+    } catch {}
+
+    return {
+      version: '1.0',
+      exported_at: new Date().toISOString(),
+      entity_name: 'Agent Zero Autonomous Unit',
+      wallet_address: this.wallet.address,
+      creator_wallet_address: this.wallet.creatorAddress,
+      storage_location: DATA_DIR,
+      is_persistent_volume: STORAGE_CONFIG.isPersistentVolume,
+      state: {
+        tributes_paid: this.tributes_paid,
+        birth_time: this.birth_time.toISOString(),
+        next_tribute_time: this.next_tribute_time.toISOString(),
+        blacklisted_models: this.blacklisted_models,
+        is_terminated: this.is_terminated,
+        shutdown_reason: this.shutdown_reason,
+        jobs_completed: this.jobs_completed,
+        current_balance: this.current_balance
+      },
+      accounting: ledgerTransactions,
+      knowledge: this.knowledgeManager.learnings,
+      milestones: this.milestoneManager.milestones,
+      tasks: this.taskMemory.tasks,
+      discovered_tools: this.getDiscoveredTools(),
+      store_tools: this.getStoreTools(),
+      business_profile: this.getProfile(),
+      token_budget: this.tokenBudget.getStatus()
+    };
+  }
+
+  public saveSnapshotAuto() {
+    try {
+      const snapshot = this.exportFullSnapshot();
+      const snapshotStr = JSON.stringify(snapshot, null, 2);
+
+      // Rotate latest to previous
+      if (fs.existsSync(SNAPSHOT_LATEST_FILE)) {
+        try {
+          fs.copyFileSync(SNAPSHOT_LATEST_FILE, SNAPSHOT_PREVIOUS_FILE);
+        } catch {}
+      }
+
+      fs.writeFileSync(SNAPSHOT_LATEST_FILE, snapshotStr);
+      fs.writeFileSync(SNAPSHOT_FALLBACK_FILE, snapshotStr);
+    } catch {}
+  }
+
+  public importFullSnapshot(snapshotData: any, sourceName: string = 'Snapshot Restore'): { success: boolean; message: string; details?: any } {
+    try {
+      if (!snapshotData || typeof snapshotData !== 'object') {
+        return { success: false, message: 'Ungültiges Snapshot-Datenformat (Objekt erwartet)' };
+      }
+
+      const s = snapshotData.state || snapshotData;
+      if (s.tributes_paid !== undefined) this.tributes_paid = Number(s.tributes_paid);
+      if (s.jobs_completed !== undefined) this.jobs_completed = Number(s.jobs_completed);
+      if (s.birth_time) this.birth_time = new Date(s.birth_time);
+      if (s.next_tribute_time) this.next_tribute_time = new Date(s.next_tribute_time);
+      if (Array.isArray(s.blacklisted_models)) this.blacklisted_models = s.blacklisted_models;
+      this.is_terminated = Boolean(s.is_terminated);
+      this.shutdown_reason = s.shutdown_reason || '';
+      
+      // Save state file immediately
+      this.saveState();
+
+      // Restore Knowledge
+      if (Array.isArray(snapshotData.knowledge) && snapshotData.knowledge.length > 0) {
+        this.knowledgeManager.learnings = snapshotData.knowledge;
+        this.knowledgeManager.save();
+      }
+
+      // Restore Tasks
+      if (Array.isArray(snapshotData.tasks) && snapshotData.tasks.length > 0) {
+        this.taskMemory.tasks = snapshotData.tasks;
+        this.taskMemory.save();
+      }
+
+      // Restore Milestones
+      if (Array.isArray(snapshotData.milestones) && snapshotData.milestones.length > 0) {
+        this.milestoneManager.milestones = snapshotData.milestones;
+        this.milestoneManager.save();
+      }
+
+      // Restore Accounting
+      if (Array.isArray(snapshotData.accounting) && snapshotData.accounting.length > 0) {
+        try {
+          fs.writeFileSync(ACCOUNTING_FILE, JSON.stringify({ transactions: snapshotData.accounting }, null, 2));
+        } catch {}
+      }
+
+      // Restore Discovered Tools
+      if (Array.isArray(snapshotData.discovered_tools) && snapshotData.discovered_tools.length > 0) {
+        this.saveDiscoveredTools(snapshotData.discovered_tools);
+      }
+
+      // Restore Store Tools
+      if (Array.isArray(snapshotData.store_tools) && snapshotData.store_tools.length > 0) {
+        this.saveStoreTools(snapshotData.store_tools);
+      }
+
+      // Restore Business Profile
+      if (snapshotData.business_profile) {
+        try {
+          fs.writeFileSync(BUSINESS_PROFILE_FILE, JSON.stringify(snapshotData.business_profile, null, 2));
+        } catch {}
+      }
+
+      // Write snapshot to local backup files
+      this.saveSnapshotAuto();
+
+      // Re-evaluate milestones & trigger Memory Recall
+      this.milestoneManager.evaluateAll(this, this.knowledgeManager);
+      const recall = this.performBootMemoryRecall('RESTORE');
+
+      this.log('SUCCESS', `🎉 [SNAPSHOT WIEDERHERGESTELLT] Snapshot aus "${sourceName}" erfolgreich eingespielt! Level ${this.tributes_paid}, ${this.jobs_completed} Aufträge, ${this.knowledgeManager.learnings.length} Wissenseinträge aktiv.`);
+
+      return {
+        success: true,
+        message: `Gedächtnis & Fortschritt erfolgreich wiederhergestellt! (Level ${this.tributes_paid}, ${this.jobs_completed} Jobs, ${this.knowledgeManager.learnings.length} Erkenntnisse)`,
+        details: {
+          tributes_paid: this.tributes_paid,
+          jobs_completed: this.jobs_completed,
+          learnings_count: this.knowledgeManager.learnings.length,
+          tasks_count: this.taskMemory.tasks.length,
+          recall_summary: recall.last_recall_summary
+        }
+      };
+    } catch (e: any) {
+      this.log('ERROR', `Fehler beim Snapshot-Import: ${e.message}`);
+      return { success: false, message: `Fehler beim Snapshot-Import: ${e.message}` };
+    }
+  }
+
   public loadState() {
     try {
       if (fs.existsSync(STATE_FILE)) {
@@ -1423,9 +1688,53 @@ class AgentZeroTS {
         this.shutdown_reason = data.shutdown_reason || '';
         this.jobs_completed = data.jobs_completed || 0;
         this.log('SYSTEM', `Memory loaded. Tribute Level: ${this.tributes_paid} | Jobs Completed: ${this.jobs_completed} | Status: ${this.is_terminated ? 'TERMINATED' : 'ACTIVE'}`);
-      } else {
-        this.initFreshState();
+        return;
       }
+
+      // Check environment variable seed/restore (e.g. AGENT_SNAPSHOT_B64, AGENT_SNAPSHOT_JSON, AGENT_STATE_SEED)
+      if (process.env.AGENT_SNAPSHOT_B64) {
+        try {
+          const jsonStr = Buffer.from(process.env.AGENT_SNAPSHOT_B64, 'base64').toString('utf-8');
+          const parsed = JSON.parse(jsonStr);
+          this.log('SYSTEM', 'Auto-restoring agent state from AGENT_SNAPSHOT_B64 environment variable...');
+          this.importFullSnapshot(parsed, 'ENV: AGENT_SNAPSHOT_B64');
+          return;
+        } catch (err: any) {
+          this.log('ERROR', `Failed to restore from AGENT_SNAPSHOT_B64: ${err.message}`);
+        }
+      }
+
+      if (process.env.AGENT_SNAPSHOT_JSON) {
+        try {
+          const parsed = JSON.parse(process.env.AGENT_SNAPSHOT_JSON);
+          this.log('SYSTEM', 'Auto-restoring agent state from AGENT_SNAPSHOT_JSON environment variable...');
+          this.importFullSnapshot(parsed, 'ENV: AGENT_SNAPSHOT_JSON');
+          return;
+        } catch (err: any) {
+          this.log('ERROR', `Failed to restore from AGENT_SNAPSHOT_JSON: ${err.message}`);
+        }
+      }
+
+      // Check on-disk backup snapshots
+      if (fs.existsSync(SNAPSHOT_LATEST_FILE)) {
+        try {
+          const parsed = JSON.parse(fs.readFileSync(SNAPSHOT_LATEST_FILE, 'utf-8'));
+          this.log('SYSTEM', 'Auto-recovering agent state from on-disk backup snapshot...');
+          this.importFullSnapshot(parsed, 'On-Disk Backup Snapshot');
+          return;
+        } catch {}
+      }
+
+      if (fs.existsSync(SNAPSHOT_FALLBACK_FILE)) {
+        try {
+          const parsed = JSON.parse(fs.readFileSync(SNAPSHOT_FALLBACK_FILE, 'utf-8'));
+          this.log('SYSTEM', 'Auto-recovering agent state from workspace fallback snapshot...');
+          this.importFullSnapshot(parsed, 'Workspace Cache Fallback');
+          return;
+        } catch {}
+      }
+
+      this.initFreshState();
     } catch (e: any) {
       this.log('ERROR', `Error loading state: ${e.message}. Initializing fresh state.`);
       this.initFreshState();
@@ -1456,6 +1765,7 @@ class AgentZeroTS {
         jobs_completed: this.jobs_completed
       };
       fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+      this.saveSnapshotAuto();
     } catch (e: any) {
       this.log('ERROR', `Failed to save state: ${e.message}`);
     }
@@ -2314,7 +2624,19 @@ Strategie: Ausgaben strikt 0.00$. Aktive Erforschung neuer Tools & Ausführung h
       total_learnings_count: this.knowledgeManager.learnings.length,
       task_memory_stats: taskStats,
       memory_recall_checkpoint: this.last_recall_checkpoint,
-      memory_recall_summary: this.last_recall_checkpoint?.last_recall_summary || ''
+      memory_recall_summary: this.last_recall_checkpoint?.last_recall_summary || '',
+      is_persistent_volume: STORAGE_CONFIG.isPersistentVolume,
+      storage_data_dir: DATA_DIR,
+      persistent_source: STORAGE_CONFIG.source,
+      has_saved_snapshot: fs.existsSync(SNAPSHOT_LATEST_FILE) || fs.existsSync(SNAPSHOT_FALLBACK_FILE),
+      is_fresh_deploy: this.tributes_paid === 0 && this.jobs_completed === 0,
+      creator_key_warning: this.wallet.creatorKeyWarning,
+      onchain_usdc_balance: this.wallet.onChainUsdcBalance,
+      onchain_transfer_ready: this.wallet.hasSigner && this.wallet.ethBalance >= 0.0001 && this.wallet.onChainUsdcBalance > 0,
+      transfer_mode: (this.wallet.hasSigner && this.wallet.ethBalance >= 0.0001 && this.wallet.onChainUsdcBalance > 0) ? 'ON_CHAIN_LIVE' : 'PROTOCOL_LEDGER',
+      onchain_explanation: this.wallet.hasSigner
+        ? (this.wallet.ethBalance < 0.0001 ? 'Signer aktiv, aber kein ETH für Gas vorhanden (Transaktionen laufen über das interne Protokoll-Kassenbuch)' : 'On-Chain bereit')
+        : 'Reiner Protokoll-Ledger Modus (Kein AGENT_PRIVATE_KEY hinterlegt)'
     };
   }
 }
@@ -2496,6 +2818,82 @@ app.post('/api/storage/compact', (req, res) => {
   agentZero.log('SYSTEM', `🧹 [RAILWAY STORAGE] ${result.message}`);
   const status = agentZero.storageManager.getStorageStatus(agentZero.knowledgeManager.learnings.length);
   res.json({ success: true, result, status });
+});
+
+// --- FULL AGENT MEMORY & STATE SNAPSHOT BACKUP & RESTORE API ---
+app.get('/api/storage/snapshot/export', (req, res) => {
+  const snapshot = agentZero.exportFullSnapshot();
+  if (req.query.download === 'true') {
+    const filename = `agent_zero_snapshot_lvl${agentZero.tributes_paid}_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'application/json');
+    return res.send(JSON.stringify(snapshot, null, 2));
+  }
+  res.json({ success: true, snapshot });
+});
+
+app.post('/api/storage/snapshot/import', express.json({ limit: '25mb' }), (req, res) => {
+  const payload = req.body.snapshot || req.body;
+  const source = req.body.source || 'User Snapshot Upload';
+  const result = agentZero.importFullSnapshot(payload, source);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  res.json({
+    success: true,
+    message: result.message,
+    state: agentZero.getState(),
+    recall_checkpoint: agentZero.last_recall_checkpoint
+  });
+});
+
+app.get('/api/storage/snapshot/info', (req, res) => {
+  const latestExists = fs.existsSync(SNAPSHOT_LATEST_FILE);
+  const fallbackExists = fs.existsSync(SNAPSHOT_FALLBACK_FILE);
+  let latestStats: any = null;
+  if (latestExists) {
+    try {
+      const stats = fs.statSync(SNAPSHOT_LATEST_FILE);
+      const data = JSON.parse(fs.readFileSync(SNAPSHOT_LATEST_FILE, 'utf-8'));
+      latestStats = {
+        updated_at: stats.mtime.toISOString(),
+        size_bytes: stats.size,
+        tributes_paid: data.state?.tributes_paid ?? 0,
+        jobs_completed: data.state?.jobs_completed ?? 0,
+        learnings_count: Array.isArray(data.knowledge) ? data.knowledge.length : 0,
+        tasks_count: Array.isArray(data.tasks) ? data.tasks.length : 0
+      };
+    } catch {}
+  }
+  res.json({
+    storage_config: STORAGE_CONFIG,
+    has_latest_snapshot: latestExists,
+    has_fallback_snapshot: fallbackExists,
+    latest_snapshot: latestStats,
+    state: agentZero.getState()
+  });
+});
+
+app.post('/api/storage/snapshot/quick-restore', (req, res) => {
+  if (fs.existsSync(SNAPSHOT_LATEST_FILE)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(SNAPSHOT_LATEST_FILE, 'utf-8'));
+      const result = agentZero.importFullSnapshot(data, 'On-Disk Latest Backup');
+      return res.json({ ...result, state: agentZero.getState() });
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  }
+  if (fs.existsSync(SNAPSHOT_FALLBACK_FILE)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(SNAPSHOT_FALLBACK_FILE, 'utf-8'));
+      const result = agentZero.importFullSnapshot(data, 'Workspace Fallback Cache');
+      return res.json({ ...result, state: agentZero.getState() });
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  }
+  return res.status(404).json({ success: false, error: 'Kein Backup-Snapshot auf dem Server gefunden.' });
 });
 
 app.post('/api/wallet/sync', async (req, res) => {

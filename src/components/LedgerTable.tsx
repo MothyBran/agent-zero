@@ -130,18 +130,24 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({ transactions }) => {
                     )}
                   </td>
                   <td className="py-2.5 px-4 whitespace-nowrap">
-                    {tx.tx_hash ? (
+                    {tx.tx_hash && tx.tx_hash.startsWith('0x') && tx.tx_hash.length === 66 ? (
                       <a
                         href={tx.explorer_url || `https://etherscan.io/tx/${tx.tx_hash}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-[11px] text-cyan-400 hover:text-cyan-300 underline font-mono"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors"
+                        title="Verifizierte On-Chain Transaktion auf Ethereum Mainnet"
                       >
-                        {tx.tx_hash.slice(0, 8)}...{tx.tx_hash.slice(-6)}
+                        {tx.tx_hash.slice(0, 6)}...{tx.tx_hash.slice(-4)}
                         <ExternalLink className="w-3 h-3" />
                       </a>
                     ) : (
-                      <span className="text-[10px] text-slate-600 font-mono">Protokoll-Ledger</span>
+                      <span
+                        className="inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-slate-800/80 text-slate-400 border border-slate-700 font-mono"
+                        title="Autonomes Kassenbuch (Off-Chain). Keine Gas-Gebühren verbraucht."
+                      >
+                        Kassenbuch (Intern)
+                      </span>
                     )}
                   </td>
                 </tr>

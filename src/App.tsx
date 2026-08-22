@@ -23,6 +23,9 @@ export function App() {
   const [isSyncingWallet, setIsSyncingWallet] = useState(false);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'milestones' | 'memory' | 'tokens' | 'storage' | 'models' | 'ledger' | 'tools' | 'profile'>('dashboard');
 
+  const [localBackupSnapshot, setLocalBackupSnapshot] = useState<any>(null);
+  const [isRestoringBackup, setIsRestoringBackup] = useState(false);
+
   const safeJsonFetch = async <T,>(url: string, init?: RequestInit): Promise<T | null> => {
     try {
       const res = await fetch(url, init);
@@ -47,6 +50,18 @@ export function App() {
 
       if (statusData) {
         setState(statusData);
+
+        // Auto-save snapshot into localStorage if the agent has accumulated progress
+        if ((statusData.tributes_paid || 0) > 0 || (statusData.active_jobs_completed || 0) > 0 || (statusData.total_learnings_count || 0) > 0) {
+          fetch('/api/storage/snapshot/export')
+            .then(r => r.json())
+            .then(d => {
+              if (d.snapshot) {
+                localStorage.setItem('agent_zero_last_snapshot', JSON.stringify(d.snapshot));
+              }
+            })
+            .catch(() => {});
+        }
       }
       if (ledgerData && ledgerData.transactions) {
         setTransactions(ledgerData.transactions);
@@ -61,6 +76,44 @@ export function App() {
       console.error('Failed to fetch data:', err);
     }
   }, []);
+
+  // Check if browser has a saved snapshot to recover from a fresh server deploy
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('agent_zero_last_snapshot');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const savedLevel = parsed.state?.tributes_paid ?? 0;
+        const savedJobs = parsed.state?.jobs_completed ?? 0;
+        if (savedLevel > 0 || savedJobs > 0) {
+          setLocalBackupSnapshot(parsed);
+        }
+      }
+    } catch {}
+  }, [state?.tributes_paid, state?.active_jobs_completed]);
+
+  const handleRestoreLocalSnapshot = async () => {
+    if (!localBackupSnapshot) return;
+    setIsRestoringBackup(true);
+    try {
+      const res = await fetch('/api/storage/snapshot/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          snapshot: localBackupSnapshot,
+          source: 'Browser LocalStorage Auto-Backup'
+        })
+      });
+      if (res.ok) {
+        await fetchAllData();
+        setLocalBackupSnapshot(null);
+      }
+    } catch (e) {
+      console.error('Failed to restore local backup:', e);
+    } finally {
+      setIsRestoringBackup(false);
+    }
+  };
 
   useEffect(() => {
     fetchAllData();
@@ -273,6 +326,40 @@ export function App() {
         </div>
       )}
 
+      {/* Fresh Re-Deployment Auto-Recovery Banner */}
+      {localBackupSnapshot && state && state.tributes_paid === 0 && state.active_jobs_completed === 0 && ((localBackupSnapshot.state?.tributes_paid ?? 0) > 0 || (localBackupSnapshot.state?.jobs_completed ?? 0) > 0) && (
+        <div className="bg-blue-950/90 border-b border-blue-600 text-blue-100 py-3.5 px-4 shadow-lg shadow-blue-950/40">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs font-mono">
+            <div className="flex items-start sm:items-center gap-2.5">
+              <Brain className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5 sm:mt-0" />
+              <div>
+                <span className="font-bold text-cyan-300 text-sm">
+                  🔄 Re-Deployment / Reset erkannt — Lokales Backup gefunden!
+                </span>
+                <p className="text-blue-200/90 text-[11px] mt-0.5">
+                  Der Server läuft im Startzustand (Level 0). Im Browser ist ein Snapshot mit <strong>Level {localBackupSnapshot.state?.tributes_paid}</strong>, <strong>{localBackupSnapshot.state?.jobs_completed} Aufträgen</strong> und <strong>{localBackupSnapshot.knowledge?.length || 0} Erkenntnissen</strong> (gesichert: {new Date(localBackupSnapshot.exported_at || Date.now()).toLocaleString('de-DE')}) vorhanden.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={handleRestoreLocalSnapshot}
+                disabled={isRestoringBackup}
+                className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold font-mono text-xs shadow transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <span>{isRestoringBackup ? 'Stelle wieder her...' : '✨ Snapshot jetzt wiederherstellen'}</span>
+              </button>
+              <button
+                onClick={() => setLocalBackupSnapshot(null)}
+                className="px-2.5 py-2 text-slate-400 hover:text-slate-200 text-xs"
+              >
+                Ignorieren
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         {/* Vitals Summary Grid */}
         <VitalsGrid
@@ -425,6 +512,7 @@ export function App() {
                 <RailwayStorageCard />
                 <BusinessProfileCard
                   profile={profile}
+                  state={state}
                   onResetAgent={handleResetAgent}
                   onClearBlacklist={handleClearBlacklist}
                   blacklistedCount={state?.blacklisted_models?.length || 0}
@@ -495,6 +583,7 @@ export function App() {
           <div className="space-y-6">
             <BusinessProfileCard
               profile={profile}
+              state={state}
               onResetAgent={handleResetAgent}
               onClearBlacklist={handleClearBlacklist}
               blacklistedCount={state?.blacklisted_models?.length || 0}

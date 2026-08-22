@@ -131,11 +131,31 @@ export interface RailwayStorageFile {
 
 export interface RailwayStorageStatus {
   data_directory: string;
+  is_persistent_volume?: boolean;
+  persistent_source?: string;
   total_volume_bytes: number;
   total_volume_formatted: string;
   files: RailwayStorageFile[];
   total_learnings_count: number;
+  snapshots_count?: number;
+  last_snapshot_time?: string;
   last_compacted_at?: string;
+}
+
+export interface AgentSnapshotBundle {
+  version: string;
+  exported_at: string;
+  entity_name?: string;
+  wallet_address?: string;
+  state: Partial<AgentState>;
+  accounting?: Transaction[];
+  knowledge?: KnowledgeItem[];
+  milestones?: Milestone[];
+  tasks?: TaskMemoryRecord[];
+  discovered_tools?: ToolItem[];
+  store_tools?: StoreToolItem[];
+  business_profile?: BusinessProfile;
+  token_budget?: TokenBudgetStatus;
 }
 
 export interface AgentState {
@@ -175,8 +195,19 @@ export interface AgentState {
   evolution_iq_score?: number;
   evolution_tier?: string;
   total_memories_count?: number;
+  total_learnings_count?: number;
   total_task_records_count?: number;
   memory_recall_summary?: string;
+  is_persistent_volume?: boolean;
+  storage_data_dir?: string;
+  persistent_source?: string;
+  has_saved_snapshot?: boolean;
+  is_fresh_deploy?: boolean;
+  creator_key_warning?: boolean;
+  onchain_usdc_balance?: number;
+  onchain_transfer_ready?: boolean;
+  transfer_mode?: 'ON_CHAIN_LIVE' | 'PROTOCOL_LEDGER';
+  onchain_explanation?: string;
 }
 
 export interface LogEntry {

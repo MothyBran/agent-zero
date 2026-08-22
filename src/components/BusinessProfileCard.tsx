@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { BusinessProfile } from '../types';
-import { Building2, ShieldCheck, RefreshCw, AlertTriangle, CheckCircle } from 'lucide-react';
+import { BusinessProfile, AgentState } from '../types';
+import { Building2, ShieldCheck, RefreshCw, AlertTriangle, ExternalLink, KeyRound, Wallet } from 'lucide-react';
 
 interface BusinessProfileCardProps {
   profile: BusinessProfile | null;
+  state?: AgentState | null;
   onResetAgent: () => void;
   onClearBlacklist: () => void;
   blacklistedCount: number;
@@ -11,11 +12,16 @@ interface BusinessProfileCardProps {
 
 export const BusinessProfileCard: React.FC<BusinessProfileCardProps> = ({
   profile,
+  state,
   onResetAgent,
   onClearBlacklist,
   blacklistedCount
 }) => {
   const [showConfirmReset, setShowConfirmReset] = useState(false);
+
+  const creatorAddress = state?.creator_wallet_address || profile?.creator_address || '';
+  const agentAddress = state?.wallet_address || profile?.wallet_address || '';
+  const hasKeyWarning = state?.creator_key_warning;
 
   return (
     <div id="business-profile-card" className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
@@ -31,35 +37,75 @@ export const BusinessProfileCard: React.FC<BusinessProfileCardProps> = ({
         </span>
       </div>
 
+      {/* Warning banner if Private Key was mistakenly provided for Creator */}
+      {hasKeyWarning && (
+        <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 flex items-start gap-2.5 text-xs font-mono">
+          <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+          <div className="space-y-1">
+            <strong className="block text-amber-200">
+              Sicherheitshinweis zu CREATOR_WALLET_ADDRESS:
+            </strong>
+            <p className="text-slate-300">
+              In deinen Umgebungsvariablen (Secrets) wurde ein <strong>Private Key</strong> hinterlegt.
+              Das System hat daraus automatisch deine <strong>öffentliche 0x-Empfängeradresse</strong> abgeleitet.
+              Aus Sicherheitsgründen solltest du in den Secrets ausschließlich deine öffentliche 0x-Empfängeradresse eintragen!
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Entity Details */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-slate-950/60 border border-slate-800/80 rounded-lg p-3.5 space-y-2">
-          <span className="text-[11px] uppercase tracking-wider font-mono text-slate-400">
-            Entity Identity
+          <span className="text-[11px] uppercase tracking-wider font-mono text-slate-400 flex items-center justify-between">
+            <span>Entity Identity & Wallets</span>
+            <span className="text-[10px] text-slate-500">Ethereum Mainnet</span>
           </span>
           <div className="text-sm font-bold text-slate-100 font-mono">
             {profile?.entity_name || 'Agent Zero Autonomous Unit'}
           </div>
-          <div className="text-xs text-slate-400 font-mono">
-            Agent Wallet:{' '}
-            <span className="text-slate-300">
-              {profile?.wallet_address
-                ? `${profile.wallet_address.substring(0, 10)}...${profile.wallet_address.substring(
-                    profile.wallet_address.length - 8
-                  )}`
-                : 'Not Set'}
-            </span>
-          </div>
 
-          <div className="text-xs text-slate-400 font-mono">
-            Creator Wallet (Tribut-Empfänger):{' '}
-            <span className="text-purple-300 font-bold">
-              {profile?.creator_address
-                ? `${profile.creator_address.substring(0, 10)}...${profile.creator_address.substring(
-                    profile.creator_address.length - 8
-                  )}`
-                : 'Default 0x000... (configured via CREATOR_WALLET_ADDRESS)'}
-            </span>
+          <div className="text-xs text-slate-400 font-mono space-y-1">
+            <div className="flex items-center justify-between">
+              <span>Agent Wallet:</span>
+              {agentAddress ? (
+                <a
+                  href={`https://etherscan.io/address/${agentAddress}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-emerald-400 hover:text-emerald-300 font-mono inline-flex items-center gap-1"
+                >
+                  {agentAddress.substring(0, 8)}...{agentAddress.substring(agentAddress.length - 6)}
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              ) : (
+                <span className="text-slate-500">Nicht gesetzt</span>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span>Gas (ETH):</span>
+              <span className="text-slate-300 font-mono">
+                {state?.agent_eth_balance !== undefined ? `${state.agent_eth_balance.toFixed(4)} ETH` : '0.0000 ETH'}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span>Creator Wallet (Tribut):</span>
+              {creatorAddress ? (
+                <a
+                  href={`https://etherscan.io/address/${creatorAddress}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-purple-300 hover:text-purple-200 font-bold font-mono inline-flex items-center gap-1"
+                >
+                  {creatorAddress.substring(0, 8)}...{creatorAddress.substring(creatorAddress.length - 6)}
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              ) : (
+                <span className="text-slate-500">Konfiguriert via CREATOR_WALLET_ADDRESS</span>
+              )}
+            </div>
           </div>
 
           <div className="pt-2 border-t border-slate-800">
@@ -90,19 +136,19 @@ export const BusinessProfileCard: React.FC<BusinessProfileCardProps> = ({
             <li className="flex items-start gap-1.5">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
               <span>
-                <strong>1. No Debt:</strong> No subscriptions or debt. Every expense must be covered by immediate cash.
+                <strong>1. No Debt:</strong> Keine Kredite oder Schulden. Jeder Aufwand muss durch unmittelbare Liquidität gedeckt sein.
               </span>
             </li>
             <li className="flex items-start gap-1.5">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
               <span>
-                <strong>2. Kill-Switch:</strong> Instantly cancel and sever any tool or node with non-positive ROI.
+                <strong>2. Kill-Switch:</strong> Unrentable Werkzeuge oder Modelle werden sofort deaktiviert.
               </span>
             </li>
             <li className="flex items-start gap-1.5">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
               <span>
-                <strong>3. Full Transparency:</strong> Every micro-transaction is recorded in the accounting ledger.
+                <strong>3. Dual Settlement:</strong> Protokoll-Ledger Buchung bei 0 Gas, Live On-Chain Transfer bei vorhandenem ETH-Gas.
               </span>
             </li>
           </ul>

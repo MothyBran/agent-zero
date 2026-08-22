@@ -111,9 +111,15 @@ export const VitalsGrid: React.FC<VitalsGridProps> = ({
               <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono border ${
                 isTerminated
                   ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
-                  : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                  : state?.onchain_transfer_ready
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                  : 'bg-purple-500/10 text-purple-400 border-purple-500/20'
               }`}>
-                {isTerminated ? 'BANKRUPT' : 'On-Chain'}
+                {isTerminated
+                  ? 'BANKRUPT'
+                  : state?.onchain_transfer_ready
+                  ? 'Live Web3'
+                  : 'Ledger-Modus'}
               </span>
             </div>
             <div className="flex items-center gap-1">

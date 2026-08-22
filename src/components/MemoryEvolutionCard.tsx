@@ -182,6 +182,15 @@ export const MemoryEvolutionCard: React.FC<MemoryEvolutionCardProps> = ({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          <a
+            href="/api/storage/snapshot/export?download=true"
+            className="px-2.5 py-1.5 text-xs rounded-lg bg-emerald-800 hover:bg-emerald-700 text-emerald-100 border border-emerald-600/50 flex items-center gap-1.5 transition"
+            title="Vollständigen Gedächtnis- und Fortschritts-Snapshot als .json exportieren"
+          >
+            <RotateCw className="w-3.5 h-3.5" />
+            Snapshot Backup
+          </a>
+
           <button
             id="btn-memory-recall"
             onClick={handleRecallNow}
