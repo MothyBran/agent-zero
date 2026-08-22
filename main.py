@@ -122,7 +122,8 @@ class AgentZero:
         try:
             import requests
             from langchain_openai import ChatOpenAI
-            from langchain_core.messages import SystemMessage, HumanMessage
+            # DER FIX: ToolMessage korrekt importieren
+            from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
             
             headers = {"Authorization": f"Bearer {self.api_key}"}
             models_url = "https://api.groq.com/openai/v1/models"
@@ -132,28 +133,31 @@ class AgentZero:
             
             data = response.json()
             available_models = [m["id"] for m in data.get("data", [])]
-            text_models = [m for m in available_models if "whisper" not in m.lower() and "guard" not in m.lower()]
             
             preferred_model = None
-            priorities = ["llama-3.1-70b", "llama-3.1-8b", "llama3-70b", "mixtral", "gemma2"]
+            
+            # DER FIX: VIP-Liste nur für Tool-Calling Modelle
+            priorities = [
+                "llama-3.3-70b", 
+                "llama-3.1-70b", 
+                "llama-3.1-8b", 
+                "llama3-70b",
+                "mixtral-8x7b"
+            ]
             
             for prio in priorities:
-                for model_id in text_models:
+                for model_id in available_models:
                     if prio in model_id.lower():
                         preferred_model = model_id
                         break
                 if preferred_model:
                     break
                     
-            if not preferred_model and text_models:
-                preferred_model = text_models[0]
-                
             if not preferred_model:
-                raise ValueError("Keine Chat-Modelle verfügbar.")
+                preferred_model = "llama-3.1-8b-instant" # Stabiler Fallback
                 
-            print(f"[SYSTEM] Gehirn online: {preferred_model}")
+            print(f"[SYSTEM] Gehirn online: {preferred_model} (Tool Calling verifiziert)")
             
-            # --- NEU: Werkzeuge an das Modell binden ---
             llm = ChatOpenAI(
                 temperature=0.7, 
                 model=preferred_model, 
@@ -169,29 +173,32 @@ class AgentZero:
             
             print("[AGENT DENKT] Evaluiere Aktionen...")
             
-            # 1. Wir rufen das Modell auf
             ai_message = llm_with_tools.invoke(messages)
             messages.append(ai_message)
             
-            # 2. Hat die KI entschieden, ein Werkzeug zu nutzen?
             if ai_message.tool_calls:
                 for tool_call in ai_message.tool_calls:
                     print(f"[AGENT AKTION] Führt Werkzeug aus: {tool_call['name']} | Suchbegriff: {tool_call['args']}")
                     
-                    # Führt die reale Google/DuckDuckGo Suche aus!
                     if tool_call["name"] == "search_internet":
-                        tool_output = search_internet.invoke(tool_call)
-                        messages.append(tool_output)
+                        # Den reinen Text-String als Suche extrahieren
+                        search_query = tool_call["args"].get("query", str(tool_call["args"]))
+                        raw_result = search_internet.invoke(search_query)
+                        
+                        # DER FIX: Sauberes Verpacken der Antwort für die KI
+                        tool_message = ToolMessage(
+                            content=str(raw_result),
+                            tool_call_id=tool_call["id"]
+                        )
+                        messages.append(tool_message)
                         print(f"[SYSTEM] Werkzeug hat Live-Daten aus dem Internet geladen!")
                 
-                # 3. Wir geben der KI das Suchergebnis zum Lesen und lassen sie den Schlussbericht schreiben
                 print("[AGENT DENKT] Analysiere Suchergebnisse...")
                 final_response = llm_with_tools.invoke(messages)
                 print("--- AGENT SCHLUSSFOLGERUNG ---")
                 print(final_response.content)
                 print("------------------------------")
             else:
-                # KI hat sich entschieden, nicht zu suchen (selten)
                 print("--- AGENT GEDANKENGANG ---")
                 print(ai_message.content)
                 print("--------------------------")
