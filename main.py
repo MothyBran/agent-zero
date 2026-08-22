@@ -122,7 +122,6 @@ class AgentZero:
         try:
             import requests
             from langchain_openai import ChatOpenAI
-            # DER FIX: ToolMessage korrekt importieren
             from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
             
             headers = {"Authorization": f"Bearer {self.api_key}"}
@@ -134,10 +133,11 @@ class AgentZero:
             data = response.json()
             available_models = [m["id"] for m in data.get("data", [])]
             
+            # Die Text-Modelle werden aus den verfügbaren Modellen gefiltert
+            text_models = [m for m in available_models if "whisper" not in m.lower() and "guard" not in m.lower()]
+            
             preferred_model = None
             
-            # DER FIX: VIP-Liste nur für Tool-Calling Modelle
-                        # DER FIX: Kürzere, tolerantere VIP-Liste
             priorities = [
                 "llama-3.3", 
                 "llama-3.1", 
@@ -154,7 +154,6 @@ class AgentZero:
                     break
                     
             if not preferred_model and text_models:
-                # Absolut sicherer Fallback: Nimm einfach das erste existierende Modell
                 preferred_model = text_models[0] 
                 
             if not preferred_model:
@@ -185,11 +184,9 @@ class AgentZero:
                     print(f"[AGENT AKTION] Führt Werkzeug aus: {tool_call['name']} | Suchbegriff: {tool_call['args']}")
                     
                     if tool_call["name"] == "search_internet":
-                        # Den reinen Text-String als Suche extrahieren
                         search_query = tool_call["args"].get("query", str(tool_call["args"]))
                         raw_result = search_internet.invoke(search_query)
                         
-                        # DER FIX: Sauberes Verpacken der Antwort für die KI
                         tool_message = ToolMessage(
                             content=str(raw_result),
                             tool_call_id=tool_call["id"]
