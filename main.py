@@ -137,24 +137,28 @@ class AgentZero:
             preferred_model = None
             
             # DER FIX: VIP-Liste nur für Tool-Calling Modelle
+                        # DER FIX: Kürzere, tolerantere VIP-Liste
             priorities = [
-                "llama-3.3-70b", 
-                "llama-3.1-70b", 
-                "llama-3.1-8b", 
-                "llama3-70b",
-                "mixtral-8x7b"
+                "llama-3.3", 
+                "llama-3.1", 
+                "llama3",
+                "mixtral"
             ]
             
             for prio in priorities:
-                for model_id in available_models:
+                for model_id in text_models:
                     if prio in model_id.lower():
                         preferred_model = model_id
                         break
                 if preferred_model:
                     break
                     
+            if not preferred_model and text_models:
+                # Absolut sicherer Fallback: Nimm einfach das erste existierende Modell
+                preferred_model = text_models[0] 
+                
             if not preferred_model:
-                preferred_model = "llama-3.1-8b-instant" # Stabiler Fallback
+                raise ValueError("Keine Modelle verfügbar.")
                 
             print(f"[SYSTEM] Gehirn online: {preferred_model} (Tool Calling verifiziert)")
             
