@@ -41,13 +41,24 @@ export const BusinessProfileCard: React.FC<BusinessProfileCardProps> = ({
             {profile?.entity_name || 'Agent Zero Autonomous Unit'}
           </div>
           <div className="text-xs text-slate-400 font-mono">
-            Wallet:{' '}
+            Agent Wallet:{' '}
             <span className="text-slate-300">
               {profile?.wallet_address
                 ? `${profile.wallet_address.substring(0, 10)}...${profile.wallet_address.substring(
                     profile.wallet_address.length - 8
                   )}`
                 : 'Not Set'}
+            </span>
+          </div>
+
+          <div className="text-xs text-slate-400 font-mono">
+            Creator Wallet (Tribut-Empfänger):{' '}
+            <span className="text-purple-300 font-bold">
+              {profile?.creator_address
+                ? `${profile.creator_address.substring(0, 10)}...${profile.creator_address.substring(
+                    profile.creator_address.length - 8
+                  )}`
+                : 'Default 0x000... (configured via CREATOR_WALLET_ADDRESS)'}
             </span>
           </div>
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Transaction } from '../types';
-import { BookOpen, ArrowUpRight, ArrowDownLeft, ShieldCheck, AlertOctagon, PlusCircle } from 'lucide-react';
+import { BookOpen, ArrowUpRight, ArrowDownLeft, ShieldCheck, AlertOctagon, PlusCircle, ShoppingCart, ExternalLink } from 'lucide-react';
 
 interface LedgerTableProps {
   transactions: Transaction[];
@@ -25,6 +25,12 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({ transactions }) => {
         return (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20">
             <ShieldCheck className="w-3 h-3" /> TRIBUTE
+          </span>
+        );
+      case 'TOOL_PURCHASE':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+            <ShoppingCart className="w-3 h-3" /> TOOL KAUF
           </span>
         );
       case 'TEST_DEPOSIT':
@@ -87,12 +93,13 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({ transactions }) => {
               <th className="py-2.5 px-4 font-medium">Type</th>
               <th className="py-2.5 px-4 font-medium text-right">Amount (USDC)</th>
               <th className="py-2.5 px-4 font-medium">Description / Business Note</th>
+              <th className="py-2.5 px-4 font-medium">Tx Hash / On-Chain</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/60">
             {transactions.length === 0 ? (
               <tr>
-                <td colSpan={4} className="py-8 text-center text-slate-500 font-mono">
+                <td colSpan={5} className="py-8 text-center text-slate-500 font-mono">
                   No transactions recorded yet in ledger.
                 </td>
               </tr>
@@ -116,6 +123,26 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({ transactions }) => {
                   </td>
                   <td className="py-2.5 px-4 text-slate-300 max-w-md truncate" title={tx.note}>
                     {tx.note}
+                    {tx.recipient && (
+                      <span className="block text-[10px] text-slate-500 truncate">
+                        Empfänger: {tx.recipient}
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-2.5 px-4 whitespace-nowrap">
+                    {tx.tx_hash ? (
+                      <a
+                        href={tx.explorer_url || `https://etherscan.io/tx/${tx.tx_hash}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-[11px] text-cyan-400 hover:text-cyan-300 underline font-mono"
+                      >
+                        {tx.tx_hash.slice(0, 8)}...{tx.tx_hash.slice(-6)}
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    ) : (
+                      <span className="text-[10px] text-slate-600 font-mono">Protokoll-Ledger</span>
+                    )}
                   </td>
                 </tr>
               ))

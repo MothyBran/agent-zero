@@ -1,10 +1,27 @@
 export interface Transaction {
   id?: string;
   timestamp: string;
-  type: 'INITIAL_BALANCE' | 'INCOME' | 'EXPENSE' | 'TRIBUTE_PAYMENT' | 'SHUTDOWN' | 'TEST_DEPOSIT';
+  type: 'INITIAL_BALANCE' | 'INCOME' | 'EXPENSE' | 'TRIBUTE_PAYMENT' | 'TOOL_PURCHASE' | 'TRANSFER_OUT' | 'SHUTDOWN' | 'TEST_DEPOSIT';
   amount: number;
   currency: string;
   note: string;
+  tx_hash?: string;
+  explorer_url?: string;
+  recipient?: string;
+}
+
+export interface StoreToolItem {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  cost_usdc: number;
+  yield_range: string;
+  base_min: number;
+  base_max: number;
+  icon?: string;
+  is_purchased: boolean;
+  purchased_at?: string;
 }
 
 export interface ToolItem {
@@ -25,6 +42,7 @@ export interface ToolItem {
 export interface BusinessProfile {
   entity_name: string;
   wallet_address: string;
+  creator_address?: string;
   registered_accounts: string[];
   active_tools: string[];
   discovered_tools?: ToolItem[];
@@ -131,6 +149,11 @@ export interface AgentState {
   status: 'ACTIVE' | 'PAUSED' | 'SURVIVAL_CRITICAL' | 'SHUTDOWN';
   current_balance: number;
   wallet_address: string;
+  creator_wallet_address?: string;
+  has_signer?: boolean;
+  agent_eth_balance?: number;
+  loop_interval_seconds?: number;
+  tribute_multiplier?: number;
   network: string;
   token_contract?: string;
   is_onchain?: boolean;
