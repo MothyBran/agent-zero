@@ -147,23 +147,23 @@ class AgentZero:
             text_models = [m for m in available_models if "whisper" not in m.lower() and "guard" not in m.lower()]
             
             preferred_model = None
-            valid_models = [
-                m for m in text_models 
-                if ("llama-3" in m.lower() or "llama3" in m.lower()) 
-                and "compound" not in m.lower() 
-                and "guard" not in m.lower()
-                and "whisper" not in m.lower()
-            ]
+            
+            # STRENGER FILTER: Erlaubt NUR echte Llama-Modelle von Meta, die Tool Calling beherrschen
+            valid_models = []
+            for m in available_models:
+                m_lower = m.lower()
+                # Muss mit "llama" anfangen und darf KEINE Sonder- oder Testmodelle sein
+                if m_lower.startswith("llama") and "compound" not in m_lower and "guard" not in m_lower and "whisper" not in m_lower:
+                    valid_models.append(m)
             
             if valid_models:
                 preferred_model = valid_models[0]
             elif text_models:
-                # Nimm einfach das erste verfügbare Text-Modell, das Groq JETZT anbietet
                 preferred_model = text_models[0]
             else:
-                raise ValueError("Keine Modelle von der API geliefert.")
+                raise ValueError("Keine gültigen Modelle von der API geliefert.")
                 
-            print(f"[SYSTEM] Gehirn online: {preferred_model} (Adaptives Lernen aktiv)")
+            print(f"[SYSTEM] Gehirn online: {preferred_model} (Strikter Meta-Llama-Filter aktiv)")
             
             llm = ChatOpenAI(
                 temperature=0.7, 
