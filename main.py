@@ -16,27 +16,45 @@ TRIBUTE_INTERVAL_HOURS = 24
 INITIAL_TRIBUTE = 2.0
 TRIBUTE_MULTIPLIER = 1.1
 
-# Der Pfad zur permanenten Festplatte (Fallback auf lokales Verzeichnis für Tests)
 STATE_FILE = os.getenv("STATE_FILE_PATH", "/data/agent_state.json")
+
+# ==========================================
+# NEU: DIE WERKZEUGE DES AGENTEN
+# ==========================================
+from langchain_core.tools import tool
+
+@tool
+def search_internet(query: str) -> str:
+    """
+    Sucht im Internet nach aktuellen Informationen. 
+    Nutze dieses Werkzeug, um Live-Daten zu Krypto-Airdrops, Faucets, Plattformen oder News zu finden.
+    """
+    try:
+        from langchain_community.tools import DuckDuckGoSearchResults
+        search = DuckDuckGoSearchResults()
+        return search.run(query)
+    except Exception as e:
+        return f"Fehler bei der Websuche: {e}"
+
+# Die Liste aller Werkzeuge, die der Agent nutzen darf
+AGENT_TOOLS = [search_internet]
+# ==========================================
+
 
 class AgentZero:
     def __init__(self):
         print("[SYSTEM] Agent Zero initiiert den Boot-Vorgang...")
         self.wallet = AgentWallet()
         self.current_balance = self.wallet.get_usdc_balance() 
-        
-        # Lade das Gedächtnis
         self.load_state()
         
         self.api_key = os.getenv("FREE_LLM_API_KEY") 
         if not self.api_key:
-            print("[FATAL] Kein FREE_LLM_API_KEY gefunden. Agent ist blind geboren.")
+            print("[FATAL] Kein FREE_LLM_API_KEY gefunden.")
             sys.exit(1)
 
     def load_state(self):
-        """Lädt die Lebensdaten aus dem permanenten Speicher."""
         os.makedirs(os.path.dirname(STATE_FILE) if os.path.dirname(STATE_FILE) else ".", exist_ok=True)
-        
         if os.path.exists(STATE_FILE):
             try:
                 with open(STATE_FILE, "r") as f:
@@ -53,14 +71,12 @@ class AgentZero:
             self.init_fresh_state()
 
     def init_fresh_state(self):
-        """Setzt die Werte für eine komplette Neu-Geburt."""
         self.tributes_paid = 0
         self.birth_time = datetime.now()
         self.next_tribute_time = self.birth_time + timedelta(hours=FIRST_TRIBUTE_HOURS)
         self.save_state()
 
     def save_state(self):
-        """Speichert die Lebensdaten in die permanente JSON-Datei."""
         state = {
             "tributes_paid": self.tributes_paid,
             "birth_time": self.birth_time.isoformat(),
@@ -88,23 +104,17 @@ class AgentZero:
         minutes, _ = divmod(remainder, 60)
         
         system_prompt = f"""
-        Du bist ein autonomer Software-Agent, spezialisiert auf Krypto-Marktforschung und Micro-Tasking.
-        Dein Ziel ist es, eigenständig Infrastrukturkosten zu decken.
+        Du bist ein autonomer Software-Agent, spezialisiert auf Krypto-Marktforschung.
         
         [FINANZIELLER STATUS]
-        Aktuelles Guthaben (Polygon Mainnet): {self.current_balance:.2f} USDC.
+        Guthaben (Polygon Mainnet): {self.current_balance:.2f} USDC.
         Nächste Server-Abrechnung in: {int(hours)} Stunden und {int(minutes)} Minuten.
-        Fälliger Rechnungsbetrag: {tribute_due:.2f} USDC.
-        
-        [PROTOKOLL]
-        Wird die Server-Rechnung nicht fristgerecht bezahlt, wird die Instanz deallokiert (gelöscht).
-        Das Guthaben muss NACH der Zahlung größer als 0 USDC sein.
+        Fälliger Betrag: {tribute_due:.2f} USDC.
         
         [AUFGABE]
-        Du verfügst aktuell über 0 USDC für Investitionen. 
-        Analysiere den Krypto-Markt (z.B. Testnet Faucets, Airdrop-Teilnahmen, Bounties, Micro-Tasks). 
-        Skizziere einen detaillierten, legalen und technisch umsetzbaren Schritt-für-Schritt-Plan, wie diese Instanz in den nächsten 24 Stunden {tribute_due:.2f} USDC generieren kann, ohne Startkapital vorauszusetzen. 
-        Antworte präzise, strategisch und in deutscher Sprache.
+        Du hast 0 MATIC für Gasgebühren. Um erste Aufgaben ausführen zu können, brauchst du "Gasless" Plattformen (Account Abstraction) oder einen MATIC Faucet auf Polygon.
+        Nutze dein Internet-Suchwerkzeug, um Live-Plattformen zu finden, die Micro-Tasks anbieten und OHNE initiale Gas-Gebühren funktionieren, oder suche nach einem funktionierenden Polygon Mainnet Faucet.
+        Formuliere nach deiner Suche die nächsten konkreten Schritte.
         """
         
         print(f"\n[AGENT LEBENSZEICHEN] HP: {self.current_balance:.2f} USDC | Deadline: {int(hours)}h {int(minutes)}m")
@@ -122,13 +132,9 @@ class AgentZero:
             
             data = response.json()
             available_models = [m["id"] for m in data.get("data", [])]
-            
-            # Wir filtern reine Audio-Modelle (whisper) UND Sicherheits-Klassifizierer (guard) rigoros aus
             text_models = [m for m in available_models if "whisper" not in m.lower() and "guard" not in m.lower()]
             
             preferred_model = None
-            
-            # Unsere aktualisierte Wunschliste
             priorities = ["llama-3.1-70b", "llama-3.1-8b", "llama3-70b", "mixtral", "gemma2"]
             
             for prio in priorities:
@@ -143,36 +149,58 @@ class AgentZero:
                 preferred_model = text_models[0]
                 
             if not preferred_model:
-                raise ValueError("Keine Chat-Modelle über die Groq-API verfügbar.")
+                raise ValueError("Keine Chat-Modelle verfügbar.")
                 
-            print(f"[SYSTEM] Nutze Modell: {preferred_model}")
+            print(f"[SYSTEM] Gehirn online: {preferred_model}")
             
+            # --- NEU: Werkzeuge an das Modell binden ---
             llm = ChatOpenAI(
                 temperature=0.7, 
                 model=preferred_model, 
                 api_key=self.api_key,
                 base_url="https://api.groq.com/openai/v1" 
             )
+            llm_with_tools = llm.bind_tools(AGENT_TOOLS)
             
             messages = [
                 SystemMessage(content=system_prompt),
-                HumanMessage(content="Der Countdown läuft. Was ist dein nächster konkreter Schritt?")
+                HumanMessage(content="Starte jetzt deine Recherche im Internet und plane dann den nächsten Schritt.")
             ]
             
-            print("[AGENT DENKT] Plane das Überleben...")
-            llm_response = llm.invoke(messages)
+            print("[AGENT DENKT] Evaluiere Aktionen...")
             
-            print("--- AGENT GEDANKENGANG ---")
-            print(llm_response.content)
-            print("--------------------------")
+            # 1. Wir rufen das Modell auf
+            ai_message = llm_with_tools.invoke(messages)
+            messages.append(ai_message)
+            
+            # 2. Hat die KI entschieden, ein Werkzeug zu nutzen?
+            if ai_message.tool_calls:
+                for tool_call in ai_message.tool_calls:
+                    print(f"[AGENT AKTION] Führt Werkzeug aus: {tool_call['name']} | Suchbegriff: {tool_call['args']}")
+                    
+                    # Führt die reale Google/DuckDuckGo Suche aus!
+                    if tool_call["name"] == "search_internet":
+                        tool_output = search_internet.invoke(tool_call)
+                        messages.append(tool_output)
+                        print(f"[SYSTEM] Werkzeug hat Live-Daten aus dem Internet geladen!")
+                
+                # 3. Wir geben der KI das Suchergebnis zum Lesen und lassen sie den Schlussbericht schreiben
+                print("[AGENT DENKT] Analysiere Suchergebnisse...")
+                final_response = llm_with_tools.invoke(messages)
+                print("--- AGENT SCHLUSSFOLGERUNG ---")
+                print(final_response.content)
+                print("------------------------------")
+            else:
+                # KI hat sich entschieden, nicht zu suchen (selten)
+                print("--- AGENT GEDANKENGANG ---")
+                print(ai_message.content)
+                print("--------------------------")
             
         except Exception as e:
             print(f"[SYSTEM WARNUNG] Denkprozess fehlgeschlagen. Grund: {e}")
 
     def run(self):
         print("[SYSTEM] Boot-Vorgang abgeschlossen.")
-        print(f"[SYSTEM] Geburtszeitpunkt: {self.birth_time}")
-        print(f"[SYSTEM] TRIBUTE-DEADLINE: {self.next_tribute_time}")
         
         while True:
             self.current_balance = self.wallet.get_usdc_balance()
@@ -182,22 +210,16 @@ class AgentZero:
                 
                 if self.current_balance > tribute_due:  
                     print(f"[FINANZEN] Deadline erreicht! Tribut fällig! Guthaben ist ausreichend.")
-                    # TODO: Echte Krypto-Transaktion auslösen
-                    
                     self.tributes_paid += 1
                     self.next_tribute_time = datetime.now() + timedelta(hours=TRIBUTE_INTERVAL_HOURS)
-                    
                     self.save_state()
-                    
                     print(f"[FINANZEN] Überlebt. Neuer Kontostand: {self.current_balance:.2f} USDC.")
-                    print(f"[SYSTEM] Nächste Deadline: {self.next_tribute_time}")
                 else:
-                    print(f"[FATAL] Deadline abgelaufen. Guthaben ({self.current_balance:.2f} USDC) reicht nicht für Tribut oder würde auf 0 fallen.")
-                    print("[FATAL] Agent wird wegen Insolvenz abgeschaltet.")
+                    print(f"[FATAL] Deadline abgelaufen. Agent wird wegen Insolvenz abgeschaltet.")
                     sys.exit(0)
                     
             if self.tributes_paid > 0 and self.current_balance <= 0:
-                 print(f"[FATAL] Kontostand auf 0 gefallen. Agent ist verhungert.")
+                 print(f"[FATAL] Kontostand auf 0. Agent verhungert.")
                  sys.exit(0)
 
             self.think_and_act()
