@@ -149,14 +149,18 @@ class AgentZero:
             data = response.json()
             available_models = [m["id"] for m in data.get("data", [])]
             
+                        # Wir filtern Audio/Guard UND erzwingen, dass NUR Llama-Modelle gewählt werden!
             text_models = [
                 m for m in available_models 
                 if "whisper" not in m.lower() 
                 and "guard" not in m.lower() 
+                and "canopylabs" not in m.lower()
+                and "compound" not in m.lower()
+                and "llama" in m.lower()
                 and m not in self.blacklisted_models
             ]
             
-            # Strikte Priorität auf Llama 3.3 / 3.1 für sicheres Tool Calling
+            # Wunschliste für Llama
             priorities = ["llama-3.3", "llama-3.1", "llama3"]
             
             for prio in priorities:
@@ -171,9 +175,9 @@ class AgentZero:
                 selected_model = text_models[0]
                 
             if not selected_model:
-                raise ValueError("Keine Modelle verfügbar.")
+                raise ValueError("Keine gültigen Llama-Modelle über die Groq-API verfügbar.")
                 
-            print(f"[SYSTEM] Nutze Modell mit Werkzeugen: {selected_model}")
+            print(f"[SYSTEM] Nutze verifiziertes Llama-Modell: {selected_model}")
             
             llm = ChatOpenAI(
                 temperature=0.7, 
