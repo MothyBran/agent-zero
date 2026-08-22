@@ -8,6 +8,9 @@ interface VitalsGridProps {
   onRunCycle: () => void;
   onSyncWallet?: () => void;
   onChangeWalletAddress?: (address: string) => Promise<boolean>;
+  onExecuteWork?: (taskType?: string) => Promise<void>;
+  onPayTribute?: () => Promise<void>;
+  onReviveAgent?: () => Promise<void>;
   isProcessingCycle: boolean;
   isSyncingWallet?: boolean;
 }
@@ -18,15 +21,20 @@ export const VitalsGrid: React.FC<VitalsGridProps> = ({
   onRunCycle,
   onSyncWallet,
   onChangeWalletAddress,
+  onExecuteWork,
+  onPayTribute,
+  onReviveAgent,
   isProcessingCycle,
   isSyncingWallet
 }) => {
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [showAddressModal, setShowAddressModal] = useState(false);
-  const [depositAmount, setDepositAmount] = useState('2.0');
+  const [depositAmount, setDepositAmount] = useState('2.5');
   const [customAddress, setCustomAddress] = useState(state?.wallet_address || '');
   const [addressError, setAddressError] = useState('');
   const [addressSuccess, setAddressSuccess] = useState(false);
+  const [isPayingTribute, setIsPayingTribute] = useState(false);
+  const [isWorking, setIsWorking] = useState(false);
 
   const handleDepositSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,6 +67,26 @@ export const VitalsGrid: React.FC<VitalsGridProps> = ({
     }
   };
 
+  const handleManualTribute = async () => {
+    if (!onPayTribute) return;
+    setIsPayingTribute(true);
+    try {
+      await onPayTribute();
+    } finally {
+      setIsPayingTribute(false);
+    }
+  };
+
+  const handleManualWork = async () => {
+    if (!onExecuteWork) return;
+    setIsWorking(true);
+    try {
+      await onExecuteWork();
+    } finally {
+      setIsWorking(false);
+    }
+  };
+
   const timeRemainingSeconds = state?.time_remaining_seconds ?? 0;
   const hours = Math.floor(timeRemainingSeconds / 3600);
   const minutes = Math.floor((timeRemainingSeconds % 3600) / 60);
@@ -67,18 +95,25 @@ export const VitalsGrid: React.FC<VitalsGridProps> = ({
   const currentBalance = state?.current_balance ?? 0;
   const tributeDue = state?.current_tribute_due ?? 2.0;
   const isHealthy = currentBalance >= tributeDue;
+  const isTerminated = state?.is_terminated || state?.status === 'SHUTDOWN';
 
   return (
     <div id="vitals-section" className="space-y-4">
       {/* 4 Key Vital Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1: USDC Balance */}
-        <div id="vital-balance-card" className="bg-slate-900 border border-slate-800 rounded-xl p-4 relative overflow-hidden flex flex-col justify-between">
+        <div id="vital-balance-card" className={`bg-slate-900 border rounded-xl p-4 relative overflow-hidden flex flex-col justify-between ${
+          isTerminated ? 'border-rose-800 bg-rose-950/30' : 'border-slate-800'
+        }`}>
           <div className="flex items-center justify-between text-slate-400 mb-2">
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-medium uppercase tracking-wider">USDC Balance (HP)</span>
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                On-Chain
+              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono border ${
+                isTerminated
+                  ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                  : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+              }`}>
+                {isTerminated ? 'BANKRUPT' : 'On-Chain'}
               </span>
             </div>
             <div className="flex items-center gap-1">
@@ -93,21 +128,25 @@ export const VitalsGrid: React.FC<VitalsGridProps> = ({
                   <RefreshCw className={`w-3.5 h-3.5 ${isSyncingWallet ? 'animate-spin text-emerald-400' : ''}`} />
                 </button>
               )}
-              <div className="p-1.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <div className={`p-1.5 rounded-md border ${
+                isTerminated
+                  ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                  : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+              }`}>
                 <DollarSign className="w-4 h-4" />
               </div>
             </div>
           </div>
           <div>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl sm:text-3xl font-mono font-bold text-slate-100">
+              <span className={`text-2xl sm:text-3xl font-mono font-bold ${isTerminated ? 'text-rose-400' : 'text-slate-100'}`}>
                 {currentBalance.toFixed(4)}
               </span>
               <span className="text-xs font-mono font-semibold text-emerald-400">USDC</span>
             </div>
             <div className="mt-1 flex items-center justify-between text-[11px]">
-              <span className={isHealthy ? 'text-emerald-400' : 'text-amber-400 font-medium'}>
-                {isHealthy ? '● Sufficient for Tribute' : '▲ Deficit for Next Tribute'}
+              <span className={isTerminated ? 'text-rose-400 font-bold' : isHealthy ? 'text-emerald-400' : 'text-amber-400 font-medium'}>
+                {isTerminated ? '✕ SYSTEM SHUTDOWN' : isHealthy ? '● Sufficient for Tribute' : '▲ Deficit for Next Tribute'}
               </span>
               <div className="flex items-center gap-2">
                 <button
@@ -142,20 +181,34 @@ export const VitalsGrid: React.FC<VitalsGridProps> = ({
             </div>
           </div>
           <div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-2xl sm:text-3xl font-mono font-bold text-slate-100">
-                {tributeDue.toFixed(2)}
-              </span>
-              <span className="text-xs font-mono font-semibold text-amber-400">USDC</span>
+            <div className="flex items-baseline justify-between gap-2">
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl sm:text-3xl font-mono font-bold text-slate-100">
+                  {tributeDue.toFixed(2)}
+                </span>
+                <span className="text-xs font-mono font-semibold text-amber-400">USDC</span>
+              </div>
+              {onPayTribute && isHealthy && !isTerminated && (
+                <button
+                  onClick={handleManualTribute}
+                  disabled={isPayingTribute}
+                  title="Tribut vorzeitig begleichen und Pacht um 48h verlängern"
+                  className="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-[10px] font-mono font-semibold transition-all disabled:opacity-50"
+                >
+                  {isPayingTribute ? 'Paying...' : 'Pay Now'}
+                </button>
+              )}
             </div>
             <p className="text-[11px] text-slate-400 mt-1">
-              Rate: 2.0 × (1.10)^{state?.tributes_paid || 0} (10% scaling)
+              Level {state?.tributes_paid ?? 0} → {((state?.tributes_paid ?? 0) + 1)} · 10% scaling
             </p>
           </div>
         </div>
 
         {/* Card 3: Tribute Deadline Countdown */}
-        <div id="vital-countdown-card" className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
+        <div id="vital-countdown-card" className={`bg-slate-900 border rounded-xl p-4 flex flex-col justify-between ${
+          isTerminated ? 'border-rose-900/60' : 'border-slate-800'
+        }`}>
           <div className="flex items-center justify-between text-slate-400 mb-2">
             <span className="text-xs font-medium uppercase tracking-wider">Survival Deadline</span>
             <div className="p-1.5 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20">
@@ -163,7 +216,9 @@ export const VitalsGrid: React.FC<VitalsGridProps> = ({
             </div>
           </div>
           <div>
-            <div className="text-2xl sm:text-3xl font-mono font-bold text-slate-100 flex items-center gap-1">
+            <div className={`text-2xl sm:text-3xl font-mono font-bold flex items-center gap-1 ${
+              isTerminated ? 'text-rose-500' : hours < 6 ? 'text-amber-400' : 'text-slate-100'
+            }`}>
               <span>{String(hours).padStart(2, '0')}</span>
               <span className="text-slate-600">:</span>
               <span>{String(minutes).padStart(2, '0')}</span>
@@ -171,7 +226,7 @@ export const VitalsGrid: React.FC<VitalsGridProps> = ({
               <span className="text-slate-400 text-xl">{String(seconds).padStart(2, '0')}</span>
             </div>
             <p className="text-[11px] text-slate-400 mt-1">
-              Auto-deduction or termination on zero balance
+              {isTerminated ? 'Expired · Host deprovisioned' : 'Hard shutdown if 0$ or missed'}
             </p>
           </div>
         </div>
@@ -179,7 +234,7 @@ export const VitalsGrid: React.FC<VitalsGridProps> = ({
         {/* Card 4: Tributes Paid / Generations */}
         <div id="vital-generations-card" className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-xs font-medium uppercase tracking-wider">Tributes Survived</span>
+            <span className="text-xs font-medium uppercase tracking-wider">Survival Level & Jobs</span>
             <div className="p-1.5 rounded-md bg-purple-500/10 text-purple-400 border border-purple-500/20">
               <Award className="w-4 h-4" />
             </div>
@@ -189,46 +244,82 @@ export const VitalsGrid: React.FC<VitalsGridProps> = ({
               <span className="text-2xl sm:text-3xl font-mono font-bold text-slate-100">
                 Lvl {state?.tributes_paid ?? 0}
               </span>
-              <span className="text-xs text-purple-400 font-mono">Paid</span>
+              <span className="text-xs text-purple-400 font-mono">
+                ({state?.active_jobs_completed ?? 0} Jobs Done)
+              </span>
             </div>
             <p className="text-[11px] text-slate-400 mt-1">
-              Active Model: <span className="text-slate-300 font-mono">{state?.active_model || 'Standard'}</span>
+              Active: <span className="text-slate-300 font-mono">{state?.active_model || 'Groq / Gemini'}</span>
             </p>
           </div>
         </div>
       </div>
 
-      {/* Action Banner / Instant Cycle Control */}
-      <div id="quick-cycle-banner" className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      {/* Action Banner / Instant Work & Cycle Control */}
+      <div id="quick-cycle-banner" className={`border rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
+        isTerminated
+          ? 'bg-rose-950/40 border-rose-800 text-rose-200'
+          : 'bg-slate-900/60 border-slate-800'
+      }`}>
         <div className="space-y-1">
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <h3 className="text-sm font-semibold text-slate-200">Autonomous Reasoning Engine</h3>
+            <span className={`w-2 h-2 rounded-full ${isTerminated ? 'bg-rose-500 animate-ping' : 'bg-emerald-400 animate-pulse'}`}></span>
+            <h3 className="text-sm font-semibold text-slate-200">
+              {isTerminated ? 'SYSTEM TERMINATED (Hard Shutdown Triggered)' : 'Autonomous Work & Survival Engine'}
+            </h3>
           </div>
           <p className="text-xs text-slate-400">
-            Agent Zero evaluates real on-chain Ethereum liquidity, triggers DuckDuckGo searches for gas-free bounties, and manages survival protocol.
+            {isTerminated
+              ? 'Agent Zero konnte seine Abgaben nicht fristgerecht zahlen oder ist bankrott. Bitte Notfall-Bailout durchführen.'
+              : 'Agent Zero arbeitet eigenständig für sein Überleben: Führt kontinuierlich Bounties, Gitcoin Quests & On-Chain Verifications aus.'}
           </p>
         </div>
 
-        <div className="flex items-center gap-3 w-full sm:w-auto">
-          <button
-            id="instant-cycle-btn"
-            onClick={onRunCycle}
-            disabled={isProcessingCycle}
-            className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold shadow-md shadow-emerald-950 transition-all cursor-pointer"
-          >
-            {isProcessingCycle ? (
-              <>
-                <Sparkles className="w-4 h-4 animate-spin" />
-                <span>Agent Thinking & Acting...</span>
-              </>
-            ) : (
-              <>
-                <Zap className="w-4 h-4 text-emerald-200" />
-                <span>Execute Instant Cycle</span>
-              </>
-            )}
-          </button>
+        <div className="flex items-center gap-3 w-full sm:w-auto flex-wrap">
+          {isTerminated ? (
+            <button
+              id="emergency-revive-btn"
+              onClick={() => onReviveAgent && onReviveAgent()}
+              className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-lg shadow-rose-950 transition-all cursor-pointer animate-pulse"
+            >
+              <Zap className="w-4 h-4" />
+              <span>⚡ Notfall-Bailout & Wiederbeleben (+2.5 USDC)</span>
+            </button>
+          ) : (
+            <>
+              {onExecuteWork && (
+                <button
+                  id="execute-job-btn"
+                  onClick={handleManualWork}
+                  disabled={isWorking || isProcessingCycle}
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 text-xs font-medium transition-all cursor-pointer disabled:opacity-50"
+                  title="Führt sofort einen realen Bounty-Arbeitsauftrag aus"
+                >
+                  <Award className={`w-3.5 h-3.5 ${isWorking ? 'animate-spin' : ''}`} />
+                  <span>{isWorking ? 'Working...' : 'Work Bounty (+USDC)'}</span>
+                </button>
+              )}
+
+              <button
+                id="instant-cycle-btn"
+                onClick={onRunCycle}
+                disabled={isProcessingCycle || isWorking}
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold shadow-md shadow-emerald-950 transition-all cursor-pointer"
+              >
+                {isProcessingCycle ? (
+                  <>
+                    <Sparkles className="w-4 h-4 animate-spin" />
+                    <span>Agent Thinking & Working...</span>
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-4 h-4 text-emerald-200" />
+                    <span>Instant Cycle (Think & Work)</span>
+                  </>
+                )}
+              </button>
+            </>
+          )}
         </div>
       </div>
 

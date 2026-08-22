@@ -25,6 +25,7 @@ export interface AgentState {
   next_tribute_time: string;
   blacklisted_models: string[];
   is_running: boolean;
+  is_terminated?: boolean;
   status: 'ACTIVE' | 'PAUSED' | 'SURVIVAL_CRITICAL' | 'SHUTDOWN';
   current_balance: number;
   wallet_address: string;
@@ -39,6 +40,7 @@ export interface AgentState {
   last_cycle_time?: string;
   active_model?: string;
   available_models: string[];
+  active_jobs_completed?: number;
 }
 
 export interface LogEntry {

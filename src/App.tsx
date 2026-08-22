@@ -192,6 +192,49 @@ export function App() {
     }
   };
 
+  const handleExecuteWork = async (taskType?: string) => {
+    try {
+      const res = await fetch('/api/tools/execute-work', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskType })
+      });
+      if (res.ok) {
+        await fetchAllData();
+      }
+    } catch (err) {
+      console.error('Failed to execute work bounty:', err);
+    }
+  };
+
+  const handlePayTribute = async () => {
+    try {
+      const res = await fetch('/api/tools/pay-tribute', { method: 'POST' });
+      if (res.ok) {
+        await fetchAllData();
+      }
+    } catch (err) {
+      console.error('Failed to pay tribute:', err);
+    }
+  };
+
+  const handleReviveAgent = async () => {
+    try {
+      const res = await fetch('/api/agent/revive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: 2.5 })
+      });
+      if (res.ok) {
+        await fetchAllData();
+      }
+    } catch (err) {
+      console.error('Failed to revive agent:', err);
+    }
+  };
+
+  const isTerminated = state?.is_terminated || state?.status === 'SHUTDOWN';
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500/30 selection:text-emerald-200">
       <Header
@@ -201,6 +244,31 @@ export function App() {
         onToggleRun={handleToggleRun}
       />
 
+      {/* Emergency Shutdown Banner */}
+      {isTerminated && (
+        <div className="bg-rose-950 border-b border-rose-800 text-rose-100 py-3 px-4 shadow-lg shadow-rose-950/50">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 animate-bounce" />
+              <div>
+                <span className="font-bold uppercase tracking-wider font-mono text-rose-300">
+                  CRITICAL: AGENT ZERO SHUTDOWN / TERMINIERT
+                </span>
+                <p className="text-rose-300/90 text-[11px] mt-0.5">
+                  Grund: {state?.shutdown_reason || 'Pacht/Tribut nicht bezahlt oder Guthaben auf 0$ gefallen. Der Agent wurde planmäßig heruntergefahren.'}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleReviveAgent}
+              className="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold font-mono text-xs shadow transition-all cursor-pointer whitespace-nowrap"
+            >
+              ⚡ Notfall-Bailout (+2.5 USDC Re-Activation)
+            </button>
+          </div>
+        </div>
+      )}
+
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         {/* Vitals Summary Grid */}
         <VitalsGrid
@@ -209,6 +277,9 @@ export function App() {
           onRunCycle={handleRunCycle}
           onSyncWallet={handleSyncWallet}
           onChangeWalletAddress={handleChangeWalletAddress}
+          onExecuteWork={handleExecuteWork}
+          onPayTribute={handlePayTribute}
+          onReviveAgent={handleReviveAgent}
           isProcessingCycle={isProcessingCycle}
           isSyncingWallet={isSyncingWallet}
         />
@@ -260,7 +331,7 @@ export function App() {
             }`}
           >
             <Wrench className="w-3.5 h-3.5" />
-            <span>Tools Sandbox</span>
+            <span>Tools & Arbeitsplatz</span>
           </button>
 
           <button
@@ -287,6 +358,8 @@ export function App() {
               <ToolSandbox
                 onExecuteSearch={handleSearchTool}
                 onExecuteWallet={handleWalletTool}
+                onExecuteWork={handleExecuteWork}
+                onPayTribute={handlePayTribute}
               />
               <BusinessProfileCard
                 profile={profile}
@@ -315,6 +388,8 @@ export function App() {
             <ToolSandbox
               onExecuteSearch={handleSearchTool}
               onExecuteWallet={handleWalletTool}
+              onExecuteWork={handleExecuteWork}
+              onPayTribute={handlePayTribute}
             />
             <GroqModelsCard />
           </div>
