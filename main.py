@@ -157,8 +157,11 @@ class AgentZero:
             
             if valid_models:
                 preferred_model = valid_models[0]
+            elif text_models:
+                # Nimm einfach das erste verfügbare Text-Modell, das Groq JETZT anbietet
+                preferred_model = text_models[0]
             else:
-                preferred_model = "llama-3.1-8b-instant"
+                raise ValueError("Keine Modelle von der API geliefert.")
                 
             print(f"[SYSTEM] Gehirn online: {preferred_model} (Adaptives Lernen aktiv)")
             
