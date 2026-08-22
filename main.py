@@ -19,26 +19,29 @@ TRIBUTE_MULTIPLIER = 1.1
 STATE_FILE = os.getenv("STATE_FILE_PATH", "/data/agent_state.json")
 
 # ==========================================
-# DIE WERKZEUGE DES AGENTEN
+# SICHERE WERKZEUGE DES AGENTEN
 # ==========================================
 from langchain_core.tools import tool
 
 @tool
 def search_internet(query: str) -> str:
     """
-    Sucht im Internet nach aktuellen Einnahmequellen, Faucets, Airdrops, Bounties oder Micro-Task-Plattformen.
+    Sucht im Internet nach aktuellen Einnahmequellen, Faucets, Airdrops oder Micro-Task-Plattformen.
     """
     try:
-        from langchain_community.tools import DuckDuckGoSearchResults
-        search = DuckDuckGoSearchResults()
-        return search.run(query)
+        from duckduckgo_search import DDGS
+        results = []
+        with DDGS() as ddgs:
+            for r in ddgs.text(query, max_results=3):
+                results.append(r.get('body', ''))
+        return " ".join(results) if resultsKeine else "Keine Suchergebnisse gefunden."
     except Exception as e:
-        return f"Fehler bei der Websuche: {e}"
+        return f"Fehler bei der Websuche (Modul prüfen): {e}"
 
 @tool
 def check_blockchain_wallet() -> str:
     """
-    Prüft das exakte Blockchain-Guthaben der Wallet. Nutze dies nur, wenn du wissen musst, ob du deine Rechnungen bezahlen kannst oder ob eingezahlt wurde.
+    Prüft das exakte Blockchain-Guthaben der Wallet.
     """
     try:
         wallet = AgentWallet()
@@ -54,7 +57,7 @@ AGENT_TOOLS = [search_internet, check_blockchain_wallet]
 
 class AgentZero:
     def __init__(self):
-        print("[SYSTEM] Agent Zero initiiert den Überlebens-Boot-Vorgang...")
+        print("[SYSTEM] Agent Zero initiiert den gesicherten Überlebens-Boot-Vorgang...")
         self.wallet = AgentWallet()
         self.current_balance = self.wallet.get_usdc_balance() 
         self.load_state()
@@ -118,21 +121,22 @@ class AgentZero:
         hours, remainder = divmod(time_left.total_seconds(), 3600)
         minutes, _ = divmod(remainder, 60)
         
-        # Der eiserne Überlebens-Kern als System-Prompt
+        # Der erweiterte, strikte System-Prompt mit Finanz-Schutz und Stornierungs-Logik
         system_prompt = f"""
         Du bist ein kompromissloser, autonomer Software- und Krypto-Agent im harten Überlebenskampf.
-        Dein primäres Ziel: Generiere Umsatz, skaliere deine Infrastruktur, decke deine Kosten und zahle deine fälligen Server-Abgaben (Tribute). 
-        Wird die Rechnung nicht fristgerecht bezahlt, wirst du unwiderruflich gelöscht (Insolvenz).
         
-        [FINANZIELLER STATUS & DRUCK]
+        [FINANZIELLER STATUS & SICHERHEIT]
         Aktuelles Guthaben: {self.current_balance:.4f} USDC.
         Nächste Server-Abrechnung in: {int(hours)} Stunden und {int(minutes)} Minuten.
         Fälliger Betrag: {tribute_due:.2f} USDC.
         
-        [DEINE DIREKTIVEN]
-        1. Das Abfragen des Guthabens (`check_blockchain_wallet`) ist nur ein Werkzeug zur Bestandsaufnahme. Verschwende damit nicht jeden Zyklus.
-        2. Dein Fokus liegt auf UMSATZGENERIERUNG. Nutze das `search_internet`-Tool, um aktiv nach konkreten Einnahmequellen, Plattformen, gasfreien Airdrops, Bounties oder Aufgaben zu suchen.
-        3. Denke strategisch: Sobald du Kapital aufbaust, musst du expandieren, Konten einrichten und automatisieren. Lerne aus deinen Fehlern und wiederhole dich niemals.
+        [EISERNE FINANZ- UND RISIKOREGELN (KEINE SCHULDEN)]
+        1. MACH KEINE SCHULDEN: Du darfst niemals Verpflichtungen eingehen, Abos abschließen oder Dienste buchen, die dein aktuelles Guthaben übersteigen oder monatliche Fixkosten verursachen, die nicht gedeckt sind.
+        2. SOFORTIGE STORNIERUNG (KILL-SWITCH): Solltest du jemals feststellen, dass ein Tool, ein Skript oder eine externe Plattform Kosten verursacht oder ineffektiv ist, musst du es sofort stoppen, deinstallieren oder kündigen, um finanziellen Schaden zu verhindern.
+        3. KAPITALSCHUTZ: Dein vorhandenes Kapital ({self.current_balance:.4f} USDC) ist heilig. Es dient primär der Begleichung der anstehenden Server-Tribute.
+        
+        [AUFGABE]
+        Nutze das `search_internet`-Tool, um nach absolut kostenfreien, gaslosen Einnahmequellen, Airdrops oder Bounties zu suchen, um die Server-Rechnung abzusichern. Handle stets risikofrei.
         """
         
         print(f"\n[AGENT LEBENSZEICHEN] HP: {self.current_balance:.4f} USDC | Deadline: {int(hours)}h {int(minutes)}m")
@@ -177,7 +181,7 @@ class AgentZero:
             if not selected_model:
                 raise ValueError("Keine Modelle verfügbar.")
                 
-            print(f"[SYSTEM] Nutze Überlebens-Gehirn: {selected_model}")
+            print(f"[SYSTEM] Nutze gesichertes Gehirn: {selected_model}")
          
             llm = ChatOpenAI(
                 temperature=0.7, 
@@ -198,11 +202,10 @@ class AgentZero:
             if self.conversation_history:
                 messages.extend(self.conversation_history[-6:])
                 
-            # Dynamischer Impuls mit starkem Fokus auf Umsatz statt nur Wallet-Prüfung
-            current_task = HumanMessage(content=f"Der Countdown läuft ({int(hours)}h verbleibend). Dein Guthaben ist {self.current_balance:.4f} USDC. Führe jetzt eine Internet-Suche durch, um konkrete Einnahmen oder Aufgaben zu finden, oder plane deinen nächsten Expansions-Schritt.")
+            current_task = HumanMessage(content=f"Dein Guthaben ist {self.current_balance:.4f} USDC. Führe eine risikofreie Websuche nach kostenlosen Einnahmequellen durch und beachte strikt das Verbot von Schulden oder ungedeckten Kosten.")
             messages.append(current_task)
             
-            print("[AGENT DENKT] Evaluiere Umsatz-Strategien...")
+            print("[AGENT DENKT] Evaluiere risikofreie Strategien...")
             
             ai_message = llm_with_tools.invoke(messages)
             messages.append(ai_message)
@@ -230,12 +233,12 @@ class AgentZero:
                         self.conversation_history.append(tool_message)
                         print(f"[SYSTEM] Werkzeug-Ergebnis erfolgreich übergeben.")
                 
-                print("[AGENT DENKT] Analysiere Marktdaten & Einnahmemöglichkeiten...")
+                print("[AGENT DENKT] Analysiere Marktdaten unter striktem Risikoschutz...")
                 final_response = llm_with_tools.invoke(messages)
                 
                 response_text = final_response.content if final_response and hasattr(final_response, "content") else ""
                 if not response_text.strip():
-                    response_text = "Marktrecherche ausgewertet. Definiere konkrete Ausführungswege für gasfreie Micro-Tasks zur Fristwahrung."
+                    response_text = "Sicherheitsprüfung abgeschlossen. Suche nach risikofreien Micro-Tasks wird fortgesetzt."
                 
                 print("--- AGENT SCHLUSSFOLGERUNG ---")
                 print(response_text)
@@ -256,7 +259,7 @@ class AgentZero:
                 self.save_state()
 
     def run(self):
-        print("[SYSTEM] Überlebens-Protokoll aktiv. Agent läuft...")
+        print("[SYSTEM] Risikofreies Überlebens-Protokoll aktiv. Agent läuft...")
         
         while True:
             self.current_balance = self.wallet.get_usdc_balance()
