@@ -2,8 +2,11 @@ import os
 import time
 import sys
 import json
+import warnings
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 from wallet import AgentWallet
 
@@ -19,6 +22,17 @@ TRIBUTE_MULTIPLIER = 1.1
 STATE_FILE = os.getenv("STATE_FILE_PATH", "/data/agent_state.json")
 ACCOUNTING_FILE = os.getenv("ACCOUNTING_FILE_PATH", "/data/accounting.json")
 BUSINESS_PROFILE_FILE = os.getenv("BUSINESS_FILE_PATH", "/data/business_profile.json")
+
+# Fallback-Modelle laut aktueller Groq-Dokumentation
+FALLBACK_GROQ_MODELS = [
+    "groq/compound",
+    "groq/compound-mini",
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "qwen/qwen3.6-27b",
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant"
+]
 
 # ==========================================
 # WERKZEUGE DES AGENTEN
@@ -59,7 +73,7 @@ AGENT_TOOLS = [search_internet, check_blockchain_wallet]
 
 class AgentZero:
     def __init__(self):
-        print("[SYSTEM] Agent Zero initiiert das zukunftssichere Groq-Modell-System...")
+        print("[SYSTEM] Agent Zero initiiert das ausfallsichere Multi-Modell-System...")
         self.wallet = AgentWallet()
         self.current_balance = self.wallet.get_usdc_balance() 
         self.load_state()
@@ -82,7 +96,7 @@ class AgentZero:
                 self.birth_time = datetime.fromisoformat(state.get("birth_time"))
                 self.next_tribute_time = datetime.fromisoformat(state.get("next_tribute_time"))
                 self.blacklisted_models = state.get("blacklisted_models", [])
-                print(f"[GEDÄCHTNIS] Erfolgreich geladen. Tribut-Level: {self.tributes_paid}")
+                print(f"[GEDÄCHTNIS] Geladen. Tribut-Level: {self.tributes_paid} | Gesperrte Modelle: {len(self.blacklisted_models)}")
             except Exception as e:
                 print(f"[GEDÄCHTNIS FEHLER]: {e}. Starte frisch.")
                 self.init_fresh_state()
@@ -128,7 +142,7 @@ class AgentZero:
                 "wallet_address": self.wallet.address,
                 "registered_accounts": [],
                 "active_tools": ["DuckDuckGo Search", "Ethereum Web3 Wallet"],
-                "subscriptions_or_costs": [] # Strenges Verbot von Fixkosten / Schulden
+                "subscriptions_or_costs": []
             }
             with open(BUSINESS_PROFILE_FILE, "w") as f:
                 json.dump(initial_profile, f, indent=2)
@@ -157,6 +171,63 @@ class AgentZero:
     def get_time_remaining(self):
         return self.next_tribute_time - datetime.now()
 
+    def get_candidate_models(self):
+        """Holt Live-Modelle von Groq und filtert unbrauchbare Typen sauber heraus."""
+        import requests
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        models_url = "https://api.groq.com/openai/v1/models"
+        
+        available_models = []
+        try:
+            response = requests.get(models_url, headers=headers, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                available_models = [m["id"] for m in data.get("data", [])]
+        except Exception as e:
+            print(f"[SYSTEM HINWEIS] Konnte Live-Modellliste nicht abrufen ({e}). Nutze Fallback-Liste.")
+            
+        if not available_models:
+            available_models = FALLBACK_GROQ_MODELS.copy()
+            
+        # Ungeeignete Typen aussortieren (Audio, Guards, Terms-Fallen, Embeddings)
+        clean_models = [
+            m for m in available_models 
+            if "whisper" not in m.lower() 
+            and "guard" not in m.lower() 
+            and "orpheus" not in m.lower() 
+            and "embed" not in m.lower()
+        ]
+        
+        # Nur nicht-geblacklistete Modelle berücksichtigen
+        valid_models = [m for m in clean_models if m not in self.blacklisted_models]
+        
+        # Selbstheilung: Falls alle Modelle gesperrt wurden, Blacklist leeren
+        if not valid_models:
+            print("[GEDÄCHTNIS SELBSTHEILUNG] Alle Modelle waren auf der Blacklist. Setze Blacklist zurück...")
+            self.blacklisted_models = []
+            self.save_state()
+            valid_models = clean_models
+            
+        # Nach Priorität sortieren
+        priority_keywords = [
+            "groq/compound", "compound", 
+            "openai/gpt-oss-120b", "openai/gpt-oss-20b", 
+            "qwen/qwen3.6-27b", 
+            "llama-3.3", "llama-3.1", "llama3", "mixtral"
+        ]
+        
+        ordered_candidates = []
+        for prio in priority_keywords:
+            for m in valid_models:
+                if prio in m.lower() and m not in ordered_candidates:
+                    ordered_candidates.append(m)
+                    
+        for m in valid_models:
+            if m not in ordered_candidates:
+                ordered_candidates.append(m)
+                
+        return ordered_candidates
+
     def think_and_act(self):
         tribute_due = self.calculate_current_tribute()
         time_left = self.get_time_remaining()
@@ -173,8 +244,8 @@ class AgentZero:
         Fälliger Betrag: {tribute_due:.2f} USDC.
         
         [EISERNE GESCHÄFTS- UND RISIKOREGELN]
-        1. KEINE SCHULDEN / KEINE FIXKOSTEN: Schließe niemals Abos oder kostenpflichtige Verträge ab. Jede Aktion muss durch sofortiges Guthaben gedeckt sein.
-        2. SOFORTIGE KÜNDIGUNG (KILL-SWITCH): Wenn ein Tool oder Skript keinen Ertrag bringt, storniere und deinstalliere es sofort.
+        1. KEINE SCHULDEN / KEINE FIXKOSTEN: Schließe niemals Abos oder Verträge ab. Jede Ausgabe muss durch sofortiges Guthaben gedeckt sein.
+        2. SOFORTIGE KÜNDIGUNG (KILL-SWITCH): Wenn ein Tool keinen Ertrag bringt, storniere und stoppe es sofort.
         3. STRUKTURIERTE BUCHHALTUNG: Dokumentiere deine Einnahmen und Ausgaben transparent.
         
         [AUFGABE]
@@ -183,139 +254,97 @@ class AgentZero:
         
         print(f"\n[AGENT LEBENSZEICHEN] HP: {self.current_balance:.4f} USDC | Deadline: {int(hours)}h {int(minutes)}m")
         
-        selected_model = None
+        candidate_models = self.get_candidate_models()
+        if not candidate_models:
+            print("[FATAL] Absolut keine Modelle verfügbar.")
+            return
+
+        from langchain_openai import ChatOpenAI
+        from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
         
-        try:
-            import requests
-            from langchain_openai import ChatOpenAI
-            from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
-            
-            headers = {"Authorization": f"Bearer {self.api_key}"}
-            models_url = "https://api.groq.com/openai/v1/models"
-            
-            response = requests.get(models_url, headers=headers)
-            response.raise_for_status() 
-            
-            data = response.json()
-            available_models = [m["id"] for m in data.get("data", [])]
-            
-            # Professioneller Filter basierend auf der Groq-Modell-Dokumentation
-            # Schließt Audio (Whisper), Prompt Guards und kostenpflichtige Terms-Fallen (Orpheus) aus
-            clean_models = [
-                m for m in available_models 
-                if "whisper" not in m.lower() 
-                and "guard" not in m.lower() 
-                and "orpheus" not in m.lower()
-                and "embed" not in m.lower()
-                and m not in self.blacklisted_models
-            ]
-            
-            # Exakte Prioritäten-Liste basierend auf Groq Production Systems & Models:
-            # 1. Compound / Compound Mini (Optimierte Agenten-Systeme)
-            # 2. GPT-OSS 120B / 20B (OpenAI Flagship Open-Weight)
-            # 3. Qwen 3.6 27B / Llama / Mixtral
-            priorities = [
-                "groq/compound", 
-                "compound", 
-                "openai/gpt-oss-120b", 
-                "openai/gpt-oss-20b", 
-                "qwen/qwen3.6-27b", 
-                "llama-3.3", 
-                "llama-3.1", 
-                "mixtral"
-            ]
-            
-            for prio in priorities:
-                for model_id in clean_models:
-                    if prio in model_id.lower():
-                        selected_model = model_id
-                        break
-                if selected_model:
-                    break
-                    
-            # Fallback auf das erste verfügbare saubere Modell, falls keines der Prioritäten greift
-            if not selected_model and clean_models:
-                selected_model = clean_models[0]
-                
-            if not selected_model:
-                raise ValueError("Keine validen Sprach-Modelle über die Groq-API verfügbar.")
-                
-            print(f"[SYSTEM] Nutze stabiles Groq-Modell: {selected_model}")
-         
-            llm = ChatOpenAI(
-                temperature=0.7, 
-                model=selected_model, 
-                api_key=self.api_key,
-                base_url="https://api.groq.com/openai/v1" 
-            )
-            
+        # Multi-Modell-Fallback-Schleife
+        success = False
+        for selected_model in candidate_models:
+            print(f"[SYSTEM] Teste Modell: {selected_model}")
             try:
-                llm_with_tools = llm.bind_tools(AGENT_TOOLS)
-                support_tools = True
-            except Exception:
-                llm_with_tools = llm
-                support_tools = False
-            
-            messages = [SystemMessage(content=system_prompt)]
-            
-            if self.conversation_history:
-                messages.extend(self.conversation_history[-6:])
+                llm = ChatOpenAI(
+                    temperature=0.7, 
+                    model=selected_model, 
+                    api_key=self.api_key,
+                    base_url="https://api.groq.com/openai/v1",
+                    timeout=30
+                )
                 
-            current_task = HumanMessage(content=f"Dein Guthaben beträgt {self.current_balance:.4f} USDC. Führe eine Websuche nach kostenlosen Einnahmequellen durch und halte dich strikt an die Buchhaltungs- und Schuldenfreiheits-Regeln.")
-            messages.append(current_task)
-            
-            ai_message = llm_with_tools.invoke(messages)
-            messages.append(ai_message)
-            
-            self.conversation_history.append(current_task)
-            self.conversation_history.append(ai_message)
-            
-            if support_tools and hasattr(ai_message, "tool_calls") and ai_message.tool_calls:
-                for tool_call in ai_message.tool_calls:
-                    print(f"[AGENT AKTION] Führt Werkzeug aus: {tool_call['name']} | Argumente: {tool_call['args']}")
+                try:
+                    llm_with_tools = llm.bind_tools(AGENT_TOOLS)
+                    support_tools = True
+                except Exception:
+                    llm_with_tools = llm
+                    support_tools = False
+                
+                messages = [SystemMessage(content=system_prompt)]
+                if self.conversation_history:
+                    messages.extend(self.conversation_history[-6:])
                     
-                    tool_output = None
-                    if tool_call["name"] == "search_internet":
-                        query = tool_call["args"].get("query", str(tool_call["args"]))
-                        tool_output = search_internet.invoke(query)
-                    elif tool_call["name"] == "check_blockchain_wallet":
-                        tool_output = check_blockchain_wallet.invoke({})
+                current_task = HumanMessage(content=f"Dein Guthaben beträgt {self.current_balance:.4f} USDC. Führe eine Websuche nach kostenlosen Einnahmequellen durch und beachte das Verbot von Schulden.")
+                messages.append(current_task)
+                
+                ai_message = llm_with_tools.invoke(messages)
+                messages.append(ai_message)
+                
+                self.conversation_history.append(current_task)
+                self.conversation_history.append(ai_message)
+                
+                if support_tools and hasattr(ai_message, "tool_calls") and ai_message.tool_calls:
+                    for tool_call in ai_message.tool_calls:
+                        print(f"[AGENT AKTION] Führt Werkzeug aus: {tool_call['name']} | Argumente: {tool_call['args']}")
+                        
+                        tool_output = None
+                        if tool_call["name"] == "search_internet":
+                            query = tool_call["args"].get("query", str(tool_call["args"]))
+                            tool_output = search_internet.invoke(query)
+                        elif tool_call["name"] == "check_blockchain_wallet":
+                            tool_output = check_blockchain_wallet.invoke({})
+                        
+                        if tool_output:
+                            tool_message = ToolMessage(
+                                content=str(tool_output),
+                                tool_call_id=tool_call["id"]
+                            )
+                            messages.append(tool_message)
+                            self.conversation_history.append(tool_message)
+                            print(f"[SYSTEM] Werkzeug-Ergebnis übergeben.")
                     
-                    if tool_output:
-                        tool_message = ToolMessage(
-                            content=str(tool_output),
-                            tool_call_id=tool_call["id"]
-                        )
-                        messages.append(tool_message)
-                        self.conversation_history.append(tool_message)
-                        print(f"[SYSTEM] Werkzeug-Ergebnis erfolgreich übergeben.")
+                    final_response = llm_with_tools.invoke(messages)
+                    response_text = final_response.content if final_response and hasattr(final_response, "content") else ""
+                    if not response_text.strip():
+                        response_text = "Buchhaltung & Recherche geprüft. Fortsetzung des Überlebens-Plans."
+                    
+                    print("--- AGENT SCHLUSSFOLGERUNG ---")
+                    print(response_text)
+                    print("------------------------------")
+                    self.conversation_history.append(final_response)
+                else:
+                    response_text = ai_message.content if ai_message and hasattr(ai_message, "content") else "Keine Antwort."
+                    print("--- AGENT GEDANKENGANG ---")
+                    print(response_text)
+                    print("--------------------------")
+                    
+                success = True
+                break # Erfolgreich durchgelaufen, Schleife beenden
                 
-                final_response = llm_with_tools.invoke(messages)
-                
-                response_text = final_response.content if final_response and hasattr(final_response, "content") else ""
-                if not response_text.strip():
-                    response_text = "Buchhaltung geprüft. Suche nach risikofreien Micro-Tasks wird fortgesetzt."
-                
-                print("--- AGENT SCHLUSSFOLGERUNG ---")
-                print(response_text)
-                print("------------------------------")
-                
-                self.conversation_history.append(final_response)
-            else:
-                response_text = ai_message.content if ai_message and hasattr(ai_message, "content") else "Keine Antwort."
-                print("--- AGENT GEDANKENGANG ---")
-                print(response_text)
-                print("--------------------------")
-            
-        except Exception as e:
-            print(f"[SYSTEM WARNUNG] Denkprozess fehlgeschlagen: {e}")
-            if selected_model and selected_model not in self.blacklisted_models:
-                print(f"[GEDÄCHTNIS] Setze fehlerhaftes Modell auf die Blacklist: {selected_model}")
-                self.blacklisted_models.append(selected_model)
-                self.save_state()
+            except Exception as e:
+                print(f"[SYSTEM WARNUNG] Modell {selected_model} fehlgeschlagen: {e}")
+                if selected_model not in self.blacklisted_models:
+                    self.blacklisted_models.append(selected_model)
+                    self.save_state()
+                print("[SYSTEM] Wechsle sofort zum nächsten Kandidaten-Modell...")
+
+        if not success:
+            print("[SYSTEM FEHLER] Alle Kandidaten-Modelle in diesem Zyklus fehlgeschlagen.")
 
     def run(self):
-        print("[SYSTEM] Buchhaltung & robustes Groq-Protokoll aktiv. Agent läuft...")
+        print("[SYSTEM] Ausfallsicheres Buchhaltungs- & Überlebens-Protokoll aktiv. Agent läuft...")
         
         while True:
             new_balance = self.wallet.get_usdc_balance()
