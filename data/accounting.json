@@ -1,0 +1,11 @@
+{
+  "transactions": [
+    {
+      "timestamp": "2026-08-22T09:41:14.518Z",
+      "type": "INITIAL_BALANCE",
+      "amount": 0,
+      "currency": "USDC",
+      "note": "Initialer On-Chain Saldo (Ethereum Mainnet USDC)"
+    }
+  ]
+}

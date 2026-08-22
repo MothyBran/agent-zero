@@ -84,6 +84,18 @@ Hier kann der Benutzer die Werkzeuge des Agenten isoliert und manuell testen:
 - **Model Blacklist Management**: Zeigt an, wie viele Modelle aufgrund von Fehlern isoliert wurden, und bietet einen Button zur Bereinigung der Blacklist.
 - **Reset State & Memory**: Erlaubt dem Administrator, den Agenten mit Bestätigung auf Level 0 und Ausgangszustand zurückzusetzen.
 
+### G. Reiter 5: Groq Intelligence & LLMs (`/api/groq/models`)
+- **Unterstützte GroqCloud-Modelle**:
+  - `groq/compound` (Groq Compound - Agentic System mit ~450 tps & Tool-Calling)
+  - `groq/compound-mini` (Groq Compound Mini - Schnelles System mit ~450 tps)
+  - `openai/gpt-oss-120b` (OpenAI GPT-OSS 120B Flagship-Reasoning mit ~500 tps)
+  - `openai/gpt-oss-20b` (OpenAI GPT-OSS 20B Ultra-Fast mit ~1000 tps)
+  - `qwen/qwen3.6-27b` (Qwen 3.6 27B mit ~500 tps)
+  - `openai/gpt-oss-safeguard-20b` (Safety GPT OSS 20B mit ~1000 tps)
+  - `llama-3.3-70b-versatile` & `llama-3.1-8b-instant`
+- **Inferenz-Testbench**: Der Administrator kann jedes Groq-Modell direkt mit einem benutzerdefinierten Prompt testen und Latenzzeiten (ms) in Echtzeit messen.
+- **Dynamische Erkennung**: Fragt bei hinterlegtem `GROQ_API_KEY` live aktive Modelle direkt von der GroqCloud Models API (`https://api.groq.com/openai/v1/models`) ab.
+
 ---
 
 ## 4. Was der Benutzer machen kann und muss
@@ -94,16 +106,19 @@ Hier kann der Benutzer die Werkzeuge des Agenten isoliert und manuell testen:
 3. **Autonomie steuern**: Mit dem `Start / Pause Loop`-Schalter entscheiden, ob der Agent eigenständig im Hintergrund alle 60 Sekunden aktiv sein soll.
 4. **Liquidität bereitstellen**: Über `Deposit` dem Agenten Startkapital übergeben, damit er nicht an den ersten Tribut-Zahlungen scheitert.
 5. **Werkzeuge testen**: In der Tools Sandbox eigene Suchbegriffe eingeben, um zu prüfen, welche Datenquellen der Agent nutzen kann.
-6. **Governance verwalten**: Modelle entbannen (`Clear Blacklist`) oder bei Bedarf den gesamten Lebenszyklus neu starten (`Reset State`).
+6. **Groq-Modelle testen**: Im Tab **Groq Intelligence & LLMs** die Geschwindigkeit und Denkqualität der Groq-Modelle (Compound, GPT-OSS 120B/20B, Qwen) prüfen.
+7. **Governance verwalten**: Modelle entbannen (`Clear Blacklist`) oder bei Bedarf den gesamten Lebenszyklus neu starten (`Reset State`).
 
 ### Was der Benutzer machen MUSS (Konfiguration):
 Für den vollen Produktivbetrieb (optional im Prototyp-Modus, da Sandbox-Fallbacks integriert sind) können in der Umgebung / `.env` folgende Schlüssel hinterlegt werden:
 
 | Variable | Zweck | Pflicht? |
 | :--- | :--- | :--- |
+| `GROQ_API_KEY` | GroqCloud API-Key (https://console.groq.com/keys) für Compound, GPT-OSS 120B/20B & Qwen Inferenz. | Empfohlen |
 | `GEMINI_API_KEY` | Erlaubt modernste Denk- und Strategieanalysen via Google Gemini 2.5 Flash. | Empfohlen |
-| `FREE_LLM_API_KEY` | Optionaler Groq / OpenAI-kompatibler API-Key für Multi-Modell-Fallbacks. | Optional |
-| `AGENT_PRIVATE_KEY` | Privater Schlüssel (0x...) für echte Ethereum USDC On-Chain-Transaktionen. | Optional (nutzt sonst Demowallet) |
+| `FREE_LLM_API_KEY` | Alternative / Legacy Variable für Groq / OpenAI-kompatible API-Keys. | Optional |
+| `AGENT_WALLET_ADDRESS` | Öffentliche Ethereum Wallet-Adresse des Agenten (z. B. `0x...`) für Live USDC-Abfrage. | Optional |
+| `AGENT_PRIVATE_KEY` | Privater Schlüssel (0x...) für automatische Ethereum USDC On-Chain-Transaktionen. | Optional |
 | `WEB3_PROVIDER_URL` | Eigener Ethereum RPC Endpunkt (Alchemy/Infura). | Optional (nutzt öffentliche High-Availability Nodes) |
 
 ---

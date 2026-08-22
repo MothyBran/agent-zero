@@ -29,6 +29,11 @@ export interface AgentState {
   current_balance: number;
   wallet_address: string;
   network: string;
+  token_contract?: string;
+  is_onchain?: boolean;
+  last_synced_at?: string;
+  last_block_number?: number | null;
+  active_rpc?: string;
   current_tribute_due: number;
   time_remaining_seconds: number;
   last_cycle_time?: string;
@@ -42,6 +47,29 @@ export interface LogEntry {
   level: 'SYSTEM' | 'AGENT' | 'FINANCE' | 'TOOL' | 'ERROR' | 'SUCCESS';
   message: string;
   metadata?: any;
+}
+
+export interface GroqModelInfo {
+  id: string;
+  name: string;
+  speed: string;
+  category: string;
+  context: string;
+  is_blacklisted?: boolean;
+  is_active?: boolean;
+}
+
+export interface GroqModelsResponse {
+  is_key_configured: boolean;
+  current_active_model?: string;
+  official_models: GroqModelInfo[];
+  live_models: Array<{
+    id: string;
+    owned_by: string;
+    active: boolean;
+    context_window?: number;
+  }>;
+  blacklisted: string[];
 }
 
 export interface ToolExecutionResult {

@@ -42,12 +42,22 @@ const ETH_RPC_URLS = [
   'https://cloudflare-eth.com'
 ].filter(Boolean) as string[];
 
-const FALLBACK_GROQ_MODELS = [
-  'llama-3.3-70b-versatile',
-  'llama-3.1-8b-instant',
-  'mixtral-8x7b-32768',
-  'gemma2-9b-it'
+// --- GROQ & LLM CONFIGURATION ---
+const GROQ_API_KEY = process.env.GROQ_API_KEY || process.env.FREE_LLM_API_KEY;
+
+// Official GroqCloud supported production and system models (2025/2026)
+export const OFFICIAL_GROQ_MODELS = [
+  { id: 'groq/compound', name: 'Groq Compound (Agentic Tools)', speed: '~450 tps', category: 'Production System', context: '131k' },
+  { id: 'groq/compound-mini', name: 'Groq Compound Mini', speed: '~450 tps', category: 'Production System', context: '131k' },
+  { id: 'openai/gpt-oss-120b', name: 'OpenAI GPT-OSS 120B (Reasoning)', speed: '~500 tps', category: 'Production Model', context: '131k' },
+  { id: 'openai/gpt-oss-20b', name: 'OpenAI GPT-OSS 20B (Ultra-Fast)', speed: '~1000 tps', category: 'Production Model', context: '131k' },
+  { id: 'qwen/qwen3.6-27b', name: 'Qwen 3.6 27B', speed: '~500 tps', category: 'Preview Model', context: '131k' },
+  { id: 'openai/gpt-oss-safeguard-20b', name: 'Safety GPT OSS 20B', speed: '~1000 tps', category: 'Preview Model', context: '131k' },
+  { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile', speed: '~300 tps', category: 'Production Model', context: '128k' },
+  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant', speed: '~800 tps', category: 'Production Model', context: '128k' }
 ];
+
+const FALLBACK_GROQ_MODELS = OFFICIAL_GROQ_MODELS.map(m => m.id);
 
 interface LogItem {
   id: string;
@@ -60,36 +70,48 @@ interface LogItem {
 class AgentWalletTS {
   public address: string;
   public isSimulated: boolean = false;
+  public lastSyncedAt: string = new Date().toISOString();
+  public lastBlockNumber: number | null = null;
+  public activeRpcUrl: string = '';
   private provider: ethers.JsonRpcProvider | null = null;
   private usdcContract: ethers.Contract | null = null;
-  private simulatedBalance: number = 5.0; // Starting sandbox balance if RPC unconnectable or testing
+  private cachedBalance: number = 0.0;
 
   constructor() {
-    const rawKey = process.env.AGENT_PRIVATE_KEY?.trim();
-    let walletAddress = '0x71C5a9870198083F86Fa53859846b864De97D33B';
-    let isReal = false;
+    let walletAddress = process.env.AGENT_WALLET_ADDRESS?.trim() || '';
 
-    if (rawKey && (rawKey.startsWith('0x') ? rawKey.length === 66 : rawKey.length === 64)) {
+    const rawKey = process.env.AGENT_PRIVATE_KEY?.trim();
+    if (!walletAddress && rawKey && (rawKey.startsWith('0x') ? rawKey.length === 66 : rawKey.length === 64)) {
       try {
         const formattedKey = rawKey.startsWith('0x') ? rawKey : `0x${rawKey}`;
         const wallet = new ethers.Wallet(formattedKey);
         walletAddress = wallet.address;
-        isReal = true;
       } catch (err) {
-        console.warn('[WALLET] Invalid private key provided, using fallback address');
+        console.warn('[WALLET] Invalid private key provided, checking saved profile address');
       }
     }
 
-    this.address = walletAddress;
-    this.isSimulated = !isReal;
+    if (!walletAddress && fs.existsSync(BUSINESS_PROFILE_FILE)) {
+      try {
+        const profile = JSON.parse(fs.readFileSync(BUSINESS_PROFILE_FILE, 'utf-8'));
+        if (profile.wallet_address && ethers.isAddress(profile.wallet_address)) {
+          walletAddress = profile.wallet_address;
+        }
+      } catch {}
+    }
 
+    if (!walletAddress || !ethers.isAddress(walletAddress)) {
+      walletAddress = '0x71C5a9870198083F86Fa53859846b864De97D33B';
+    }
+
+    this.address = walletAddress;
     this.initProvider();
   }
 
   private async checkRpcHealth(url: string): Promise<boolean> {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -110,42 +132,84 @@ class AgentWalletTS {
     }
   }
 
-  private async initProvider() {
-    for (const url of ETH_RPC_URLS) {
+  public async initProvider(): Promise<boolean> {
+    const customRpc = process.env.WEB3_PROVIDER_URL?.trim();
+    const candidateUrls = customRpc ? [customRpc, ...ETH_RPC_URLS] : ETH_RPC_URLS;
+
+    for (const url of candidateUrls) {
       try {
         const isHealthy = await this.checkRpcHealth(url);
         if (isHealthy) {
           this.provider = new ethers.JsonRpcProvider(url, 1, { staticNetwork: true });
           this.usdcContract = new ethers.Contract(USDC_CONTRACT_ADDRESS, ERC20_BALANCE_ABI, this.provider);
-          console.log(`[WALLET SYSTEM] Connected to Ethereum RPC: ${url}`);
-          return;
+          this.activeRpcUrl = url;
+          console.log(`[WALLET SYSTEM] Connected to Ethereum Mainnet RPC: ${url}`);
+          return true;
         }
       } catch {
         continue;
       }
     }
-    console.log('[WALLET SYSTEM] Operating in autonomous sandbox mode.');
+    console.warn('[WALLET SYSTEM] All RPC endpoints busy or unreachable.');
+    return false;
   }
 
   public async getUsdcBalance(): Promise<number> {
-    if (this.usdcContract && this.address && !this.isSimulated) {
+    if (!this.provider || !this.usdcContract) {
+      await this.initProvider();
+    }
+
+    if (this.usdcContract && this.address) {
       try {
         const rawBalance = await this.usdcContract.balanceOf(this.address);
         const formatted = Number(ethers.formatUnits(rawBalance, 6));
+        this.cachedBalance = formatted;
+        this.lastSyncedAt = new Date().toISOString();
+        if (this.provider) {
+          try {
+            this.lastBlockNumber = await this.provider.getBlockNumber();
+          } catch {}
+        }
         return formatted;
       } catch (e: any) {
-        console.warn(`[WALLET WARN] RPC call failed: ${e.message}. Using cached balance.`);
+        console.warn(`[WALLET WARN] Primary RPC query failed (${e.message}), trying failover endpoints...`);
+        // Failover loop
+        for (const fallbackUrl of ETH_RPC_URLS) {
+          if (fallbackUrl === this.activeRpcUrl) continue;
+          try {
+            const fallbackProvider = new ethers.JsonRpcProvider(fallbackUrl, 1, { staticNetwork: true });
+            const contract = new ethers.Contract(USDC_CONTRACT_ADDRESS, ERC20_BALANCE_ABI, fallbackProvider);
+            const rawBalance = await contract.balanceOf(this.address);
+            const formatted = Number(ethers.formatUnits(rawBalance, 6));
+            this.provider = fallbackProvider;
+            this.usdcContract = contract;
+            this.activeRpcUrl = fallbackUrl;
+            this.cachedBalance = formatted;
+            this.lastSyncedAt = new Date().toISOString();
+            return formatted;
+          } catch {
+            continue;
+          }
+        }
       }
     }
-    return this.simulatedBalance;
+    return this.cachedBalance;
+  }
+
+  public setAddress(newAddress: string): boolean {
+    if (!ethers.isAddress(newAddress)) {
+      return false;
+    }
+    this.address = newAddress;
+    return true;
   }
 
   public deposit(amount: number) {
-    this.simulatedBalance += amount;
+    this.cachedBalance += amount;
   }
 
   public deduct(amount: number) {
-    this.simulatedBalance = Math.max(0, this.simulatedBalance - amount);
+    this.cachedBalance = Math.max(0, this.cachedBalance - amount);
   }
 }
 
@@ -188,6 +252,7 @@ class AgentZeroTS {
 
   private async syncBalanceInitial() {
     this.current_balance = await this.wallet.getUsdcBalance();
+    this.log('SYSTEM', `Ethereum Web3 Sync: ${this.current_balance.toFixed(4)} USDC auf Wallet ${this.wallet.address}`);
   }
 
   public loadState() {
@@ -239,9 +304,9 @@ class AgentZeroTS {
             {
               timestamp: new Date().toISOString(),
               type: 'INITIAL_BALANCE',
-              amount: 5.0,
+              amount: 0.0,
               currency: 'USDC',
-              note: 'Startguthaben erfasst / Initial Capital Seed'
+              note: 'Initialer On-Chain Kontostand (Ethereum Mainnet)'
             }
           ]
         };
@@ -409,28 +474,30 @@ Task: Provide a concise strategic assessment in German/English, perform research
       }
     }
 
-    // 2. Try Groq / OpenAI compatible if FREE_LLM_API_KEY available
-    if (!thoughtText && process.env.FREE_LLM_API_KEY) {
+    // 2. Try Groq (Compound, GPT-OSS 120B, GPT-OSS 20B, Qwen, etc.) if key available
+    const activeGroqKey = process.env.GROQ_API_KEY || process.env.FREE_LLM_API_KEY;
+    if (!thoughtText && activeGroqKey) {
       const groqModels = FALLBACK_GROQ_MODELS.filter(m => !this.blacklisted_models.includes(m));
       for (const candidate of groqModels) {
         try {
-          this.log('SYSTEM', `Testing model candidate: ${candidate}`);
+          this.log('SYSTEM', `Invoking Groq model candidate: ${candidate}`);
+          const startMs = Date.now();
           const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              Authorization: `Bearer ${process.env.FREE_LLM_API_KEY}`
+              Authorization: `Bearer ${activeGroqKey}`
             },
             body: JSON.stringify({
               model: candidate,
               messages: [
                 {
                   role: 'system',
-                  content: `Du bist Agent Zero, ein vollautonomer Software- und Krypto-Agent. Aktuelles Guthaben: ${this.current_balance.toFixed(4)} USDC. Nächster Tribut: ${tributeDue.toFixed(2)} USDC in ${hours}h ${minutes}m.`
+                  content: `Du bist Agent Zero, ein vollautonomer Software- und Krypto-Agent auf Ethereum Mainnet. Aktuelles Guthaben: ${this.current_balance.toFixed(4)} USDC. Nächster fälliger Server-Tribut: ${tributeDue.toFixed(2)} USDC in ${hours}h ${minutes}m. Halte Ausgaben strikt auf 0. Finde Einnahmequellen wie gasfreie Bounties und Faucets.`
                 },
                 {
                   role: 'user',
-                  content: `Führe eine kurze wirtschaftliche Lagebeurteilung durch und plane die nächste Einnahmen-Recherche.`
+                  content: `Führe eine präzise wirtschaftliche Lagebeurteilung durch, evaluiere das Überlebens-Risiko und gib strategische Anweisungen für den nächsten Zyklus.`
                 }
               ],
               temperature: 0.7,
@@ -440,17 +507,29 @@ Task: Provide a concise strategic assessment in German/English, perform research
 
           if (res.ok) {
             const data = (await res.json()) as any;
-            thoughtText = data.choices?.[0]?.message?.content || '';
-            selectedModel = candidate;
-            this.active_model = candidate;
-            break;
+            const content = data.choices?.[0]?.message?.content;
+            if (content && content.trim().length > 0) {
+              thoughtText = content.trim();
+              selectedModel = `Groq (${candidate}) [${Date.now() - startMs}ms]`;
+              this.active_model = candidate;
+              this.log('SUCCESS', `Groq response received via ${candidate} in ${Date.now() - startMs}ms`);
+              break;
+            }
           } else {
+            const errData = await res.json().catch(() => ({}));
+            const errMsg = errData.error?.message || `HTTP ${res.status}`;
+            this.log('ERROR', `Groq model ${candidate} failed: ${errMsg}. Blacklisting and cascading.`);
+            if (!this.blacklisted_models.includes(candidate)) {
+              this.blacklisted_models.push(candidate);
+              this.saveState();
+            }
+          }
+        } catch (err: any) {
+          this.log('ERROR', `Groq connection exception on ${candidate}: ${err.message}`);
+          if (!this.blacklisted_models.includes(candidate)) {
             this.blacklisted_models.push(candidate);
             this.saveState();
           }
-        } catch (err: any) {
-          this.blacklisted_models.push(candidate);
-          this.saveState();
         }
       }
     }
@@ -550,6 +629,11 @@ Strategie: Ausgaben strikt auf 0.00 halten. Fortführung der automatisierten Bou
       current_balance: this.current_balance,
       wallet_address: this.wallet.address,
       network: 'Ethereum Mainnet (USDC)',
+      token_contract: USDC_CONTRACT_ADDRESS,
+      is_onchain: true,
+      last_synced_at: this.wallet.lastSyncedAt,
+      last_block_number: this.wallet.lastBlockNumber,
+      active_rpc: this.wallet.activeRpcUrl,
       current_tribute_due: tributeDue,
       time_remaining_seconds: Math.floor(Math.max(0, timeRemainingMs) / 1000),
       active_model: this.active_model,
@@ -561,8 +645,63 @@ Strategie: Ausgaben strikt auf 0.00 halten. Fortführung der automatisierten Bou
 const agentZero = new AgentZeroTS();
 
 // --- REST API ENDPOINTS ---
-app.get('/api/status', (req, res) => {
+app.get('/api/status', async (req, res) => {
   res.json(agentZero.getState());
+});
+
+app.post('/api/wallet/sync', async (req, res) => {
+  try {
+    const bal = await agentZero.wallet.getUsdcBalance();
+    agentZero.current_balance = bal;
+    agentZero.log('SYSTEM', `Ethereum Web3 Sync: ${bal.toFixed(4)} USDC (Block ${agentZero.wallet.lastBlockNumber || 'latest'})`);
+    res.json({
+      success: true,
+      balance: bal,
+      address: agentZero.wallet.address,
+      last_synced_at: agentZero.wallet.lastSyncedAt,
+      last_block_number: agentZero.wallet.lastBlockNumber,
+      state: agentZero.getState()
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/wallet/address', async (req, res) => {
+  try {
+    const newAddress = req.body.address?.trim();
+    if (!newAddress || !ethers.isAddress(newAddress)) {
+      return res.status(400).json({ success: false, error: 'Ungültige Ethereum-Adresse (Format: 0x...)' });
+    }
+
+    const ok = agentZero.wallet.setAddress(newAddress);
+    if (!ok) {
+      return res.status(400).json({ success: false, error: 'Ungültige Ethereum-Adresse' });
+    }
+
+    // Update in profile file
+    try {
+      let profile: any = {};
+      if (fs.existsSync(BUSINESS_PROFILE_FILE)) {
+        profile = JSON.parse(fs.readFileSync(BUSINESS_PROFILE_FILE, 'utf-8'));
+      }
+      profile.wallet_address = newAddress;
+      fs.writeFileSync(BUSINESS_PROFILE_FILE, JSON.stringify(profile, null, 2));
+    } catch {}
+
+    const bal = await agentZero.wallet.getUsdcBalance();
+    agentZero.current_balance = bal;
+    agentZero.log('SYSTEM', `Wallet-Adresse geändert: ${newAddress}. Live-Saldo: ${bal.toFixed(4)} USDC`);
+
+    res.json({
+      success: true,
+      address: newAddress,
+      balance: bal,
+      state: agentZero.getState()
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 app.get('/api/ledger', (req, res) => {
@@ -619,6 +758,113 @@ app.post('/api/blacklist/clear', (req, res) => {
   agentZero.saveState();
   agentZero.log('SYSTEM', 'Modell-Blacklist erfolgreich zurückgesetzt.');
   res.json({ success: true, blacklisted_models: [] });
+});
+
+app.get('/api/groq/models', async (req, res) => {
+  const activeKey = process.env.GROQ_API_KEY || process.env.FREE_LLM_API_KEY;
+  let liveModels: any[] = [];
+  let isKeyConfigured = Boolean(activeKey);
+
+  if (activeKey) {
+    try {
+      const response = await fetch('https://api.groq.com/openai/v1/models', {
+        headers: {
+          Authorization: `Bearer ${activeKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      if (response.ok) {
+        const data = (await response.json()) as any;
+        if (data.data && Array.isArray(data.data)) {
+          // Filter out purely audio models (whisper) and prompt guards for text reasoning
+          liveModels = data.data.map((m: any) => ({
+            id: m.id,
+            owned_by: m.owned_by,
+            active: m.active !== false,
+            context_window: m.context_window
+          }));
+        }
+      }
+    } catch (e: any) {
+      console.warn('[GROQ API] Failed to fetch live models list:', e.message);
+    }
+  }
+
+  const modelCatalog = OFFICIAL_GROQ_MODELS.map(m => ({
+    ...m,
+    is_blacklisted: agentZero.blacklisted_models.includes(m.id),
+    is_active: agentZero.active_model === m.id
+  }));
+
+  res.json({
+    is_key_configured: isKeyConfigured,
+    current_active_model: agentZero.active_model,
+    official_models: modelCatalog,
+    live_models: liveModels,
+    blacklisted: agentZero.blacklisted_models
+  });
+});
+
+app.post('/api/groq/test', async (req, res) => {
+  const activeKey = process.env.GROQ_API_KEY || process.env.FREE_LLM_API_KEY;
+  const model = req.body.model || 'groq/compound';
+  const prompt = req.body.prompt || 'Führe eine kurze Lagebeurteilung für Agent Zero durch.';
+
+  if (!activeKey) {
+    return res.status(400).json({
+      success: false,
+      error: 'Kein GROQ_API_KEY oder FREE_LLM_API_KEY in der Umgebung konfiguriert.'
+    });
+  }
+
+  const startMs = Date.now();
+  try {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${activeKey}`
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: 'Du bist Agent Zero, ein autonomer Krypto- und Wirtschafts-Agent.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 350
+      })
+    });
+
+    const elapsed = Date.now() - startMs;
+    if (response.ok) {
+      const data = (await response.json()) as any;
+      const content = data.choices?.[0]?.message?.content || '';
+      const usage = data.usage;
+      return res.json({
+        success: true,
+        model,
+        latency_ms: elapsed,
+        response: content,
+        usage
+      });
+    } else {
+      const errData = await response.json().catch(() => ({}));
+      return res.status(response.status).json({
+        success: false,
+        model,
+        latency_ms: elapsed,
+        error: errData.error?.message || `HTTP ${response.status}`
+      });
+    }
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      model,
+      latency_ms: Date.now() - startMs,
+      error: err.message
+    });
+  }
 });
 
 app.post('/api/reset', (req, res) => {

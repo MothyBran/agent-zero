@@ -6,7 +6,8 @@ import { TerminalLogs } from './components/TerminalLogs';
 import { LedgerTable } from './components/LedgerTable';
 import { ToolSandbox } from './components/ToolSandbox';
 import { BusinessProfileCard } from './components/BusinessProfileCard';
-import { LayoutDashboard, FileText, Wrench, Shield, AlertTriangle } from 'lucide-react';
+import { GroqModelsCard } from './components/GroqModelsCard';
+import { LayoutDashboard, FileText, Wrench, Shield, Cpu, AlertTriangle } from 'lucide-react';
 
 export function App() {
   const [state, setState] = useState<AgentState | null>(null);
@@ -15,7 +16,8 @@ export function App() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isProcessingCycle, setIsProcessingCycle] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'ledger' | 'tools' | 'profile'>('dashboard');
+  const [isSyncingWallet, setIsSyncingWallet] = useState(false);
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'models' | 'ledger' | 'tools' | 'profile'>('dashboard');
 
   const safeJsonFetch = async <T,>(url: string, init?: RequestInit): Promise<T | null> => {
     try {
@@ -150,6 +152,46 @@ export function App() {
     }
   };
 
+  const handleSyncWallet = async () => {
+    setIsSyncingWallet(true);
+    try {
+      const res = await fetch('/api/wallet/sync', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.state) {
+          setState(data.state);
+        }
+        await fetchAllData();
+      }
+    } catch (err) {
+      console.error('Failed to sync wallet on-chain:', err);
+    } finally {
+      setIsSyncingWallet(false);
+    }
+  };
+
+  const handleChangeWalletAddress = async (address: string): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/wallet/address', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.state) {
+          setState(data.state);
+        }
+        await fetchAllData();
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error('Failed to change wallet address:', err);
+      return false;
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500/30 selection:text-emerald-200">
       <Header
@@ -165,14 +207,17 @@ export function App() {
           state={state}
           onDeposit={handleDeposit}
           onRunCycle={handleRunCycle}
+          onSyncWallet={handleSyncWallet}
+          onChangeWalletAddress={handleChangeWalletAddress}
           isProcessingCycle={isProcessingCycle}
+          isSyncingWallet={isSyncingWallet}
         />
 
         {/* Navigation Tabs for Granular Views */}
-        <div className="flex items-center gap-2 border-b border-slate-800 pb-1">
+        <div className="flex items-center gap-2 border-b border-slate-800 pb-1 overflow-x-auto">
           <button
             onClick={() => setActiveTab('dashboard')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium transition-all ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all ${
               activeTab === 'dashboard'
                 ? 'bg-slate-900 text-emerald-400 border-t-2 border-emerald-500 border-x border-slate-800'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
@@ -183,8 +228,20 @@ export function App() {
           </button>
 
           <button
+            onClick={() => setActiveTab('models')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all ${
+              activeTab === 'models'
+                ? 'bg-slate-900 text-amber-400 border-t-2 border-amber-500 border-x border-slate-800'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
+            }`}
+          >
+            <Cpu className="w-3.5 h-3.5 text-amber-400" />
+            <span>Groq Intelligence & LLMs</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('ledger')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium transition-all ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all ${
               activeTab === 'ledger'
                 ? 'bg-slate-900 text-emerald-400 border-t-2 border-emerald-500 border-x border-slate-800'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
@@ -196,7 +253,7 @@ export function App() {
 
           <button
             onClick={() => setActiveTab('tools')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium transition-all ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all ${
               activeTab === 'tools'
                 ? 'bg-slate-900 text-emerald-400 border-t-2 border-emerald-500 border-x border-slate-800'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
@@ -208,7 +265,7 @@ export function App() {
 
           <button
             onClick={() => setActiveTab('profile')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium transition-all ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all ${
               activeTab === 'profile'
                 ? 'bg-slate-900 text-emerald-400 border-t-2 border-emerald-500 border-x border-slate-800'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
@@ -226,6 +283,7 @@ export function App() {
               <TerminalLogs logs={logs} />
             </div>
             <div className="space-y-6">
+              <GroqModelsCard />
               <ToolSandbox
                 onExecuteSearch={handleSearchTool}
                 onExecuteWallet={handleWalletTool}
@@ -237,6 +295,12 @@ export function App() {
                 blacklistedCount={state?.blacklisted_models?.length || 0}
               />
             </div>
+          </div>
+        )}
+
+        {activeTab === 'models' && (
+          <div className="space-y-6">
+            <GroqModelsCard />
           </div>
         )}
 
@@ -252,6 +316,7 @@ export function App() {
               onExecuteSearch={handleSearchTool}
               onExecuteWallet={handleWalletTool}
             />
+            <GroqModelsCard />
           </div>
         )}
 

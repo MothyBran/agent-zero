@@ -1,22 +1,32 @@
 import React, { useState } from 'react';
 import { AgentState } from '../types';
-import { DollarSign, Clock, ShieldAlert, Zap, Award, Plus, Sparkles } from 'lucide-react';
+import { DollarSign, Clock, ShieldAlert, Zap, Award, Plus, Sparkles, RefreshCw, Edit3, CheckCircle2 } from 'lucide-react';
 
 interface VitalsGridProps {
   state: AgentState | null;
   onDeposit: (amount: number) => void;
   onRunCycle: () => void;
+  onSyncWallet?: () => void;
+  onChangeWalletAddress?: (address: string) => Promise<boolean>;
   isProcessingCycle: boolean;
+  isSyncingWallet?: boolean;
 }
 
 export const VitalsGrid: React.FC<VitalsGridProps> = ({
   state,
   onDeposit,
   onRunCycle,
-  isProcessingCycle
+  onSyncWallet,
+  onChangeWalletAddress,
+  isProcessingCycle,
+  isSyncingWallet
 }) => {
   const [showDepositModal, setShowDepositModal] = useState(false);
+  const [showAddressModal, setShowAddressModal] = useState(false);
   const [depositAmount, setDepositAmount] = useState('2.0');
+  const [customAddress, setCustomAddress] = useState(state?.wallet_address || '');
+  const [addressError, setAddressError] = useState('');
+  const [addressSuccess, setAddressSuccess] = useState(false);
 
   const handleDepositSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,6 +34,28 @@ export const VitalsGrid: React.FC<VitalsGridProps> = ({
     if (!isNaN(val) && val > 0) {
       onDeposit(val);
       setShowDepositModal(false);
+    }
+  };
+
+  const handleAddressSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAddressError('');
+    if (!onChangeWalletAddress) return;
+
+    if (!customAddress.startsWith('0x') || customAddress.length !== 42) {
+      setAddressError('Ungültige Ethereum-Adresse (muss mit 0x beginnen und 42 Zeichen lang sein)');
+      return;
+    }
+
+    const success = await onChangeWalletAddress(customAddress);
+    if (success) {
+      setAddressSuccess(true);
+      setTimeout(() => {
+        setAddressSuccess(false);
+        setShowAddressModal(false);
+      }, 1200);
+    } else {
+      setAddressError('Fehler beim Aktualisieren der Wallet-Adresse auf dem Server.');
     }
   };
 
@@ -43,9 +75,27 @@ export const VitalsGrid: React.FC<VitalsGridProps> = ({
         {/* Card 1: USDC Balance */}
         <div id="vital-balance-card" className="bg-slate-900 border border-slate-800 rounded-xl p-4 relative overflow-hidden flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-xs font-medium uppercase tracking-wider">USDC Balance (HP)</span>
-            <div className="p-1.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              <DollarSign className="w-4 h-4" />
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-medium uppercase tracking-wider">USDC Balance (HP)</span>
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                On-Chain
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              {onSyncWallet && (
+                <button
+                  id="sync-onchain-btn"
+                  onClick={onSyncWallet}
+                  disabled={isSyncingWallet}
+                  title="Live On-Chain Saldo via Ethereum RPC abfragen"
+                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-emerald-400 border border-slate-700 transition-colors disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingWallet ? 'animate-spin text-emerald-400' : ''}`} />
+                </button>
+              )}
+              <div className="p-1.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <DollarSign className="w-4 h-4" />
+              </div>
             </div>
           </div>
           <div>
@@ -59,13 +109,26 @@ export const VitalsGrid: React.FC<VitalsGridProps> = ({
               <span className={isHealthy ? 'text-emerald-400' : 'text-amber-400 font-medium'}>
                 {isHealthy ? '● Sufficient for Tribute' : '▲ Deficit for Next Tribute'}
               </span>
-              <button
-                id="open-deposit-btn"
-                onClick={() => setShowDepositModal(true)}
-                className="text-emerald-400 hover:text-emerald-300 font-medium flex items-center gap-0.5"
-              >
-                <Plus className="w-3 h-3" /> Deposit
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  id="open-address-btn"
+                  onClick={() => {
+                    setCustomAddress(state?.wallet_address || '');
+                    setShowAddressModal(true);
+                  }}
+                  className="text-slate-400 hover:text-slate-200 font-medium flex items-center gap-0.5"
+                  title="Change monitored wallet address"
+                >
+                  <Edit3 className="w-3 h-3" /> Address
+                </button>
+                <button
+                  id="open-deposit-btn"
+                  onClick={() => setShowDepositModal(true)}
+                  className="text-emerald-400 hover:text-emerald-300 font-medium flex items-center gap-0.5"
+                >
+                  <Plus className="w-3 h-3" /> Deposit
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -143,7 +206,7 @@ export const VitalsGrid: React.FC<VitalsGridProps> = ({
             <h3 className="text-sm font-semibold text-slate-200">Autonomous Reasoning Engine</h3>
           </div>
           <p className="text-xs text-slate-400">
-            Agent Zero evaluates liquidity, triggers DuckDuckGo searches for gas-free bounties, and manages Ethereum Web3 balance.
+            Agent Zero evaluates real on-chain Ethereum liquidity, triggers DuckDuckGo searches for gas-free bounties, and manages survival protocol.
           </p>
         </div>
 
@@ -168,6 +231,62 @@ export const VitalsGrid: React.FC<VitalsGridProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Address Edit Modal */}
+      {showAddressModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                <Edit3 className="w-4 h-4 text-emerald-400" /> Ethereum Wallet Address
+              </h3>
+              <button
+                onClick={() => setShowAddressModal(false)}
+                className="text-slate-400 hover:text-slate-200 text-sm"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-xs text-slate-400">
+              Trage hier deine echte Ethereum-Wallet-Adresse ein. Der Agent liest das reale USDC-Guthaben (Smart Contract <code className="text-emerald-400 font-mono text-[10px]">0xA0b8...eB48</code>) direkt von der Blockchain ab.
+            </p>
+            <form onSubmit={handleAddressSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-mono text-slate-300 mb-1">Ethereum Wallet Address (0x...)</label>
+                <input
+                  type="text"
+                  value={customAddress}
+                  onChange={(e) => setCustomAddress(e.target.value)}
+                  placeholder="0x..."
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-emerald-500 font-mono"
+                  required
+                />
+                {addressError && <p className="text-xs text-rose-400 mt-1 font-mono">{addressError}</p>}
+                {addressSuccess && (
+                  <p className="text-xs text-emerald-400 mt-1 font-mono flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Adresse gespeichert und On-Chain synchronisiert!
+                  </p>
+                )}
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddressModal(false)}
+                  className="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200"
+                >
+                  Abbrechen
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 text-xs font-medium rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white"
+                >
+                  Speichern & On-Chain Prüfen
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Deposit Modal */}
       {showDepositModal && (
