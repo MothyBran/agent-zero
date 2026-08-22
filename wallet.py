@@ -4,22 +4,38 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Standardmäßig auf Ethereum Mainnet-RPC umschalten, falls keine andere URL gesetzt ist
-RPC_URL = os.getenv("WEB3_PROVIDER_URL", "https://eth.llamarpc.com")
+# Liste von stabilen öffentlichen Ethereum RPCs als Fallback-Kette
+ETH_RPC_URLS = [
+    os.getenv("WEB3_PROVIDER_URL"),
+    "https://eth.llamarpc.com",
+    "https://rpc.ankr.com/eth",
+    "https://ethereum.publicnode.com"
+]
+
 PRIVATE_KEY = os.getenv("AGENT_PRIVATE_KEY")
 CREATOR_WALLET = os.getenv("CREATOR_WALLET_ADDRESS")
 
 # Offizielle USDC Token-Adresse auf dem Ethereum Mainnet
 USDC_CONTRACT_ADDRESS = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
-
-# Minimales ABI, um das Guthaben auszulesen
 ERC20_ABI = '[{"constant":true,"inputs":[{"name":"_owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"balance","type":"uint256"}],"type":"function"}]'
 
 class AgentWallet:
     def __init__(self):
-        self.w3 = Web3(Web3.HTTPProvider(RPC_URL))
-        if not self.w3.is_connected():
-            raise ConnectionError("[FATAL] Keine Verbindung zur Ethereum-Blockchain möglich.")
+        self.w3 = None
+        # Teste die RPC-URLs nacheinander durch, bis eine Verbindung steht
+        for url in ETH_RPC_URLS:
+            if url:
+                try:
+                    w3_candidate = Web3(Web3.HTTPProvider(url))
+                    if w3_candidate.is_connected():
+                        self.w3 = w3_candidate
+                        print(f"[WALLET SYSTEM] Erfolgreich verbunden mit Ethereum RPC: {url}")
+                        break
+                except Exception:
+                    continue
+                    
+        if not self.w3 or not self.w3.is_connected():
+            raise ConnectionError("[FATAL] Keine Verbindung zur Ethereum-Blockchain über alle verfügbaren RPCs möglich.")
         
         if not PRIVATE_KEY:
             raise ValueError("[FATAL] Kein AGENT_PRIVATE_KEY hinterlegt.")
@@ -36,7 +52,6 @@ class AgentWallet:
         """Liest das echte USDC-Guthaben direkt aus dem Ethereum Mainnet aus."""
         try:
             balance_wei = self.usdc_contract.functions.balanceOf(self.address).call()
-            # USDC nutzt auf Ethereum ebenfalls 6 Nachkommastellen
             return balance_wei / 1_000_000
         except Exception as e:
             print(f"[WALLET FEHLER] Konnte Guthaben nicht abrufen: {e}")
