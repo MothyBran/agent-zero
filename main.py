@@ -201,17 +201,15 @@ class AgentZero:
             data = response.json()
             available_models = [m["id"] for m in data.get("data", [])]
             
-            # Reparierter, flexibler Filter, der garantiert verfügbare Modelle findet
             text_models = [
                 m for m in available_models 
                 if "whisper" not in m.lower() 
                 and "guard" not in m.lower() 
                 and "orpheus" not in m.lower()
-                and "embed" not in m.lower()
                 and m not in self.blacklisted_models
             ]
             
-            priorities = ["compound", "llama-3.3", "llama-3.1", "llama3", "mixtral", "qwen", "gemma"]
+            priorities = ["compound", "llama-3.3", "llama-3.1", "llama3", "mixtral"]
             
             for prio in priorities:
                 for model_id in text_models:
@@ -225,9 +223,10 @@ class AgentZero:
                 selected_model = text_models[0]
                 
             if not selected_model:
-                raise ValueError("Keine Modelle über die Groq-API verfügbar.")
+                raise ValueError("Keine Modelle verfügbar.")
                 
-            print(f"[SYSTEM] Nutze stabiles Buchhaltungs-Gehirn: {selected_model}")
+            print(f"[SYSTEM] Nutze Überlebens-Gehirn: {selected_model}")
+
          
             llm = ChatOpenAI(
                 temperature=0.7, 
