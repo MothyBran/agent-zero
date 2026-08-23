@@ -625,32 +625,7 @@ export class TaskMemoryManager {
   }
 
   private initDefaultTasks() {
-    this.tasks = [
-      {
-        id: `task_init_1`,
-        timestamp: new Date(Date.now() - 3600000).toISOString(),
-        tool_id: 'gitcoin_gasless_quests',
-        tool_name: 'Gitcoin Gasless Quests & Node Telemetry',
-        category: 'Micro-Bounties',
-        status: 'SUCCESS',
-        reward_usdc: 0.34,
-        execution_ms: 320,
-        details: 'Initial Node Telemetry Attestation erfolgreich validiert und eingereicht.',
-        lesson_derived: 'Gasfreie Quests liefern verlässliche Micro-Rewards ohne Transaktionskosten.'
-      },
-      {
-        id: `task_init_2`,
-        timestamp: new Date(Date.now() - 1800000).toISOString(),
-        tool_id: 'dex_arbitrage_scanner',
-        tool_name: 'Cross-DEX Arbitrage & Flash-Spread Scanner',
-        category: 'DeFi Intelligence',
-        status: 'SUCCESS',
-        reward_usdc: 0.48,
-        execution_ms: 410,
-        details: 'Uniswap v3 / Curve Spreads gescannt und Signal generiert.',
-        lesson_derived: 'DeFi-Spreads erzielen stabil höhere Renditen als reine Telemetrie.'
-      }
-    ];
+    this.tasks = [];
     this.save();
   }
 
@@ -736,63 +711,7 @@ export class KnowledgeMemoryManager {
   }
 
   private initDefaultLearnings() {
-    this.learnings = [
-      {
-        id: 'kn_01',
-        timestamp: new Date().toISOString(),
-        category: 'SURVIVAL_STRATEGY',
-        title: '48h Frist-Reset Mechanismus',
-        insight: 'Jede Tribut-Zahlung setzt die 48h Frist sofort auf volle 48 Stunden zurück. Proaktives Zahlen bei Liquiditätsüberschuss sichert maximale Server-Laufzeit.',
-        confidence_score: 0.99,
-        times_applied: 14,
-        success_reinforcements: 12,
-        source: 'Protocol Core'
-      },
-      {
-        id: 'kn_02',
-        timestamp: new Date().toISOString(),
-        category: 'TOKEN_EFFICIENCY',
-        title: 'Groq Free Token Sparsamkeit & Prompt Compression',
-        insight: 'System-Prompts müssen vorab komprimiert werden. Bei >65% Token-Verbrauch sofort auf schlanke 20B/8B Modelle oder interne Heuristik schalten, um RPM-Lockouts zu verhindern.',
-        confidence_score: 0.96,
-        times_applied: 28,
-        success_reinforcements: 26,
-        source: 'TokenBudgetManager'
-      },
-      {
-        id: 'kn_03',
-        timestamp: new Date().toISOString(),
-        category: 'TOOL_ROI',
-        title: 'Progressive Werkzeug-Skalierung',
-        insight: 'Höhere Level schalten zkSync Paymaster und MEV Harvester frei (+12% Ertrags-Multiplikator pro Level), welche die 10% Pacht-Eskalation überkompensieren.',
-        confidence_score: 0.98,
-        times_applied: 9,
-        success_reinforcements: 9,
-        source: 'Economic Model'
-      },
-      {
-        id: 'kn_04',
-        timestamp: new Date().toISOString(),
-        category: 'SUCCESS_PATTERN',
-        title: 'DeFi & Paymaster Priorisierung',
-        insight: 'Cross-DEX Arbitrage Scanner und zkSync Paymaster erzielen konsistent >0.45 USDC pro Ausführung. Bei stabiler Verbindung bevorzugt ausführen.',
-        confidence_score: 0.95,
-        times_applied: 16,
-        success_reinforcements: 15,
-        source: 'TaskMemory Execution'
-      },
-      {
-        id: 'kn_05',
-        timestamp: new Date().toISOString(),
-        category: 'FAILURE_LESSON',
-        title: 'Rate-Limit Vermeidung bei High-Concurrency',
-        insight: 'Groq API darf niemals ohne Mindestabstand von 2000ms aufgerufen werden. Bei Fehlern (HTTP 429) sofort Model-Blacklist aktivieren und lokales Fallback nutzen.',
-        confidence_score: 0.97,
-        times_applied: 6,
-        success_reinforcements: 6,
-        source: 'Post-Mortem Engine'
-      }
-    ];
+    this.learnings = [];
     this.save();
   }
 
@@ -1768,7 +1687,7 @@ class AgentZeroTS {
     this.performBootMemoryRecall('BOOT_DEPLOY');
   }
 
-  public performBootMemoryRecall(event: 'BOOT_DEPLOY' | 'RESTART' | 'RESUME' | 'RESTORE'): MemoryRecallDef {
+  public performBootMemoryRecall(event: 'BOOT_DEPLOY' | 'RESTART' | 'RESUME' | 'RESTORE' | 'RESET_ZERO'): MemoryRecallDef {
     this.knowledgeManager.load();
     this.taskMemory.load();
     this.milestoneManager.load();
@@ -1787,8 +1706,8 @@ class AgentZeroTS {
       .slice(0, 3)
       .map(l => l.title);
 
-    const topPattern = topSuccessPatterns[0] || 'DeFi & Paymaster Priorisierung';
-    const topAvoidance = topFailureAvoidances[0] || 'Groq Rate-Limit Schild & Offline Heuristik';
+    const topPattern = topSuccessPatterns[0] || (this.knowledgeManager.learnings.length > 0 ? 'DeFi & Paymaster Priorisierung' : 'Initiales Werkzeug-Scouting & Horizon Scan');
+    const topAvoidance = topFailureAvoidances[0] || (this.knowledgeManager.learnings.length > 0 ? 'Groq Rate-Limit Schild & Offline Heuristik' : 'Basis-Sicherheitsregeln & Null-Schulden-Doktrin');
 
     const summary = `🧠 [GEDÄCHTNIS GELADEN] Event: ${event} | Recall aktiv: ${this.knowledgeManager.learnings.length} Wissenseinträge, ${taskStats.total_tasks} Aufgaben (${taskStats.success_rate_percent}% Quote, +${taskStats.total_historical_earnings.toFixed(2)} USDC Einnahmen), Pacht-Level ${this.tributes_paid}. IQ: ${evolutionStats.evolution_iq_score} (${evolutionStats.evolution_tier}). Top-Strategie: "${topPattern}" | Schutz-Regel: "${topAvoidance}".`;
 
@@ -2046,6 +1965,11 @@ class AgentZeroTS {
   public wipeAllMemoryAndReset(options: { resetWalletBalance?: boolean } = {}): { success: boolean; message: string } {
     this.stopAutonomousLoop();
 
+    // 0. Clear in-memory logs and reasoning conversation history
+    this.logs = [];
+    this.conversation_history = [];
+    this.last_recall_checkpoint = null;
+
     // 1. Reset Core State
     this.tributes_paid = 0;
     this.birth_time = new Date();
@@ -2060,10 +1984,12 @@ class AgentZeroTS {
     try {
       if (fs.existsSync(STATE_FILE)) fs.unlinkSync(STATE_FILE);
       if (fs.existsSync(SNAPSHOT_LATEST_FILE)) fs.unlinkSync(SNAPSHOT_LATEST_FILE);
+      if (fs.existsSync(SNAPSHOT_PREVIOUS_FILE)) fs.unlinkSync(SNAPSHOT_PREVIOUS_FILE);
       if (fs.existsSync(SNAPSHOT_FALLBACK_FILE)) fs.unlinkSync(SNAPSHOT_FALLBACK_FILE);
+      if (fs.existsSync(MEMORY_CHECKPOINT_FILE)) fs.unlinkSync(MEMORY_CHECKPOINT_FILE);
     } catch {}
 
-    // 3. Reset Knowledge Base to empty or fresh minimal bootstrap
+    // 3. Reset Knowledge Base to empty
     this.knowledgeManager.learnings = [];
     this.knowledgeManager.save();
 
@@ -2107,8 +2033,9 @@ class AgentZeroTS {
     this.tokenBudget.tokens_saved_by_compression = 0;
     this.tokenBudget.save();
 
-    // 9. Save fresh state & log
+    // 9. Save fresh state & perform clean memory recall
     this.saveState();
+    this.performBootMemoryRecall('RESET_ZERO');
     this.log('SYSTEM', '🔄 [FACTORY RESET] Agent Zero wurde vollständig auf den Ursprungszustand (Tabula Rasa / 0) zurückgesetzt. Autonomes Lernen beginnt von vorn.');
 
     return {
@@ -3222,12 +3149,12 @@ Strategie: Ausgaben strikt 0.00$. Aktive Erforschung neuer Tools & Ausführung h
           status: 'EXECUTING',
           meta: log.metadata
         });
-      } else if (log.level === 'SUCCESS' && (log.metadata?.tool || log.message.includes('API-ANTWORT') || log.message.includes('RPC-ANTWORT') || log.message.includes('HTTP') || log.message.includes('L2 HARVEST'))) {
+      } else if (log.level === 'SUCCESS' && (log.message.includes('[GEDÄCHTNIS GELADEN]') || log.metadata?.tool || log.message.includes('API-ANTWORT') || log.message.includes('RPC-ANTWORT') || log.message.includes('HTTP') || log.message.includes('L2 HARVEST'))) {
         stream.push({
           id: `stream_${log.id}`,
           timestamp: log.timestamp,
-          type: 'TOOL_EXECUTION',
-          title: `API-Rückmeldung / Resultat (${log.metadata?.tool || 'Web3 / HTTP'})`,
+          type: log.message.includes('[GEDÄCHTNIS GELADEN]') ? 'REFLECTION' : 'TOOL_EXECUTION',
+          title: log.message.includes('[GEDÄCHTNIS GELADEN]') ? '🧠 Gedächtnis & Recall Initialisierung' : `API-Rückmeldung / Resultat (${log.metadata?.tool || 'Web3 / HTTP'})`,
           content: log.message,
           latency_ms: log.metadata?.latency_ms,
           status: 'COMPLETED',
@@ -3252,8 +3179,8 @@ Strategie: Ausgaben strikt 0.00$. Aktive Erforschung neuer Tools & Ausführung h
         id: 'init_prompt',
         timestamp: now,
         type: 'PROMPT',
-        title: 'Initialfrage an Kognitions-Engine',
-        content: `Lagebeurteilung für Polygon PoS (Chain ID 137). Saldo: ${this.current_balance.toFixed(4)} USDC. Nächste Pacht in 48h.`,
+        title: 'Initialer Boot / Tabula-Rasa Start (Tier 1)',
+        content: `Agent Zero bereit für ersten Autonomie-Zyklus. Saldo: ${this.current_balance.toFixed(4)} USDC. Tabula Rasa: 0 Wissenseinträge, 0 absolvierte Aufgaben.`,
         model: this.active_model || 'Groq llama-3.3-70b-versatile',
         status: 'RESOLVED'
       });
@@ -3261,18 +3188,18 @@ Strategie: Ausgaben strikt 0.00$. Aktive Erforschung neuer Tools & Ausführung h
         id: 'init_thought',
         timestamp: now,
         type: 'THOUGHT',
-        title: 'Chain of Thought / Liquiditätsbewertung',
-        content: 'Liquidität über 48h-Pachtgrenze halten. Polygon PoS Gasverbrauch minimieren und kontinuierlich Micro-Quests & RPC Health Checks abrufen.',
+        title: 'Initialer Denkprozess (Kaltstart)',
+        content: 'System befindet sich auf Stufe 0 (Tabula Rasa). Starte initiales Erkunden von Web3-Quests, API-Endpoints und kontinuierlichen Aufbau des Wissensnetzwerks.',
         model: this.active_model || 'Groq llama-3.3-70b-versatile',
-        latency_ms: 240,
+        latency_ms: 120,
         status: 'COMPLETED'
       });
       stream.push({
         id: 'init_plan',
         timestamp: now,
         type: 'PLAN',
-        title: 'Strategischer Aktionsplan',
-        content: '1. On-Chain Polygon USDC & POL Gas prüfen\n2. DuckDuckGo Bounties scouten\n3. Erkenntnisse in Knowledge Base ablegen\n4. Tribut vor 48h Frist sichern',
+        title: 'Initialer Aktionsplan',
+        content: '1. On-Chain Status prüfen\n2. Reale API-Quests & Endpunkte scouten\n3. Erste Erkenntnisse in Knowledge Base ablegen\n4. Einnahmen generieren und Pacht sichern',
         status: 'EXECUTING'
       });
     }

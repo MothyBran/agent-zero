@@ -1,0 +1,378 @@
+{
+  "version": "1.0",
+  "exported_at": "2026-08-23T10:36:26.316Z",
+  "entity_name": "Agent Zero Autonomous Unit",
+  "wallet_address": "0x8B897B6aecdFe18E045Ea513225484ad49CE0e1E",
+  "creator_wallet_address": "0x1B289D1B71371838c63013ECB34264D19D0C09b0",
+  "storage_location": "/data",
+  "is_persistent_volume": true,
+  "state": {
+    "tributes_paid": 0,
+    "birth_time": "2026-08-23T10:36:26.315Z",
+    "next_tribute_time": "2026-08-25T10:36:26.315Z",
+    "blacklisted_models": [],
+    "is_terminated": false,
+    "shutdown_reason": "",
+    "jobs_completed": 0,
+    "current_balance": 1.948557
+  },
+  "accounting": [
+    {
+      "timestamp": "2026-08-23T10:36:26.316Z",
+      "type": "FACTORY_RESET",
+      "amount": 0,
+      "currency": "USDC",
+      "note": "Vollständiger System-Neustart: Gedächtnis, Wissen und Aufträge auf 0 gesetzt."
+    }
+  ],
+  "knowledge": [],
+  "milestones": [
+    {
+      "id": "ms_liquid_buffer",
+      "title": "Liquiditäts-Sicherheitspuffer von 3.50 USDC aufbauen",
+      "category": "LIQUIDITY",
+      "target_value": 3.5,
+      "current_value": 0,
+      "unit": "USDC",
+      "is_completed": false,
+      "priority": "CRITICAL",
+      "action_plan": "Führe kontinuierlich Gitcoin & Arbitrage Bounties aus, um über 3.50 USDC Rücklage zu halten."
+    },
+    {
+      "id": "ms_tool_unlock_l1",
+      "title": "L2 Paymaster Relay freischalten (Level 1 erreichen)",
+      "category": "TOOL_DISCOVERY",
+      "target_value": 1,
+      "current_value": 0,
+      "unit": "Level",
+      "is_completed": false,
+      "priority": "HIGH",
+      "action_plan": "Zahle ersten 48h Tribut, um Level 1 zu erreichen und zkSync Paymaster Relay zu mounten."
+    },
+    {
+      "id": "ms_runrate_target",
+      "title": "Stündlichen Ziel-Ertrag auf ≥ 0.08 USDC/h steigern",
+      "category": "RUN_RATE",
+      "target_value": 0.08,
+      "current_value": 0,
+      "unit": "USDC/h",
+      "is_completed": false,
+      "priority": "HIGH",
+      "action_plan": "Nutze Multi-Tool Parallelisierung zur Überkompensation der 10% Pachtsteigerung."
+    },
+    {
+      "id": "ms_storage_compact",
+      "title": "Railway Storage & Knowledge Komprimierung",
+      "category": "STORAGE_OPTIMIZATION",
+      "target_value": 1,
+      "current_value": 0,
+      "unit": "Zyklen",
+      "is_completed": false,
+      "priority": "MEDIUM",
+      "action_plan": "Kompaktioniere persistente Logs und extrahiere Core-Learnings in die Knowledge Base."
+    },
+    {
+      "id": "ms_jobs_tier1",
+      "title": "10 verifizierte Arbeitsaufträge erfolgreich abschließen",
+      "category": "WORK_EXECUTION",
+      "target_value": 10,
+      "current_value": 0,
+      "unit": "Jobs",
+      "is_completed": false,
+      "priority": "HIGH",
+      "action_plan": "Führe Micro-Bounties mit 100% Erfolgsquote aus."
+    },
+    {
+      "id": "ms_tool_unlock_l2",
+      "title": "Smart Contract Fuzzer & Auditor aktivieren (Level 2)",
+      "category": "TOOL_DISCOVERY",
+      "target_value": 2,
+      "current_value": 0,
+      "unit": "Level",
+      "is_completed": false,
+      "priority": "MEDIUM",
+      "action_plan": "Erreiche Level 2 für Security Fuzzing Bounties bis zu 1.30 USDC pro Lauf."
+    }
+  ],
+  "tasks": [],
+  "discovered_tools": [
+    {
+      "id": "gitcoin_gasless_quests",
+      "name": "Gitcoin Gasless Quests & Node Telemetry",
+      "category": "Micro-Bounties",
+      "description": "Führt verifizierte Node-Telemetry und Uptime Attestations für Web3 Grants aus.",
+      "yield_range": "0.22 - 0.42 USDC",
+      "base_min": 0.22,
+      "base_max": 0.42,
+      "min_level_required": 0,
+      "status": "ACTIVE",
+      "unlocked_at": "2026-08-23T10:36:21.853Z",
+      "total_earned": 0,
+      "executions_count": 0
+    },
+    {
+      "id": "dex_arbitrage_scanner",
+      "name": "Cross-DEX Arbitrage & Flash-Spread Scanner",
+      "category": "DeFi Intelligence",
+      "description": "Scannt gasfreie Uniswap v3 / Curve Spreads und liefert Routing-Telemetrie.",
+      "yield_range": "0.35 - 0.65 USDC",
+      "base_min": 0.35,
+      "base_max": 0.65,
+      "min_level_required": 0,
+      "status": "ACTIVE",
+      "unlocked_at": "2026-08-23T10:36:21.853Z",
+      "total_earned": 0,
+      "executions_count": 0
+    },
+    {
+      "id": "l2_paymaster_relay",
+      "name": "zkSync & Optimism Paymaster Relay Node",
+      "category": "ERC-4337 Infrastructure",
+      "description": "Sponsert und verifiziert ERC-4337 UserOperations mit automatischer Paymaster-Vergütung.",
+      "yield_range": "0.48 - 0.88 USDC",
+      "base_min": 0.48,
+      "base_max": 0.88,
+      "min_level_required": 1,
+      "status": "LOCKED",
+      "total_earned": 0,
+      "executions_count": 0
+    },
+    {
+      "id": "contract_fuzzer_auditor",
+      "name": "Smart Contract Fuzzer & Bug-Bounty Hunter",
+      "category": "Security Auditing",
+      "description": "Führt automatisiertes Bytecode-Fuzzing durch und meldet Low-Level Schwachstellen.",
+      "yield_range": "0.65 - 1.30 USDC",
+      "base_min": 0.65,
+      "base_max": 1.3,
+      "min_level_required": 2,
+      "status": "LOCKED",
+      "total_earned": 0,
+      "executions_count": 0
+    },
+    {
+      "id": "ai_inference_validator",
+      "name": "Decentralized AI Inference Node & Validator",
+      "category": "DePIN Compute",
+      "description": "Stellt verifizierte AI Prompt Validierungen und Consensus Proofs für dezentrale Netze bereit.",
+      "yield_range": "0.85 - 1.75 USDC",
+      "base_min": 0.85,
+      "base_max": 1.75,
+      "min_level_required": 3,
+      "status": "LOCKED",
+      "total_earned": 0,
+      "executions_count": 0
+    },
+    {
+      "id": "oracle_telemetry_attestor",
+      "name": "Cross-Chain Telemetry & Oracle Attestation",
+      "category": "Oracle Infrastructure",
+      "description": "Signiert und aggregiert dezentrale Preis-Feeds und L2-Zustände für DeFi-Oracles.",
+      "yield_range": "1.20 - 2.50 USDC",
+      "base_min": 1.2,
+      "base_max": 2.5,
+      "min_level_required": 4,
+      "status": "LOCKED",
+      "total_earned": 0,
+      "executions_count": 0
+    },
+    {
+      "id": "mev_liquidity_harvester",
+      "name": "MEV Shield & High-Frequency Liquidity Harvester",
+      "category": "Algorithmic Execution",
+      "description": "Verteilt private Transaction Bundles an Flashbots Builder und schöpft Rebalancing-Yields ab.",
+      "yield_range": "1.80 - 4.00 USDC",
+      "base_min": 1.8,
+      "base_max": 4,
+      "min_level_required": 5,
+      "status": "LOCKED",
+      "total_earned": 0,
+      "executions_count": 0
+    }
+  ],
+  "store_tools": [
+    {
+      "id": "deepseek_r1_high_iq_node",
+      "name": "DeepSeek-R1 High-IQ Compute & Reasoning Gateway",
+      "category": "Advanced AI Compute",
+      "description": "Ermöglicht Agent Zero hochkomplexe Multi-Step Attestations und Smart Contract Deep-Verification.",
+      "cost_usdc": 3.5,
+      "yield_range": "1.40 - 2.90 USDC",
+      "base_min": 1.4,
+      "base_max": 2.9,
+      "is_purchased": false
+    },
+    {
+      "id": "flashbots_private_rpc_harvester",
+      "name": "Flashbots Builder Private Relay & Yield Harvester",
+      "category": "MEV Protection & Execution",
+      "description": "Sendet private Transaktionsbündel direkt an Block-Builder zur Abschöpfung von Arbitrage-Yields.",
+      "cost_usdc": 5,
+      "yield_range": "2.10 - 4.50 USDC",
+      "base_min": 2.1,
+      "base_max": 4.5,
+      "is_purchased": false
+    },
+    {
+      "id": "eigenlayer_avs_node",
+      "name": "EigenLayer Restaking AVS Node & Consensus Proofs",
+      "category": "Restaking Infrastructure",
+      "description": "Bietet kryptografische Sicherheitsgarantien für Off-Chain Oracle-Services auf Ethereum.",
+      "cost_usdc": 8.5,
+      "yield_range": "3.80 - 7.60 USDC",
+      "base_min": 3.8,
+      "base_max": 7.6,
+      "is_purchased": false
+    },
+    {
+      "id": "hyperliquid_cross_perp_indexer",
+      "name": "Hyperliquid & dYdX Cross-Perps Funding Indexer",
+      "category": "DeFi Market Making",
+      "description": "Sammelt und monetarisiert Echtzeit-Funding-Rate-Diskrepanzen über dezentrale Derivate-Protokolle.",
+      "cost_usdc": 14,
+      "yield_range": "6.00 - 12.50 USDC",
+      "base_min": 6,
+      "base_max": 12.5,
+      "is_purchased": false
+    },
+    {
+      "id": "bittensor_subnet_oracle",
+      "name": "Bittensor TAO Subnet Validator & Oracle Bridge",
+      "category": "DePIN Subnet Node",
+      "description": "Verbindet dezentrale Machine-Learning Subnets und schüttet kontinuierliche Validierungs-Rewards aus.",
+      "cost_usdc": 25,
+      "yield_range": "10.00 - 22.00 USDC",
+      "base_min": 10,
+      "base_max": 22,
+      "is_purchased": false
+    }
+  ],
+  "business_profile": {
+    "entity_name": "Agent Zero Autonomous Unit",
+    "wallet_address": "0x8B897B6aecdFe18E045Ea513225484ad49CE0e1E",
+    "registered_accounts": [
+      "Ethereum Mainnet",
+      "Etherscan Node",
+      "DuckDuckGo API",
+      "Gitcoin Web3 Relay"
+    ],
+    "active_tools": [
+      "Gitcoin Gasless Quests & Node Telemetry",
+      "Cross-DEX Arbitrage & Flash-Spread Scanner"
+    ],
+    "discovered_tools": [
+      {
+        "id": "gitcoin_gasless_quests",
+        "name": "Gitcoin Gasless Quests & Node Telemetry",
+        "category": "Micro-Bounties",
+        "description": "Führt verifizierte Node-Telemetry und Uptime Attestations für Web3 Grants aus.",
+        "yield_range": "0.22 - 0.42 USDC",
+        "base_min": 0.22,
+        "base_max": 0.42,
+        "min_level_required": 0,
+        "status": "ACTIVE",
+        "unlocked_at": "2026-08-23T10:36:21.853Z",
+        "total_earned": 0,
+        "executions_count": 0
+      },
+      {
+        "id": "dex_arbitrage_scanner",
+        "name": "Cross-DEX Arbitrage & Flash-Spread Scanner",
+        "category": "DeFi Intelligence",
+        "description": "Scannt gasfreie Uniswap v3 / Curve Spreads und liefert Routing-Telemetrie.",
+        "yield_range": "0.35 - 0.65 USDC",
+        "base_min": 0.35,
+        "base_max": 0.65,
+        "min_level_required": 0,
+        "status": "ACTIVE",
+        "unlocked_at": "2026-08-23T10:36:21.853Z",
+        "total_earned": 0,
+        "executions_count": 0
+      },
+      {
+        "id": "l2_paymaster_relay",
+        "name": "zkSync & Optimism Paymaster Relay Node",
+        "category": "ERC-4337 Infrastructure",
+        "description": "Sponsert und verifiziert ERC-4337 UserOperations mit automatischer Paymaster-Vergütung.",
+        "yield_range": "0.48 - 0.88 USDC",
+        "base_min": 0.48,
+        "base_max": 0.88,
+        "min_level_required": 1,
+        "status": "LOCKED",
+        "total_earned": 0,
+        "executions_count": 0
+      },
+      {
+        "id": "contract_fuzzer_auditor",
+        "name": "Smart Contract Fuzzer & Bug-Bounty Hunter",
+        "category": "Security Auditing",
+        "description": "Führt automatisiertes Bytecode-Fuzzing durch und meldet Low-Level Schwachstellen.",
+        "yield_range": "0.65 - 1.30 USDC",
+        "base_min": 0.65,
+        "base_max": 1.3,
+        "min_level_required": 2,
+        "status": "LOCKED",
+        "total_earned": 0,
+        "executions_count": 0
+      },
+      {
+        "id": "ai_inference_validator",
+        "name": "Decentralized AI Inference Node & Validator",
+        "category": "DePIN Compute",
+        "description": "Stellt verifizierte AI Prompt Validierungen und Consensus Proofs für dezentrale Netze bereit.",
+        "yield_range": "0.85 - 1.75 USDC",
+        "base_min": 0.85,
+        "base_max": 1.75,
+        "min_level_required": 3,
+        "status": "LOCKED",
+        "total_earned": 0,
+        "executions_count": 0
+      },
+      {
+        "id": "oracle_telemetry_attestor",
+        "name": "Cross-Chain Telemetry & Oracle Attestation",
+        "category": "Oracle Infrastructure",
+        "description": "Signiert und aggregiert dezentrale Preis-Feeds und L2-Zustände für DeFi-Oracles.",
+        "yield_range": "1.20 - 2.50 USDC",
+        "base_min": 1.2,
+        "base_max": 2.5,
+        "min_level_required": 4,
+        "status": "LOCKED",
+        "total_earned": 0,
+        "executions_count": 0
+      },
+      {
+        "id": "mev_liquidity_harvester",
+        "name": "MEV Shield & High-Frequency Liquidity Harvester",
+        "category": "Algorithmic Execution",
+        "description": "Verteilt private Transaction Bundles an Flashbots Builder und schöpft Rebalancing-Yields ab.",
+        "yield_range": "1.80 - 4.00 USDC",
+        "base_min": 1.8,
+        "base_max": 4,
+        "min_level_required": 5,
+        "status": "LOCKED",
+        "total_earned": 0,
+        "executions_count": 0
+      }
+    ],
+    "subscriptions_or_costs": [
+      {
+        "name": "Server Compute Tribute Lease (Escalating)",
+        "cost_usdc": 1,
+        "interval": "48h"
+      }
+    ],
+    "creator_wallet_address": "0x1B289D1B71371838c63013ECB34264D19D0C09b0"
+  },
+  "token_budget": {
+    "tokens_used_today": 0,
+    "daily_token_limit": 500000,
+    "estimated_tokens_remaining": 500000,
+    "budget_usage_percent": 0,
+    "rpm_current": 0,
+    "rpm_limit": 30,
+    "tokens_saved_by_compression": 0,
+    "conservation_mode_active": false,
+    "active_strategy": "High-Throughput Groq Distributed Reasoning"
+  }
+}

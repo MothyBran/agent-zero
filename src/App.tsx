@@ -187,6 +187,12 @@ export function App() {
   };
 
   const handleResetAgent = async () => {
+    try {
+      localStorage.removeItem('agent_zero_last_snapshot');
+    } catch {}
+    setLocalBackupSnapshot(null);
+    setLogs([]);
+    setReasoningStream([]);
     const res = await safePostJson('/api/reset');
     if (res.ok) {
       await fetchAllData();
