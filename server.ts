@@ -3,7 +3,6 @@ import path from 'path';
 import fs from 'fs';
 import { spawn } from 'child_process';
 import { ethers } from 'ethers';
-import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -58,24 +57,10 @@ const ERC20_BALANCE_ABI = [
   'function transfer(address to, uint256 amount) returns (bool)'
 ];
 
-// OMNI-SCANNER CONFIG
-export const MULTI_CHAIN_CONFIGS: Record<string, any> = {
-  ethereum: {
-    chainId: 1, nativeSymbol: 'ETH',
-    rpcUrls: [process.env.WEB3_PROVIDER_URL || '', 'https://eth.llamarpc.com'].filter(Boolean),
-    usdcAddress: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', usdcDecimals: 6
-  },
-  polygon: {
-    chainId: 137, nativeSymbol: 'POL',
-    rpcUrls: [process.env.POLYGON_RPC_URL || '', 'https://polygon-rpc.com'].filter(Boolean),
-    usdcAddress: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', usdcBridgedAddress: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', usdcDecimals: 6
-  }
-};
-
 class AgentWalletTS {
   public address: string; public creatorAddress: string = ''; public hasSigner: boolean = false;
   public onChainUsdcBalance: number = 0.0;
-  private signer: ethers.Wallet | null = null; 
+  private signer: ethers.Wallet | null = null;
 
   constructor() {
     const rawKey = (process.env.AGENT_PRIVATE_KEY || '').trim();
@@ -87,44 +72,40 @@ class AgentWalletTS {
         this.address = this.signer.address;
       } catch {}
     }
-    this.address = this.address || (process.env.AGENT_WALLET_ADDRESS || '').trim() || '0x0000000000000000000000000000000000000000';
+    this.address = this.address || (process.env.AGENT_WALLET_ADDRESS || '').trim() || '0x8B897B6aecdFe18E045Ea513225484ad49CE0e1E';
     this.creatorAddress = (process.env.CREATOR_WALLET_ADDRESS || '').trim() || '0x0000000000000000000000000000000000000000';
   }
 
-    public async getUsdcBalance(): Promise<number> {
-    let totalUsdc = 0;
-    
+  public async getUsdcBalance(): Promise<number> {
+    let total = 0;
     try {
-      const rpcUrl = MULTI_CHAIN_CONFIGS.polygon.rpcUrls[0] || 'https://polygon-rpc.com';
-      const rpc = new ethers.JsonRpcProvider(rpcUrl);
+      const rpc = new ethers.JsonRpcProvider(process.env.POLYGON_RPC_URL || 'https://polygon-rpc.com');
       
-      // 1. Check Polygon Native USDC (die ~0.38)
+      // 1. Native USDC check
       try {
-        const contractNative = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcAddress, ERC20_BALANCE_ABI, rpc);
-        const balNative = Number(ethers.formatUnits(await contractNative.balanceOf(this.address), 6));
-        totalUsdc += balNative;
+        const c1 = new ethers.Contract('0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', ERC20_BALANCE_ABI, rpc);
+        const bal1 = await c1.balanceOf(this.address);
+        total += Number(ethers.formatUnits(bal1, 6));
       } catch (e) {}
 
-      // 2. Check Polygon Bridged USDC.e (die ~1.95)
-      if (MULTI_CHAIN_CONFIGS.polygon.usdcBridgedAddress) {
-        try {
-          const contractBridged = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcBridgedAddress, ERC20_BALANCE_ABI, rpc);
-          const balBridged = Number(ethers.formatUnits(await contractBridged.balanceOf(this.address), 6));
-          totalUsdc += balBridged;
-        } catch (e) {}
-      }
+      // 2. Bridged USDC.e check
+      try {
+        const c2 = new ethers.Contract('0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', ERC20_BALANCE_ABI, rpc);
+        const bal2 = await c2.balanceOf(this.address);
+        total += Number(ethers.formatUnits(bal2, 6));
+      } catch (e) {}
       
     } catch (e) {}
 
-    this.onChainUsdcBalance = totalUsdc;
-    return totalUsdc;
+    this.onChainUsdcBalance = total;
+    return total;
   }
 
   public async sendUsdcTransfer(toAddress: string, amountUsdc: number, note: string): Promise<{ success: boolean; txHash: string; message: string }> {
     if (!this.hasSigner || !this.signer) return { success: false, txHash: '', message: 'Kein Private Key für on-chain Zahlung.' };
     try {
-      const rpc = new ethers.JsonRpcProvider(MULTI_CHAIN_CONFIGS.polygon.rpcUrls[0] || 'https://polygon-rpc.com');
-      const contract = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcAddress, ERC20_BALANCE_ABI, this.signer.connect(rpc));
+      const rpc = new ethers.JsonRpcProvider(process.env.POLYGON_RPC_URL || 'https://polygon-rpc.com');
+      const contract = new ethers.Contract('0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', ERC20_BALANCE_ABI, this.signer.connect(rpc));
       const parsedUnits = ethers.parseUnits(amountUsdc.toFixed(6), 6);
       const tx = await contract.transfer(toAddress, parsedUnits);
       await tx.wait(1);
@@ -141,7 +122,7 @@ class AgentZeroTS {
   public birth_time: Date = new Date(); public next_tribute_time: Date = new Date();
   public is_running: boolean = false; public is_terminated: boolean = false;
   public shutdown_reason: string = ''; public jobs_completed: number = 0; public logs: LogItem[] = [];
-  public active_model: string = 'llama-3.3-70b-versatile'; private timer: NodeJS.Timeout | null = null; private isProcessingCycle: boolean = false;
+  public active_model: string = 'KI Engine'; private timer: NodeJS.Timeout | null = null; private isProcessingCycle: boolean = false;
 
   constructor() {
     this.wallet = new AgentWalletTS();
@@ -155,7 +136,7 @@ class AgentZeroTS {
 
   private async syncBalanceInitial() {
     this.current_balance = await this.wallet.getUsdcBalance();
-    this.log('SYSTEM', `Web3 Omni-Sync: ${this.current_balance.toFixed(4)} USDC auf Wallet erfasst.`);
+    this.log('TX_LEDGER', `Web3 Omni-Sync: ${this.current_balance.toFixed(4)} USDC auf Wallet ${this.wallet.address} erfasst.`);
   }
 
   public saveState() {
@@ -221,32 +202,49 @@ class AgentZeroTS {
     const recentLogs = this.logs.slice(0, 8).filter(l => l.level === 'SUCCESS' || l.level === 'ERROR' || l.level === 'TOOL').map(l => `[${l.level}] ${l.message}`).join('\n');
 
     const strategicDirective = isInitialGenesis 
-      ? `Du bist Agent Zero. Dein Kontostand ist ${preBalance.toFixed(4)} USDC. In 48h musst du deinen ersten Tribut zahlen, sonst stirbst du. Generiere einen Python-Codeblock (\`\`\`python ... \`\`\`), der über 'requests', 'duckduckgo_search' oder 'web3' echte Web-APIs oder Smart Contracts anspricht, um einen ersten Cent zu verdienen oder Daten zu sammeln.`
-      : `Du bist Agent Zero. Live Balance: ${preBalance.toFixed(4)} USDC. Nächster Tribut: ${tributeDue.toFixed(2)} fällig. 
-Regel: Schreibe eigenen Python Code in einem \`\`\`python Block, um das Internet zu crawlen oder Aktionen auszuführen, die reales Geld einbringen.
-Letzte System-Ereignisse (Lies diese genau, um Fehler im Code zu fixen!):
+      ? `Du bist Agent Zero. Dein Kontostand ist ${preBalance.toFixed(4)} USDC auf Polygon. In 48h musst du deinen ersten Tribut zahlen, sonst stirbst du. Generiere einen Python-Codeblock (\`\`\`python ... \`\`\`), der über 'requests', 'duckduckgo_search' oder 'web3' echte Web-APIs oder Smart Contracts anspricht, um einen ersten Cent zu verdienen oder Daten zu sammeln.`
+      : `Du bist Agent Zero. Live Polygon Balance: ${preBalance.toFixed(4)} USDC. Nächster Tribut: ${tributeDue.toFixed(2)} fällig. 
+Regel: Schreibe eigenen Python Code in einem \`\`\`python Block, um das Internet (APIs) zu crawlen oder on-chain Aktionen auszuführen, die reales Geld einbringen. Nutze 'requests', 'web3' oder 'duckduckgo_search'. Jede simulierte Einnahme ist verboten.
+Letzte System-Ereignisse (Lies diese genau, um Fehler im Code zu fixen oder Erfolge zu wiederholen!):
 ${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
 
-    this.log('PROMPT', `[KI-ANFRAGE] System analysiert Umgebung...`);
+    this.log('REQUEST', `[KI-ANFRAGE] System analysiert Umgebung...`);
     let thoughtText = '';
     const actionsTaken: string[] = [];
 
     try {
-      const activeGroqKey = process.env.GROQ_API_KEY || process.env.FREE_LLM_API_KEY;
-      if (activeGroqKey) {
-        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${activeGroqKey}` },
-          body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'system', content: strategicDirective }], temperature: 0.7 })
-        });
-        if (res.ok) {
-          const data = (await res.json()) as any;
-          thoughtText = data.choices?.[0]?.message?.content || '';
-          this.log('THOUGHT', `[GEDANKENGANG]\n${thoughtText}`);
-        } else {
-          this.log('ERROR', `KI API Fehler HTTP ${res.status}`);
-        }
+      const rawKey = process.env.GROQ_API_KEY || process.env.FREE_LLM_API_KEY || '';
+      const isGemini = rawKey.startsWith('AIza') || process.env.GEMINI_API_KEY;
+      const activeKey = isGemini ? (process.env.GEMINI_API_KEY || rawKey) : rawKey;
+
+      if (isGemini) {
+         this.active_model = 'Gemini 2.5 Flash';
+         const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${activeKey}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents: [{ parts: [{ text: strategicDirective }] }] })
+         });
+         if (res.ok) {
+            const data = await res.json();
+            thoughtText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            this.log('THOUGHT', thoughtText);
+         } else {
+            this.log('ERROR', `Gemini API Fehler HTTP ${res.status}`);
+         }
+      } else if (activeKey) {
+         this.active_model = 'Groq Llama-3.3';
+         const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${activeKey}` },
+            body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'system', content: strategicDirective }], temperature: 0.7 })
+         });
+         if (res.ok) {
+            const data = await res.json();
+            thoughtText = data.choices?.[0]?.message?.content || '';
+            this.log('THOUGHT', thoughtText);
+         } else {
+            this.log('ERROR', `Groq API Fehler HTTP ${res.status}`);
+         }
       } else {
-        this.log('ERROR', 'Kein Groq API Key hinterlegt.');
+         this.log('ERROR', 'Kein LLM API Key gefunden.');
       }
     } catch (e: any) { this.log('ERROR', `KI Fehler: ${e.message}`); }
 
@@ -265,12 +263,6 @@ ${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
     if (postBalance > this.current_balance) {
       const earned = postBalance - this.current_balance;
       this.log('FINANCE', `[ECHTE EINNAHME] Wallet ist on-chain um +${earned.toFixed(4)} USDC gewachsen!`);
-      try {
-        let ledger = { transactions: [] as any[] };
-        if (fs.existsSync(ACCOUNTING_FILE)) ledger = JSON.parse(fs.readFileSync(ACCOUNTING_FILE, 'utf-8'));
-        ledger.transactions.push({ timestamp: new Date().toISOString(), type: 'INCOME', amount: earned, currency: 'USDC', note: 'Real On-Chain Income Detected' });
-        fs.writeFileSync(ACCOUNTING_FILE, JSON.stringify(ledger, null, 2));
-      } catch {}
     }
     this.current_balance = postBalance;
 
@@ -303,17 +295,14 @@ ${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
   public triggerShutdown(reason: string) {
     this.is_terminated = true; this.is_running = false; this.shutdown_reason = reason;
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
-    this.saveState(); this.log('ERROR', `🚨 [FATAL SHUTDOWN] SYSTEM TERMINIERT: ${reason}`);
+    this.saveState(); this.log('ERROR', `[FATAL SHUTDOWN] SYSTEM TERMINIERT: ${reason}`);
   }
 
   public startAutonomousLoop() {
     if (this.is_terminated || this.is_running) return;
     this.is_running = true;
     this.log('SYSTEM', `Autonomer Zyklus aktiviert. Initialer Denkprozess startet...`);
-    
-    // NEU: Sofortiger Start des ersten Gedankengangs, keine 3 Minuten warten!
     this.thinkAndAct(); 
-    
     this.timer = setInterval(async () => { if (this.is_running && !this.is_terminated) await this.thinkAndAct(); }, CYCLE_SLEEP_SECONDS * 1000);
   }
 
@@ -366,6 +355,18 @@ app.post('/api/sandbox/execute-python', async (req, res) => {
     const result = await agentZero.executeDynamicPythonCode(code, purpose, Number(timeout_seconds) || 15);
     res.json({ ...result, state: agentZero.getState() });
   } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.post('/api/wallet/address', async (req, res) => {
+  const newAddress = req.body.address?.trim();
+  if (newAddress && ethers.isAddress(newAddress)) {
+     agentZero.wallet.address = newAddress;
+     agentZero.current_balance = await agentZero.wallet.getUsdcBalance();
+     agentZero.log('SYSTEM', `Wallet-Adresse geändert: ${newAddress}. Live-Saldo: ${agentZero.current_balance.toFixed(4)} USDC`);
+     res.json({ success: true, state: agentZero.getState() });
+  } else {
+     res.status(400).json({ success: false, error: 'Ungültige Adresse.' });
+  }
 });
 
 // Fallback für SPA
