@@ -12,9 +12,20 @@ import {
   BarChart3,
   Lightbulb,
   Shield,
-  Layers
+  Layers,
+  HelpCircle,
+  Compass,
+  Clock,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  Check,
+  Code,
+  Globe,
+  Terminal,
+  Activity
 } from 'lucide-react';
-import { IntelligenceEvaluation } from '../types';
+import { IntelligenceEvaluation, ReasoningStreamItem } from '../types';
 import { safeFetchJson, safePostJson } from '../lib/api';
 
 interface RealIntelligenceCardProps {
@@ -26,6 +37,9 @@ export const RealIntelligenceCard: React.FC<RealIntelligenceCardProps> = ({ onRe
   const [loading, setLoading] = useState(false);
   const [synthesizing, setSynthesizing] = useState(false);
   const [synthesizeResult, setSynthesizeResult] = useState<string | null>(null);
+  const [streamFilter, setStreamFilter] = useState<'ALL' | 'THOUGHT' | 'PLAN' | 'PROMPT_API'>('ALL');
+  const [expandedStreamIds, setExpandedStreamIds] = useState<Record<string, boolean>>({});
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const fetchEvaluation = async () => {
     setLoading(true);
@@ -63,6 +77,64 @@ export const RealIntelligenceCard: React.FC<RealIntelligenceCardProps> = ({ onRe
     return 'bg-slate-800 text-slate-300 border-slate-700';
   };
 
+  const toggleStreamExpand = (id: string) => {
+    setExpandedStreamIds(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const handleCopyContent = (id: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const reasoningStream = evaluation?.reasoning_stream || [];
+
+  const filteredStream = reasoningStream.filter(item => {
+    if (streamFilter === 'ALL') return true;
+    if (streamFilter === 'THOUGHT') return item.type === 'THOUGHT' || item.type === 'REFLECTION';
+    if (streamFilter === 'PLAN') return item.type === 'PLAN';
+    if (streamFilter === 'PROMPT_API') return item.type === 'PROMPT' || item.type === 'API_QUESTION' || item.type === 'TOOL_EXECUTION';
+    return true;
+  });
+
+  const getStreamItemIcon = (type: ReasoningStreamItem['type']) => {
+    switch (type) {
+      case 'THOUGHT':
+        return <Brain className="w-4 h-4 text-fuchsia-400 shrink-0 animate-pulse" />;
+      case 'PLAN':
+        return <Compass className="w-4 h-4 text-indigo-400 shrink-0" />;
+      case 'PROMPT':
+        return <HelpCircle className="w-4 h-4 text-amber-400 shrink-0" />;
+      case 'API_QUESTION':
+        return <Globe className="w-4 h-4 text-blue-400 shrink-0" />;
+      case 'TOOL_EXECUTION':
+        return <Zap className="w-4 h-4 text-emerald-400 shrink-0" />;
+      case 'REFLECTION':
+        return <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />;
+      default:
+        return <Activity className="w-4 h-4 text-slate-400 shrink-0" />;
+    }
+  };
+
+  const getStreamItemBadge = (type: ReasoningStreamItem['type']) => {
+    switch (type) {
+      case 'THOUGHT':
+        return 'bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/30';
+      case 'PLAN':
+        return 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30';
+      case 'PROMPT':
+        return 'bg-amber-500/15 text-amber-300 border-amber-500/30';
+      case 'API_QUESTION':
+        return 'bg-blue-500/15 text-blue-300 border-blue-500/30';
+      case 'TOOL_EXECUTION':
+        return 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
+      case 'REFLECTION':
+        return 'bg-purple-500/15 text-purple-300 border-purple-500/30';
+      default:
+        return 'bg-slate-800 text-slate-400 border-slate-700';
+    }
+  };
+
   return (
     <div id="real-intelligence-card" className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl space-y-6">
       {/* Header with Live IQ & Cognitive Tier */}
@@ -88,7 +160,7 @@ export const RealIntelligenceCard: React.FC<RealIntelligenceCardProps> = ({ onRe
           <button
             onClick={fetchEvaluation}
             disabled={loading}
-            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors disabled:opacity-50"
+            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors disabled:opacity-50 cursor-pointer"
             title="Intelligenz-Werte aktualisieren"
           >
             <RotateCw className={`w-4 h-4 ${loading ? 'animate-spin text-purple-400' : ''}`} />
@@ -182,6 +254,169 @@ export const RealIntelligenceCard: React.FC<RealIntelligenceCardProps> = ({ onRe
         </div>
       </div>
 
+      {/* NESTED FIELD: REASONING STREAM (Chain of Thought, Planned Actions, Pending API Questions) */}
+      <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-4 space-y-4">
+        {/* Stream Header & Filters */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 rounded-lg bg-fuchsia-500/10 border border-fuchsia-500/20 text-fuchsia-400">
+              <Brain className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs font-bold uppercase font-mono tracking-wider text-slate-200">
+                  Live Reasoning & Chain-of-Thought Stream
+                </h3>
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-fuchsia-950/60 text-fuchsia-300 border border-fuchsia-800">
+                  reasoning_stream
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Chronologischer Ablauf: Raw Chain of Thought, geplante Aktionen & KI-/API-Fragestellungen.
+              </p>
+            </div>
+          </div>
+
+          {/* Filter Pills */}
+          <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-0.5 text-xs font-mono">
+            {[
+              { id: 'ALL', label: `Alle (${reasoningStream.length})` },
+              { id: 'THOUGHT', label: '💭 Gedanken' },
+              { id: 'PLAN', label: '📋 Pläne' },
+              { id: 'PROMPT_API', label: '❓ API-Fragen' }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setStreamFilter(tab.id as any)}
+                className={`px-2.5 py-1 rounded text-[11px] transition-colors cursor-pointer ${
+                  streamFilter === tab.id
+                    ? 'bg-slate-800 text-fuchsia-300 font-semibold shadow-xs border border-slate-700'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Chronological Stream Items */}
+        <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+          {filteredStream.length === 0 ? (
+            <div className="text-center py-12 text-slate-500 font-mono text-xs flex flex-col items-center gap-2">
+              <Brain className="w-6 h-6 text-slate-700" />
+              <span>Keine Kognitions-Ereignisse für den aktuellen Filter vorhanden.</span>
+            </div>
+          ) : (
+            filteredStream.map((item, idx) => {
+              const isExpanded = expandedStreamIds[item.id] ?? true;
+              const hasMeta = item.meta && Object.keys(item.meta).length > 0;
+
+              return (
+                <div
+                  key={item.id || idx}
+                  className={`rounded-xl border p-3.5 font-mono text-xs transition-all ${
+                    item.type === 'THOUGHT'
+                      ? 'bg-fuchsia-950/20 border-fuchsia-900/40 text-fuchsia-100 shadow-[0_0_12px_rgba(217,70,239,0.06)]'
+                      : item.type === 'PLAN'
+                      ? 'bg-indigo-950/20 border-indigo-900/40 text-indigo-100'
+                      : item.type === 'PROMPT'
+                      ? 'bg-amber-950/20 border-amber-900/40 text-amber-100'
+                      : item.type === 'API_QUESTION'
+                      ? 'bg-blue-950/20 border-blue-900/40 text-blue-100'
+                      : 'bg-slate-900/80 border-slate-800 text-slate-200'
+                  }`}
+                >
+                  {/* Item Header */}
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {getStreamItemIcon(item.type)}
+                      <span className={`px-2 py-0.5 rounded text-[10px] border font-bold ${getStreamItemBadge(item.type)}`}>
+                        {item.type}
+                      </span>
+                      <span className="font-semibold text-slate-200 text-xs">
+                        {item.title}
+                      </span>
+                      {item.model && (
+                        <span className="px-1.5 py-0.2 rounded text-[9px] bg-slate-800/90 text-slate-300 border border-slate-700">
+                          {item.model}
+                        </span>
+                      )}
+                      {item.latency_ms !== undefined && (
+                        <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {item.latency_ms}ms
+                        </span>
+                      )}
+                      {item.tokens !== undefined && (
+                        <span className="text-[10px] text-purple-400">
+                          {item.tokens} Tokens
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0 text-[10px] text-slate-400">
+                      <span>{new Date(item.timestamp).toLocaleTimeString()}</span>
+                      <button
+                        onClick={() => handleCopyContent(item.id, item.content)}
+                        className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
+                        title="Inhalt kopieren"
+                      >
+                        {copiedId === item.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      </button>
+                      <button
+                        onClick={() => toggleStreamExpand(item.id)}
+                        className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
+                        title={isExpanded ? 'Einklappen' : 'Ausklappen'}
+                      >
+                        {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Raw Content Body */}
+                  {isExpanded && (
+                    <div className="mt-2 space-y-2">
+                      <div className="whitespace-pre-wrap break-words leading-relaxed text-xs p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/50">
+                        {item.content}
+                      </div>
+
+                      {/* Optional Metadata / Action Breakdown */}
+                      {hasMeta && (
+                        <div className="text-[11px] p-2 rounded bg-slate-950/40 border border-slate-800/30 text-slate-400 space-y-1">
+                          {item.meta?.query && (
+                            <div>
+                              <span className="text-slate-500">Query: </span>
+                              <span className="text-amber-300 font-mono">{item.meta.query}</span>
+                            </div>
+                          )}
+                          {item.meta?.endpoint && (
+                            <div>
+                              <span className="text-slate-500">Endpoint: </span>
+                              <span className="text-blue-300 font-mono">{item.meta.http_method || 'GET'} {item.meta.endpoint}</span>
+                            </div>
+                          )}
+                          {item.meta?.plan && Array.isArray(item.meta.plan) && (
+                            <div className="pt-1">
+                              <span className="text-slate-500 block mb-0.5">Aktionsschritte:</span>
+                              <ul className="list-disc list-inside space-y-0.5 text-indigo-300">
+                                {item.meta.plan.map((st: string, sIdx: number) => (
+                                  <li key={sIdx}>{st}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
       {/* Verified Skill Matrix */}
       <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-4 space-y-3">
         <h3 className="text-xs font-bold uppercase font-mono tracking-wider text-slate-300 flex items-center gap-2">
@@ -260,3 +495,4 @@ export const RealIntelligenceCard: React.FC<RealIntelligenceCardProps> = ({ onRe
     </div>
   );
 };
+

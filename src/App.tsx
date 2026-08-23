@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { AgentState, Transaction, BusinessProfile, LogEntry } from './types';
+import { AgentState, Transaction, BusinessProfile, LogEntry, ReasoningStreamItem, IntelligenceEvaluation } from './types';
 import { Header } from './components/Header';
 import { VitalsGrid } from './components/VitalsGrid';
 import { TerminalLogs } from './components/TerminalLogs';
@@ -33,6 +33,7 @@ export function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [profile, setProfile] = useState<BusinessProfile | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [reasoningStream, setReasoningStream] = useState<ReasoningStreamItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isProcessingCycle, setIsProcessingCycle] = useState(false);
   const [isSyncingWallet, setIsSyncingWallet] = useState(false);
@@ -89,11 +90,12 @@ export function App() {
   };
 
   const fetchAllData = useCallback(async () => {
-    const [statusData, ledgerData, profileData, logsData] = await Promise.all([
+    const [statusData, ledgerData, profileData, logsData, evalData] = await Promise.all([
       safeFetchJson<AgentState>('/api/status'),
       safeFetchJson<{ transactions: Transaction[] }>('/api/ledger'),
       safeFetchJson<BusinessProfile>('/api/profile'),
-      safeFetchJson<{ logs: LogEntry[] }>('/api/logs')
+      safeFetchJson<{ logs: LogEntry[] }>('/api/logs'),
+      safeFetchJson<IntelligenceEvaluation>('/api/intelligence/evaluation')
     ]);
 
     if (statusData.ok && statusData.data) {
@@ -118,6 +120,9 @@ export function App() {
     }
     if (logsData.ok && logsData.data?.logs) {
       setLogs(logsData.data.logs);
+    }
+    if (evalData.ok && evalData.data?.reasoning_stream) {
+      setReasoningStream(evalData.data.reasoning_stream);
     }
   }, []);
 
@@ -447,7 +452,7 @@ export function App() {
                 <RealIntelligenceCard onRefresh={fetchAllData} />
                 <KnowledgeStorageManager onRefresh={fetchAllData} />
                 <MilestonesCard />
-                <TerminalLogs logs={logs} />
+                <TerminalLogs logs={logs} reasoningStream={reasoningStream} />
               </div>
               <div className="space-y-6">
                 <LiveAutomatonWorkbench

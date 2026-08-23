@@ -122,6 +122,27 @@ export interface HttpRequestResult {
   extracted_knowledge?: string;
 }
 
+export interface ReasoningStreamItem {
+  id: string;
+  timestamp: string;
+  type: 'PROMPT' | 'THOUGHT' | 'PLAN' | 'API_QUESTION' | 'TOOL_EXECUTION' | 'REFLECTION';
+  title: string;
+  content: string;
+  model?: string;
+  tokens?: number;
+  latency_ms?: number;
+  status?: 'PENDING' | 'EXECUTING' | 'RESOLVED' | 'COMPLETED' | 'FAILED';
+  meta?: {
+    endpoint?: string;
+    http_method?: string;
+    query?: string;
+    params?: any;
+    target?: string;
+    steps?: string[];
+    [key: string]: any;
+  };
+}
+
 export interface IntelligenceEvaluation {
   iq_score: number;
   evolution_tier: string;
@@ -155,6 +176,7 @@ export interface IntelligenceEvaluation {
     tokens_consumed_today: number;
     conservation_mode: boolean;
   };
+  reasoning_stream?: ReasoningStreamItem[];
 }
 
 export interface TokenBudgetStatus {
@@ -308,9 +330,25 @@ export interface AgentState {
 export interface LogEntry {
   id: string;
   timestamp: string;
-  level: 'SYSTEM' | 'AGENT' | 'FINANCE' | 'TOOL' | 'ERROR' | 'SUCCESS';
+  level: 'SYSTEM' | 'AGENT' | 'FINANCE' | 'TOOL' | 'ERROR' | 'SUCCESS' | 'PROMPT' | 'THOUGHT' | 'PLAN';
   message: string;
-  metadata?: any;
+  metadata?: {
+    model?: string;
+    prompt?: string;
+    system_prompt?: string;
+    thought?: string;
+    plan?: string[];
+    tool?: string;
+    endpoint?: string;
+    http_method?: string;
+    query?: string;
+    output?: any;
+    tokens_used?: number;
+    latency_ms?: number;
+    status_code?: number;
+    tx_hash?: string;
+    [key: string]: any;
+  };
 }
 
 export interface GroqModelInfo {
