@@ -342,7 +342,7 @@ export const VitalsGrid: React.FC<VitalsGridProps> = ({
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-md w-full shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-                <Edit3 className="w-4 h-4 text-emerald-400" /> Ethereum Wallet Address
+                <Edit3 className="w-4 h-4 text-emerald-400" /> Web3 / Polygon Wallet Address
               </h3>
               <button
                 onClick={() => setShowAddressModal(false)}
@@ -352,11 +352,11 @@ export const VitalsGrid: React.FC<VitalsGridProps> = ({
               </button>
             </div>
             <p className="text-xs text-slate-400">
-              Trage hier deine echte Ethereum-Wallet-Adresse ein. Der Agent liest das reale USDC-Guthaben (Smart Contract <code className="text-emerald-400 font-mono text-[10px]">0xA0b8...eB48</code>) direkt von der Blockchain ab.
+              Trage hier deine echte Polygon/Web3-Wallet-Adresse ein. Der Agent liest das reale USDC-Guthaben (Smart Contract <code className="text-emerald-400 font-mono text-[10px]">0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359</code> auf Polygon) direkt von der Blockchain ab.
             </p>
             <form onSubmit={handleAddressSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-mono text-slate-300 mb-1">Ethereum Wallet Address (0x...)</label>
+                <label className="block text-xs font-mono text-slate-300 mb-1">Polygon / Web3 Wallet Address (0x...)</label>
                 <input
                   type="text"
                   value={customAddress}

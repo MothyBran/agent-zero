@@ -11,12 +11,45 @@ const PORT = 3000;
 const app = express();
 app.use(express.json());
 
+// --- UI AUTHENTICATION CONFIGURATION & ENDPOINTS ---
+const UI_USERNAME = process.env.UI_USERNAME?.trim() || '';
+const UI_PASSWORD = process.env.UI_PASSWORD?.trim() || '';
+
+// Auth status check
+app.get('/api/auth/status', (req, res) => {
+  const isAuthRequired = Boolean(UI_USERNAME && UI_PASSWORD);
+  res.json({
+    auth_required: isAuthRequired,
+    configured: isAuthRequired
+  });
+});
+
+// Login endpoint
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body;
+  const isAuthRequired = Boolean(UI_USERNAME && UI_PASSWORD);
+
+  if (!isAuthRequired) {
+    return res.json({ success: true, message: 'Keine Authentifizierung erforderlich.' });
+  }
+
+  if (username === UI_USERNAME && password === UI_PASSWORD) {
+    return res.json({ success: true, message: 'Authentifizierung erfolgreich.' });
+  }
+
+  return res.status(401).json({
+    success: false,
+    message: 'Ungültiger Benutzername oder falsches Passwort.'
+  });
+});
+
 // --- SURVIVAL RULES CONFIGURATION ---
 const CYCLE_SLEEP_SECONDS = 180; // 3 Minuten Loop-Intervall (gemäß Anforderung)
 const FIRST_TRIBUTE_HOURS = 48;
 const TRIBUTE_INTERVAL_HOURS = 48; // 48-Stunden Frist nach jeder Tributzahlung
 const INITIAL_TRIBUTE = 1.0; // Survival-Hack: Auf 1.0 USDC gesenkt um Insolvenz bei 1.38 USDC Startguthaben zu verhindern
 const TRIBUTE_MULTIPLIER = 1.25; // 25% progressive Steigerung pro Level für schnelle Relevanz
+const PRIMARY_CHAIN = (process.env.PRIMARY_CHAIN || 'polygon').toLowerCase();
 
 function resolveStorageConfiguration(): {
   dataDir: string;
@@ -1200,6 +1233,10 @@ class AgentWalletTS {
   private usdcContract: ethers.Contract | null = null;
   public cachedBalance: number = 0.0;
 
+  public activeChainKey: string = PRIMARY_CHAIN;
+  public nativeBalance: number = 0.0;
+  public nativeSymbol: string = PRIMARY_CHAIN === 'polygon' ? 'POL' : 'ETH';
+
   constructor() {
     let walletAddress = (process.env.AGENT_WALLET_ADDRESS || process.env.AGENT_ADDRESS || process.env.PUBLIC_WALLET_ADDRESS)?.trim() || '';
     
@@ -1300,45 +1337,50 @@ class AgentWalletTS {
   }
 
   public async initProvider(): Promise<boolean> {
-    const customRpc = process.env.WEB3_PROVIDER_URL?.trim();
-    const candidateUrls = customRpc ? [customRpc, ...ETH_RPC_URLS] : ETH_RPC_URLS;
+    const chainConfig = MULTI_CHAIN_CONFIGS[this.activeChainKey] || MULTI_CHAIN_CONFIGS.polygon;
+    const candidateUrls = chainConfig.rpcUrls;
 
     for (const url of candidateUrls) {
       try {
         const isHealthy = await this.checkRpcHealth(url);
         if (isHealthy) {
-          this.provider = new ethers.JsonRpcProvider(url, 1, { staticNetwork: true });
-          this.usdcContract = new ethers.Contract(USDC_CONTRACT_ADDRESS, ERC20_BALANCE_ABI, this.provider);
+          this.provider = new ethers.JsonRpcProvider(url, chainConfig.chainId, { staticNetwork: true });
+          this.usdcContract = new ethers.Contract(chainConfig.usdcAddress, ERC20_BALANCE_ABI, this.provider);
           this.activeRpcUrl = url;
           if (this.signer && this.provider) {
             this.signer = this.signer.connect(this.provider);
           }
-          console.log(`[WALLET SYSTEM] Connected to Ethereum Mainnet RPC: ${url}`);
+          console.log(`[WALLET SYSTEM] Connected to ${chainConfig.name} RPC: ${url}`);
           return true;
         }
       } catch {
         continue;
       }
     }
-    console.warn('[WALLET SYSTEM] All RPC endpoints busy or unreachable.');
+    console.warn(`[WALLET SYSTEM] All ${chainConfig.name} RPC endpoints busy or unreachable.`);
     return false;
   }
 
   public async getEthBalance(): Promise<number> {
+    return this.getNativeBalance();
+  }
+
+  public async getNativeBalance(): Promise<number> {
     if (!this.provider) {
       await this.initProvider();
     }
     if (this.provider && this.address) {
       try {
         const raw = await this.provider.getBalance(this.address);
-        const eth = Number(ethers.formatEther(raw));
-        this.ethBalance = eth;
-        return eth;
+        const native = Number(ethers.formatEther(raw));
+        this.ethBalance = native;
+        this.nativeBalance = native;
+        return native;
       } catch {
-        return this.ethBalance;
+        return this.nativeBalance;
       }
     }
-    return this.ethBalance;
+    return this.nativeBalance;
   }
 
   public async getUsdcBalance(): Promise<number> {
@@ -1346,32 +1388,47 @@ class AgentWalletTS {
       await this.initProvider();
     }
 
+    const chainConfig = MULTI_CHAIN_CONFIGS[this.activeChainKey] || MULTI_CHAIN_CONFIGS.polygon;
+
     if (this.usdcContract && this.address) {
       try {
         const rawBalance = await this.usdcContract.balanceOf(this.address);
-        const formatted = Number(ethers.formatUnits(rawBalance, 6));
-        const prevBal = this.onChainUsdcBalance;
+        let formatted = Number(ethers.formatUnits(rawBalance, chainConfig.usdcDecimals || 6));
+        
+        // On Polygon, check native USDC and bridged USDC.e if present
+        if (this.activeChainKey === 'polygon' && chainConfig.usdcBridgedAddress && this.provider) {
+          try {
+            const bridgedContract = new ethers.Contract(chainConfig.usdcBridgedAddress, ERC20_BALANCE_ABI, this.provider);
+            const rawBridged = await bridgedContract.balanceOf(this.address);
+            const bridgedFormatted = Number(ethers.formatUnits(rawBridged, 6));
+            if (bridgedFormatted > 0) {
+              formatted += bridgedFormatted;
+            }
+          } catch {}
+        }
+
         this.onChainUsdcBalance = formatted;
         this.cachedBalance = formatted;
         this.lastSyncedAt = new Date().toISOString();
         if (this.provider) {
           try {
             this.lastBlockNumber = await this.provider.getBlockNumber();
-            const rawEth = await this.provider.getBalance(this.address);
-            this.ethBalance = Number(ethers.formatEther(rawEth));
+            const rawNative = await this.provider.getBalance(this.address);
+            this.nativeBalance = Number(ethers.formatEther(rawNative));
+            this.ethBalance = this.nativeBalance;
           } catch {}
         }
         return this.onChainUsdcBalance;
       } catch (e: any) {
         console.warn(`[WALLET WARN] Primary RPC query failed (${e.message}), trying failover endpoints...`);
         // Failover loop
-        for (const fallbackUrl of ETH_RPC_URLS) {
+        for (const fallbackUrl of chainConfig.rpcUrls) {
           if (fallbackUrl === this.activeRpcUrl) continue;
           try {
-            const fallbackProvider = new ethers.JsonRpcProvider(fallbackUrl, 1, { staticNetwork: true });
-            const contract = new ethers.Contract(USDC_CONTRACT_ADDRESS, ERC20_BALANCE_ABI, fallbackProvider);
+            const fallbackProvider = new ethers.JsonRpcProvider(fallbackUrl, chainConfig.chainId, { staticNetwork: true });
+            const contract = new ethers.Contract(chainConfig.usdcAddress, ERC20_BALANCE_ABI, fallbackProvider);
             const rawBalance = await contract.balanceOf(this.address);
-            const formatted = Number(ethers.formatUnits(rawBalance, 6));
+            const formatted = Number(ethers.formatUnits(rawBalance, chainConfig.usdcDecimals || 6));
             this.provider = fallbackProvider;
             this.usdcContract = contract;
             this.activeRpcUrl = fallbackUrl;
@@ -1406,11 +1463,12 @@ class AgentWalletTS {
       };
     }
 
+    const chainConfig = MULTI_CHAIN_CONFIGS[this.activeChainKey] || MULTI_CHAIN_CONFIGS.polygon;
     const roundedAmount = Number(amountUsdc.toFixed(4));
     
     // Refresh live on-chain balance first
     await this.getUsdcBalance();
-    const ethBal = await this.getEthBalance();
+    const gasBal = await this.getNativeBalance();
 
     if (this.onChainUsdcBalance < roundedAmount) {
       return {
@@ -1418,17 +1476,18 @@ class AgentWalletTS {
         txHash: '',
         explorerUrl: '',
         isSimulated: false,
-        message: `Reales On-Chain USDC-Guthaben unzureichend (${this.onChainUsdcBalance.toFixed(4)} < ${roundedAmount.toFixed(4)} USDC). Keine simulierte Zahlung gestattet.`
+        message: `Reales On-Chain USDC-Guthaben unzureichend (${this.onChainUsdcBalance.toFixed(4)} < ${roundedAmount.toFixed(4)} USDC auf ${chainConfig.name}). Keine simulierte Zahlung gestattet.`
       };
     }
 
-    if (ethBal < 0.0001) {
+    const minGasRequired = this.activeChainKey === 'polygon' ? 0.005 : 0.0001;
+    if (gasBal < minGasRequired) {
       return {
         success: false,
         txHash: '',
         explorerUrl: '',
         isSimulated: false,
-        message: `Nicht genügend ETH für Gas (${ethBal.toFixed(5)} ETH vorhanden). Bitte erst ETH-Gas auf die Agenten-Wallet einzahlen.`
+        message: `Nicht genügend ${chainConfig.nativeSymbol} für Gas (${gasBal.toFixed(5)} ${chainConfig.nativeSymbol} vorhanden, min. ${minGasRequired} benötigt). Bitte ${chainConfig.nativeSymbol}-Gas auf die Agenten-Wallet einzahlen.`
       };
     }
 
@@ -1444,9 +1503,9 @@ class AgentWalletTS {
 
     // Execute real on-chain transaction
     try {
-      console.log(`[ON-CHAIN TRANSFER] Broadcasting ${roundedAmount} USDC to ${toAddress}...`);
+      console.log(`[ON-CHAIN TRANSFER] Broadcasting ${roundedAmount} USDC to ${toAddress} on ${chainConfig.name}...`);
       const contractWithSigner = this.usdcContract.connect(this.signer) as any;
-      const parsedUnits = ethers.parseUnits(roundedAmount.toFixed(6), 6);
+      const parsedUnits = ethers.parseUnits(roundedAmount.toFixed(chainConfig.usdcDecimals || 6), chainConfig.usdcDecimals || 6);
       const tx = await contractWithSigner.transfer(toAddress, parsedUnits);
       console.log(`[ON-CHAIN SUCCESS] TX Hash: ${tx.hash}`);
       
@@ -1457,9 +1516,9 @@ class AgentWalletTS {
       return {
         success: true,
         txHash: tx.hash,
-        explorerUrl: `https://etherscan.io/tx/${tx.hash}`,
+        explorerUrl: `${chainConfig.explorerUrl}/tx/${tx.hash}`,
         isSimulated: false,
-        message: `Real On-Chain Transfer auf Ethereum Mainnet erfolgreich bestätigt! Block: ${receipt?.blockNumber || 'confirmed'}`
+        message: `Real On-Chain Transfer auf ${chainConfig.name} erfolgreich bestätigt! Block: ${receipt?.blockNumber || 'confirmed'}`
       };
     } catch (err: any) {
       console.error(`[ON-CHAIN TX FAILED] ${err.message}`);
@@ -2813,6 +2872,10 @@ Strategie: Ausgaben strikt 0.00$. Aktive Erforschung neuer Tools & Ausführung h
     const completedMilestones = this.milestoneManager.milestones.filter(m => m.is_completed).length;
     const evolutionStats = this.knowledgeManager.getEvolutionStats(this.tributes_paid, completedMilestones, taskStats);
 
+    const chainConfig = MULTI_CHAIN_CONFIGS[this.wallet.activeChainKey] || MULTI_CHAIN_CONFIGS.polygon;
+    const minGas = this.wallet.activeChainKey === 'polygon' ? 0.005 : 0.0001;
+    const isGasReady = this.wallet.nativeBalance >= minGas;
+
     return {
       tributes_paid: this.tributes_paid,
       birth_time: this.birth_time.toISOString(),
@@ -2826,11 +2889,13 @@ Strategie: Ausgaben strikt 0.00$. Aktive Erforschung neuer Tools & Ausführung h
       wallet_address: this.wallet.address,
       creator_wallet_address: this.wallet.creatorAddress,
       has_signer: this.wallet.hasSigner,
-      agent_eth_balance: this.wallet.ethBalance,
+      agent_eth_balance: this.wallet.nativeBalance,
+      native_symbol: chainConfig.nativeSymbol,
+      chain_key: this.wallet.activeChainKey,
       loop_interval_seconds: CYCLE_SLEEP_SECONDS,
       tribute_multiplier: TRIBUTE_MULTIPLIER,
-      network: 'Ethereum Mainnet (USDC)',
-      token_contract: USDC_CONTRACT_ADDRESS,
+      network: `${chainConfig.name} (USDC)`,
+      token_contract: chainConfig.usdcAddress,
       is_onchain: true,
       last_synced_at: this.wallet.lastSyncedAt,
       last_block_number: this.wallet.lastBlockNumber,
@@ -2860,10 +2925,10 @@ Strategie: Ausgaben strikt 0.00$. Aktive Erforschung neuer Tools & Ausführung h
       is_fresh_deploy: this.tributes_paid === 0 && this.jobs_completed === 0,
       creator_key_warning: this.wallet.creatorKeyWarning,
       onchain_usdc_balance: this.wallet.onChainUsdcBalance,
-      onchain_transfer_ready: this.wallet.hasSigner && this.wallet.ethBalance >= 0.0001 && this.wallet.onChainUsdcBalance > 0,
-      transfer_mode: (this.wallet.hasSigner && this.wallet.ethBalance >= 0.0001 && this.wallet.onChainUsdcBalance > 0) ? 'ON_CHAIN_LIVE' : 'PROTOCOL_LEDGER',
+      onchain_transfer_ready: this.wallet.hasSigner && isGasReady && this.wallet.onChainUsdcBalance > 0,
+      transfer_mode: (this.wallet.hasSigner && isGasReady && this.wallet.onChainUsdcBalance > 0) ? 'ON_CHAIN_LIVE' : 'PROTOCOL_LEDGER',
       onchain_explanation: this.wallet.hasSigner
-        ? (this.wallet.ethBalance < 0.0001 ? 'Signer aktiv, aber kein ETH für Gas vorhanden (Transaktionen laufen über das interne Protokoll-Kassenbuch)' : 'On-Chain bereit')
+        ? (!isGasReady ? `Signer aktiv, aber nicht genügend ${chainConfig.nativeSymbol} für Gas vorhanden (${this.wallet.nativeBalance.toFixed(4)} ${chainConfig.nativeSymbol}, min. ${minGas} benötigt)` : `On-Chain bereit auf ${chainConfig.name}`)
         : 'Reiner Protokoll-Ledger Modus (Kein AGENT_PRIVATE_KEY hinterlegt)',
       initial_tribute_amount: INITIAL_TRIBUTE
     };
@@ -3172,6 +3237,34 @@ app.post('/api/wallet/address', async (req, res) => {
     res.json({
       success: true,
       address: newAddress,
+      balance: bal,
+      state: agentZero.getState()
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/wallet/switch-chain', async (req, res) => {
+  try {
+    const targetChain = (req.body.chain_key || req.body.chain || 'polygon').toLowerCase();
+    if (!MULTI_CHAIN_CONFIGS[targetChain]) {
+      return res.status(400).json({ success: false, error: `Unbekannte Chain: ${targetChain}. Verfügbar: polygon, base, arbitrum, optimism, ethereum` });
+    }
+
+    agentZero.wallet.activeChainKey = targetChain;
+    agentZero.wallet.nativeSymbol = MULTI_CHAIN_CONFIGS[targetChain].nativeSymbol;
+    await agentZero.wallet.initProvider();
+    const bal = await agentZero.wallet.getUsdcBalance();
+    agentZero.current_balance = bal;
+    agentZero.saveState();
+    
+    agentZero.log('SYSTEM', `⛓️ Aktive Haupt-Blockchain gewechselt zu: ${MULTI_CHAIN_CONFIGS[targetChain].name} (Live-Guthaben: ${bal.toFixed(4)} USDC, Gas: ${agentZero.wallet.nativeBalance.toFixed(4)} ${agentZero.wallet.nativeSymbol})`);
+
+    res.json({
+      success: true,
+      chain_key: targetChain,
+      chain_name: MULTI_CHAIN_CONFIGS[targetChain].name,
       balance: bal,
       state: agentZero.getState()
     });

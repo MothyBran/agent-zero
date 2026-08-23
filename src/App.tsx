@@ -518,8 +518,8 @@ export function App() {
       {/* Footer */}
       <footer className="border-t border-slate-800/80 bg-slate-950 py-4 mt-auto">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs font-mono text-slate-500">
-          <div>Agent Zero Autonomous Economic Unit · Ethereum Mainnet (USDC)</div>
-          <div>Strict Protocol: Zero Debt · Kill Switch · Multi-Model Fallback</div>
+          <div>Agent Zero Autonomous Economic Unit · {state?.network || 'Polygon (USDC)'}</div>
+          <div>Strict Protocol: Zero Debt · 48h Survival Kill Switch · Multi-Model Fallback</div>
         </div>
       </footer>
     </div>

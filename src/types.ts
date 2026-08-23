@@ -212,6 +212,8 @@ export interface AgentState {
   creator_wallet_address?: string;
   has_signer?: boolean;
   agent_eth_balance?: number;
+  native_symbol?: string;
+  chain_key?: string;
   loop_interval_seconds?: number;
   tribute_multiplier?: number;
   network: string;

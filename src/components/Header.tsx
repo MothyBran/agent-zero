@@ -51,7 +51,7 @@ export const Header: React.FC<HeaderProps> = ({ state, onRefresh, isLoading, onT
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                {isTerminated ? 'System offline – Server-Pacht nicht bezahlt' : 'Ethereum Mainnet · Economic Survival Protocol'}
+                {isTerminated ? 'System offline – Server-Pacht nicht bezahlt' : `${state?.network || 'Polygon (USDC)'} · Economic Survival Protocol`}
               </p>
             </div>
           </div>
