@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
 import { AgentState } from '../types';
-import { Shield, Activity, Copy, Check, Power, RefreshCw, Cpu, Wallet } from 'lucide-react';
+import { Shield, Activity, Copy, Check, Power, RefreshCw, Cpu, Wallet, LogOut, Lock } from 'lucide-react';
 
 interface HeaderProps {
   state: AgentState | null;
   onRefresh: () => void;
   isLoading: boolean;
   onToggleRun: () => void;
+  authRequired?: boolean;
+  onLogout?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ state, onRefresh, isLoading, onToggleRun }) => {
+export const Header: React.FC<HeaderProps> = ({ state, onRefresh, isLoading, onToggleRun, authRequired, onLogout }) => {
   const [copied, setCopied] = useState(false);
 
   const copyAddress = () => {
@@ -146,6 +148,19 @@ export const Header: React.FC<HeaderProps> = ({ state, onRefresh, isLoading, onT
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-emerald-400' : ''}`} />
           </button>
+
+          {/* Logout / Lock Button */}
+          {authRequired && onLogout && (
+            <button
+              id="logout-btn"
+              onClick={onLogout}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-slate-800/80 hover:bg-rose-950/60 hover:text-rose-300 hover:border-rose-800 text-slate-400 border border-slate-700 text-xs font-mono transition-colors cursor-pointer"
+              title="Dashboard sperren / Abmelden"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">Sperren</span>
+            </button>
+          )}
         </div>
       </div>
     </header>

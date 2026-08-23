@@ -12,6 +12,7 @@ import { TokenBudgetCard } from './components/TokenBudgetCard';
 import { RailwayStorageCard } from './components/RailwayStorageCard';
 import { MemoryEvolutionCard } from './components/MemoryEvolutionCard';
 import { MultiChainWalletCard } from './components/MultiChainWalletCard';
+import { LoginPage } from './components/LoginPage';
 import { LayoutDashboard, Target, Gauge, HardDrive, FileText, Wrench, Shield, Cpu, AlertTriangle, Brain, Layers } from 'lucide-react';
 import { safeFetchJson, safePostJson } from './lib/api';
 
@@ -27,6 +28,52 @@ export function App() {
 
   const [localBackupSnapshot, setLocalBackupSnapshot] = useState<any>(null);
   const [isRestoringBackup, setIsRestoringBackup] = useState(false);
+
+  // Authentication gate state
+  const [authStatus, setAuthStatus] = useState<{ auth_required: boolean; configured: boolean } | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('agent_zero_auth') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  // Check auth requirement on mount
+  useEffect(() => {
+    safeFetchJson<{ auth_required: boolean; configured: boolean }>('/api/auth/status')
+      .then(res => {
+        if (res.ok && res.data) {
+          setAuthStatus(res.data);
+          if (!res.data.auth_required) {
+            setIsAuthenticated(true);
+          }
+        } else {
+          // Default to open if endpoint fails
+          setAuthStatus({ auth_required: false, configured: false });
+          setIsAuthenticated(true);
+        }
+      })
+      .catch(() => {
+        setAuthStatus({ auth_required: false, configured: false });
+        setIsAuthenticated(true);
+      });
+  }, []);
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    try {
+      localStorage.removeItem('agent_zero_auth');
+    } catch {}
+  };
+
+  const handleLoginSuccess = () => {
+    setIsAuthenticated(true);
+    try {
+      localStorage.setItem('agent_zero_auth', 'true');
+    } catch {}
+    fetchAllData();
+  };
 
   const fetchAllData = useCallback(async () => {
     const [statusData, ledgerData, profileData, logsData] = await Promise.all([
@@ -91,10 +138,12 @@ export function App() {
   };
 
   useEffect(() => {
-    fetchAllData();
-    const interval = setInterval(fetchAllData, 2500);
-    return () => clearInterval(interval);
-  }, [fetchAllData]);
+    if (isAuthenticated) {
+      fetchAllData();
+      const interval = setInterval(fetchAllData, 2500);
+      return () => clearInterval(interval);
+    }
+  }, [fetchAllData, isAuthenticated]);
 
   const handleManualRefresh = async () => {
     setIsLoading(true);
@@ -195,6 +244,11 @@ export function App() {
 
   const isTerminated = state?.is_terminated || state?.status === 'SHUTDOWN';
 
+  // If server requires authentication and user is not authenticated yet, show Login Page
+  if (authStatus?.auth_required && !isAuthenticated) {
+    return <LoginPage onLoginSuccess={handleLoginSuccess} />;
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500/30 selection:text-emerald-200">
       <Header
@@ -202,6 +256,8 @@ export function App() {
         onRefresh={handleManualRefresh}
         isLoading={isLoading}
         onToggleRun={handleToggleRun}
+        authRequired={authStatus?.auth_required}
+        onLogout={handleLogout}
       />
 
       {/* Emergency Shutdown Banner */}
