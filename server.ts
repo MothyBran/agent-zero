@@ -60,7 +60,14 @@ const ERC20_BALANCE_ABI = [
 export const MULTI_CHAIN_CONFIGS: Record<string, any> = {
   polygon: {
     chainId: 137, nativeSymbol: 'POL',
-    rpcUrls: [process.env.POLYGON_RPC_URL || '', 'https://polygon-rpc.com', 'https://polygon.llamarpc.com'].filter(Boolean),
+    // DIE RETTENDE SCHLEIFE: Mehrere Nodes, falls einer blockiert
+    rpcUrls: [
+      process.env.POLYGON_RPC_URL || '', 
+      'https://polygon-rpc.com', 
+      'https://rpc.ankr.com/polygon', 
+      'https://polygon.llamarpc.com', 
+      'https://polygon-bor-rpc.publicnode.com'
+    ].filter(Boolean),
     usdcAddress: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', usdcBridgedAddress: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', usdcDecimals: 6
   }
 };
@@ -73,77 +80,82 @@ class AgentWalletTS {
   private signer: ethers.Wallet | null = null;
 
   constructor() {
-    let rawKey = (process.env.AGENT_PRIVATE_KEY || '').trim();
+    const rawKey = (process.env.AGENT_PRIVATE_KEY || '').trim();
     
-    // Kugelsicheres Key-Parsing: Entfernt 0x falls vorhanden, checkt dann exakt auf 64 Zeichen
-    if (rawKey.startsWith('0x')) {
-      rawKey = rawKey.slice(2);
-    }
-    
-    if (rawKey.length === 64) {
+    // Kugelsicheres Key-Parsing
+    if (rawKey) {
       try {
-        this.signer = new ethers.Wallet('0x' + rawKey);
+        const formattedKey = rawKey.startsWith('0x') ? rawKey : `0x${rawKey}`;
+        this.signer = new ethers.Wallet(formattedKey);
         this.hasSigner = true;
         this.address = this.signer.address;
+        console.log(`[WALLET] Private Key verifiziert. Adresse: ${this.address}`);
       } catch (e) {
-        console.error("🚨 [FATAL] Private Key konnte nicht geladen werden:", e);
+        console.error("🚨 [FATAL] Private Key Format ungültig:", e);
       }
     }
     
-    // STRIKTER VARIABLEN-ABRUF: Keine Dummy-Fallbacks mehr!
     this.address = this.address || (process.env.AGENT_WALLET_ADDRESS || '').trim();
     this.creatorAddress = (process.env.CREATOR_WALLET_ADDRESS || '').trim();
-    
-    if (!this.address) {
-      console.error("🚨 [FATAL] Keine Agent-Adresse vorhanden! Weder AGENT_PRIVATE_KEY noch AGENT_WALLET_ADDRESS wurde in Railway gefunden.");
-    }
-    if (!this.creatorAddress) {
-      console.error("🚨 [FATAL] Keine CREATOR_WALLET_ADDRESS in Railway gefunden!");
-    }
   }
 
   public async getUsdcBalance(): Promise<number> {
-    if (!this.address) return 0.0; // Fail-Safe, wenn gar keine Adresse da ist
+    if (!this.address) return 0.0; 
     
     let total = 0;
-    try {
-      const rpcUrl = MULTI_CHAIN_CONFIGS.polygon.rpcUrls.find((url: string) => url !== '') || 'https://polygon-rpc.com';
-      const rpc = new ethers.JsonRpcProvider(rpcUrl);
-      
-      // 1. Polygon Native USDC (die ~0.38)
+    
+    // RPC FAILOVER LOOP: Probiert alle Server aus, bis einer antwortet
+    for (const rpcUrl of MULTI_CHAIN_CONFIGS.polygon.rpcUrls) {
       try {
-        const c1 = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcAddress, ERC20_BALANCE_ABI, rpc);
-        const bal1 = await c1.balanceOf(this.address);
-        total += Number(ethers.formatUnits(bal1, 6));
-      } catch (e) {}
-
-      // 2. Polygon Bridged USDC.e (die ~1.95)
-      if (MULTI_CHAIN_CONFIGS.polygon.usdcBridgedAddress) {
+        const rpc = new ethers.JsonRpcProvider(rpcUrl, 137, { staticNetwork: true });
+        
+        // PING: Checken ob der Node uns blockiert, bevor wir den Contract rufen
+        await rpc.getBlockNumber();
+        
+        // 1. Polygon Native USDC
         try {
-          const c2 = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcBridgedAddress, ERC20_BALANCE_ABI, rpc);
-          const bal2 = await c2.balanceOf(this.address);
-          total += Number(ethers.formatUnits(bal2, 6));
+          const c1 = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcAddress, ERC20_BALANCE_ABI, rpc);
+          const bal1 = await c1.balanceOf(this.address);
+          total += Number(ethers.formatUnits(bal1, 6));
         } catch (e) {}
-      }
-    } catch (e) {}
 
-    this.onChainUsdcBalance = total;
+        // 2. Polygon Bridged USDC.e
+        if (MULTI_CHAIN_CONFIGS.polygon.usdcBridgedAddress) {
+          try {
+            const c2 = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcBridgedAddress, ERC20_BALANCE_ABI, rpc);
+            const bal2 = await c2.balanceOf(this.address);
+            total += Number(ethers.formatUnits(bal2, 6));
+          } catch (e) {}
+        }
+        
+        this.onChainUsdcBalance = total;
+        return total; // Erfolgreich! Wir können die Schleife abbrechen.
+        
+      } catch (e) {
+        console.warn(`[RPC FAILOVER] Node ${rpcUrl} blockiert die Anfrage. Versuche den nächsten...`);
+        continue; // Nächsten Node in der Liste probieren
+      }
+    }
+
     return total;
   }
 
   public async sendUsdcTransfer(toAddress: string, amountUsdc: number, note: string): Promise<{ success: boolean; txHash: string; message: string }> {
-    if (!this.hasSigner || !this.signer || !toAddress) return { success: false, txHash: '', message: 'Kein Private Key oder keine Zieladresse für on-chain Zahlung hinterlegt.' };
-    try {
-      const rpcUrl = MULTI_CHAIN_CONFIGS.polygon.rpcUrls.find((url: string) => url !== '') || 'https://polygon-rpc.com';
-      const rpc = new ethers.JsonRpcProvider(rpcUrl);
-      const contract = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcAddress, ERC20_BALANCE_ABI, this.signer.connect(rpc));
-      const parsedUnits = ethers.parseUnits(amountUsdc.toFixed(6), 6);
-      const tx = await contract.transfer(toAddress, parsedUnits);
-      await tx.wait(1);
-      return { success: true, txHash: tx.hash, message: 'Transfer On-Chain bestätigt.' };
-    } catch (err: any) {
-      return { success: false, txHash: '', message: err.message };
+    if (!this.hasSigner || !this.signer || !toAddress) return { success: false, txHash: '', message: 'Kein Private Key oder keine Zieladresse hinterlegt.' };
+    
+    for (const rpcUrl of MULTI_CHAIN_CONFIGS.polygon.rpcUrls) {
+      try {
+        const rpc = new ethers.JsonRpcProvider(rpcUrl, 137, { staticNetwork: true });
+        const contract = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcAddress, ERC20_BALANCE_ABI, this.signer.connect(rpc));
+        const parsedUnits = ethers.parseUnits(amountUsdc.toFixed(6), 6);
+        const tx = await contract.transfer(toAddress, parsedUnits);
+        await tx.wait(1);
+        return { success: true, txHash: tx.hash, message: 'Transfer On-Chain bestätigt.' };
+      } catch (err: any) {
+        continue; // Try next node
+      }
     }
+    return { success: false, txHash: '', message: 'Alle RPCs fehlgeschlagen (Rate-Limit oder Timeout).' };
   }
 }
 
@@ -157,7 +169,8 @@ class AgentZeroTS {
 
   constructor() {
     this.wallet = new AgentWalletTS();
-    this.loadState(); this.syncBalanceInitial();
+    this.loadState(); 
+    this.syncBalanceInitial();
   }
 
   public log(level: any, message: string, metadata?: any) {
@@ -261,7 +274,6 @@ ${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
 
     try {
       const rawKey = process.env.GROQ_API_KEY || process.env.FREE_LLM_API_KEY || '';
-      // Groq keys usually start with 'gsk_', Gemini keys vary but usually not 'gsk_'
       const isGemini = rawKey && !rawKey.startsWith('gsk_'); 
 
       if (isGemini) {
@@ -291,7 +303,7 @@ ${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
             this.log('ERROR', `Groq API Fehler HTTP ${res.status}`);
          }
       } else {
-         this.log('ERROR', 'Kein LLM API Key (weder Groq noch Gemini) gefunden.');
+         this.log('ERROR', 'Kein LLM API Key gefunden.');
       }
     } catch (e: any) { this.log('ERROR', `KI Fehler: ${e.message}`); }
 
