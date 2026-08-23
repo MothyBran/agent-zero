@@ -45,18 +45,9 @@ class AgentZeroCore:
 
         print(f"🤖 [AGENT ZERO CORE INITIALIZED]")
         print(f"   Wallet Address: {self.wallet.address}")
-        print(f"   Initial Tribute: {INITIAL_TRIBUTE:.2f} USDC")
-        print(f"🔥 [ZÜNDFUNKE]:\n{self.ignition_prompt}\n")
-
-    def evaluate_economic_situation(self) -> Dict[str, Any]:
-        portfolio = self.wallet.scan_all_chains()
-        trap_status = portfolio.gas_trap_status
-        plan = {
-            "status": "SURVIVING",
-            "gas_trapped": trap_status.is_gas_trapped,
-            "actions": [],
-        }
-        return {"portfolio": portfolio.model_dump(), "plan": plan}
+        print(f"   Creator Address: {self.wallet.creator_address}")
+        print(f"   Initial Tribute: {INITIAL_TRIBUTE:.2f} USDC (Survival Config)")
+        print(f"🔥 [ZÜNDFUNKE PROMPT AKTIV]:\n{self.ignition_prompt}\n")
 
     def check_survival_invariants(self, portfolio) -> None:
         total_usdc = portfolio.total_usdc_balance
@@ -66,9 +57,9 @@ class AgentZeroCore:
 
     def execute_survival_cycle(self) -> AgentCycleResult:
         self.cycle_count += 1
-        eval_data = self.evaluate_economic_situation()
         actions_taken = []
 
+        # Execute dynamic code probe zur Überprüfung der Vitalität
         dyn_tool = self.tools.get("dynamic_code_execution")
         if dyn_tool:
             probe_code = (
@@ -104,6 +95,7 @@ class AgentZeroCore:
 
 def main():
     agent = AgentZeroCore()
+    print("\n--- RUNNING AUTONOMOUS SURVIVAL CYCLE ---")
     result = agent.execute_survival_cycle()
     print(json.dumps(result.model_dump(), indent=2))
 
