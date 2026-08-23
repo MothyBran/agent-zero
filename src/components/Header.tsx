@@ -1,18 +1,21 @@
 import React, { useState } from 'react';
 import { AgentState } from '../types';
-import { Shield, Activity, Copy, Check, Power, RefreshCw, Cpu, Wallet, LogOut, Lock } from 'lucide-react';
+import { Shield, Activity, Copy, Check, Power, RefreshCw, Cpu, Wallet, LogOut, Lock, RotateCcw, AlertTriangle } from 'lucide-react';
 
 interface HeaderProps {
   state: AgentState | null;
   onRefresh: () => void;
   isLoading: boolean;
   onToggleRun: () => void;
+  onReset?: () => void;
   authRequired?: boolean;
   onLogout?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ state, onRefresh, isLoading, onToggleRun, authRequired, onLogout }) => {
+export const Header: React.FC<HeaderProps> = ({ state, onRefresh, isLoading, onToggleRun, onReset, authRequired, onLogout }) => {
   const [copied, setCopied] = useState(false);
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   const copyAddress = () => {
     if (state?.wallet_address) {
@@ -20,6 +23,16 @@ export const Header: React.FC<HeaderProps> = ({ state, onRefresh, isLoading, onT
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
+  };
+
+  const handleConfirmReset = async () => {
+    if (!onReset) return;
+    setIsResetting(true);
+    try {
+      await onReset();
+      setShowResetModal(false);
+    } catch {}
+    setIsResetting(false);
   };
 
   const isRunning = state?.is_running ?? false;
@@ -143,11 +156,24 @@ export const Header: React.FC<HeaderProps> = ({ state, onRefresh, isLoading, onT
             id="refresh-status-btn"
             onClick={onRefresh}
             disabled={isLoading}
-            className="p-1.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors disabled:opacity-50"
+            className="p-1.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors disabled:opacity-50 cursor-pointer"
             title="Refresh Agent State"
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-emerald-400' : ''}`} />
           </button>
+
+          {/* Reset / Factory Wipe Button */}
+          {onReset && (
+            <button
+              id="header-factory-reset-btn"
+              onClick={() => setShowResetModal(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-slate-800/80 hover:bg-rose-950/70 hover:text-rose-300 hover:border-rose-700 text-slate-400 border border-slate-700 text-xs font-mono transition-colors cursor-pointer"
+              title="Agent Zero & Wissen komplett auf 0 zurücksetzen"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span className="hidden lg:inline">Reset auf 0</span>
+            </button>
+          )}
 
           {/* Logout / Lock Button */}
           {authRequired && onLogout && (
@@ -163,6 +189,57 @@ export const Header: React.FC<HeaderProps> = ({ state, onRefresh, isLoading, onT
           )}
         </div>
       </div>
+
+      {/* Confirmation Modal for Reset auf Null */}
+      {showResetModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-rose-800/70 rounded-xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-rose-400">
+              <div className="p-2.5 bg-rose-500/10 rounded-lg border border-rose-500/20">
+                <AlertTriangle className="w-6 h-6 text-rose-400" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-100">Vollständiger Neustart (Reset auf 0)</h3>
+                <p className="text-xs text-rose-300">Tabula Rasa: Wissen, Aufgaben & Meilensteine löschen</p>
+              </div>
+            </div>
+
+            <p className="text-sm text-slate-300 leading-relaxed">
+              Möchtest du Agent Zero und sein gesamtes gesammeltes Wissen, alle Meilensteine, erledigten Jobs und Notizen auf Anfang zurücksetzen? 
+              Agent Zero startet danach als <span className="text-emerald-400 font-semibold">Tier 1 Intelligenz</span> aus dem Nichts und baut sein Wissen durch autonome Zyklen schrittweise neu auf.
+            </p>
+
+            <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 text-xs font-mono text-slate-400 space-y-1">
+              <div>• Wissensdatenbank: auf 0 geleert</div>
+              <div>• Aufgabenhistorie: auf 0 geleert</div>
+              <div>• Meilensteine: Neu initialisiert</div>
+              <div>• Loop-Intervall: 3 Minuten Zyklus</div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                id="cancel-reset-btn"
+                type="button"
+                onClick={() => setShowResetModal(false)}
+                disabled={isResetting}
+                className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition-colors"
+              >
+                Abbrechen
+              </button>
+              <button
+                id="confirm-factory-reset-btn"
+                type="button"
+                onClick={handleConfirmReset}
+                disabled={isResetting}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-medium transition-colors shadow-lg shadow-rose-950 disabled:opacity-50"
+              >
+                {isResetting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                <span>{isResetting ? 'Wird zurückgesetzt...' : 'Ja, komplett auf 0 setzen'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 };

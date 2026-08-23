@@ -2043,6 +2043,80 @@ class AgentZeroTS {
     }
   }
 
+  public wipeAllMemoryAndReset(options: { resetWalletBalance?: boolean } = {}): { success: boolean; message: string } {
+    this.stopAutonomousLoop();
+
+    // 1. Reset Core State
+    this.tributes_paid = 0;
+    this.birth_time = new Date();
+    this.next_tribute_time = new Date(Date.now() + FIRST_TRIBUTE_HOURS * 3600000);
+    this.blacklisted_models = [];
+    this.is_terminated = false;
+    this.shutdown_reason = '';
+    this.jobs_completed = 0;
+    this.active_model = 'Groq llama-3.3-70b-versatile';
+
+    // 2. Wipe / Reset Storage Files
+    try {
+      if (fs.existsSync(STATE_FILE)) fs.unlinkSync(STATE_FILE);
+      if (fs.existsSync(SNAPSHOT_LATEST_FILE)) fs.unlinkSync(SNAPSHOT_LATEST_FILE);
+      if (fs.existsSync(SNAPSHOT_FALLBACK_FILE)) fs.unlinkSync(SNAPSHOT_FALLBACK_FILE);
+    } catch {}
+
+    // 3. Reset Knowledge Base to empty or fresh minimal bootstrap
+    this.knowledgeManager.learnings = [];
+    this.knowledgeManager.save();
+
+    // 4. Reset Task Memory to empty
+    this.taskMemory.tasks = [];
+    this.taskMemory.save();
+
+    // 5. Reset Milestones to clean fresh default
+    this.milestoneManager.load();
+    for (const m of this.milestoneManager.milestones) {
+      m.is_completed = false;
+      m.current_value = 0;
+    }
+    this.milestoneManager.save();
+
+    // 6. Reset Discovered Tools & Store tools
+    try {
+      if (fs.existsSync(STORE_TOOLS_FILE)) fs.unlinkSync(STORE_TOOLS_FILE);
+      this.saveStoreTools(INITIAL_STORE_TOOLS);
+      this.saveDiscoveredTools(MASTER_TOOL_CATALOG);
+    } catch {}
+
+    // 7. Reset Accounting Ledger
+    try {
+      const initialLedger = {
+        transactions: [
+          {
+            timestamp: new Date().toISOString(),
+            type: 'FACTORY_RESET',
+            amount: 0.0,
+            currency: 'USDC',
+            note: 'Vollständiger System-Neustart: Gedächtnis, Wissen und Aufträge auf 0 gesetzt.'
+          }
+        ]
+      };
+      fs.writeFileSync(ACCOUNTING_FILE, JSON.stringify(initialLedger, null, 2));
+    } catch {}
+
+    // 8. Reset Token Budget
+    this.tokenBudget.tokens_used_today = 0;
+    this.tokenBudget.tokens_saved_by_compression = 0;
+    this.tokenBudget.save();
+
+    // 9. Save fresh state & log
+    this.saveState();
+    this.log('SYSTEM', '🔄 [FACTORY RESET] Agent Zero wurde vollständig auf den Ursprungszustand (Tabula Rasa / 0) zurückgesetzt. Autonomes Lernen beginnt von vorn.');
+
+    return {
+      success: true,
+      message: 'Agent Zero wurde vollständig auf Null zurückgesetzt (Wissen, Meilensteine, Aufgaben & Speicher bereinigt).'
+    };
+  }
+
   public initFreshState() {
     this.tributes_paid = 0;
     this.birth_time = new Date();
@@ -2720,31 +2794,40 @@ class AgentZeroTS {
       this.log('SYSTEM', `[TOKEN GUARD] Sparmodus aktiv. RPM: ${this.tokenBudget.getRpmCurrent()}/${this.tokenBudget.rpm_limit} | Heute: ${this.tokenBudget.tokens_used_today}/${this.tokenBudget.daily_limit} Tokens.`);
     }
 
-    const strategicDirective = `You are Agent Zero, an autonomous survival & work agent on Polygon Mainnet (Chain ID 137).
-FINANCIAL STATUS:
-- Current USDC Balance: ${this.current_balance.toFixed(4)} USDC
-- Current Tribute Level ${this.tributes_paid}: ${tributeDue.toFixed(2)} USDC due in ${hours}h ${minutes}m (48h cycle)
-- Next Escalated Tribute (Level ${this.tributes_paid + 1}): ${nextTributeDue.toFixed(2)} USDC (25% progressive growth)
-- Required Survival Earning Run-Rate: ${requiredHourlyRate.toFixed(4)} USDC/hour
-- Jobs Completed: ${this.jobs_completed}
-- Active Work Tools: ${activeToolNames}
-- Strategic Roadmap: ${activeMilestonesPrompt}
-- Recalled Insights: ${knowledgePrompt}
+    // Dynamic cognitive directive incorporating failure lessons, intermediate milestones, and evolving knowledge
+    const structuredWisdom = this.knowledgeManager.getStructuredPromptContext(4);
+    const completedMilestones = this.milestoneManager.milestones.filter(m => m.is_completed).length;
+    const pendingMilestones = this.milestoneManager.milestones.filter(m => !m.is_completed);
+    const evolutionStats = this.knowledgeManager.getEvolutionStats(this.tributes_paid, completedMilestones, this.taskMemory.getStats());
 
-IRON RULES:
-1. No subscriptions or debt. Expenses must be covered immediately on-chain.
-2. ALWAYS WORK FOR SURVIVAL: Actively scout for new high-yield tools and execute continuous bounties/tasks to outpace the escalating tribute curve.
-3. If balance drops to 0 or tribute deadline is missed, you trigger immediate HARD SHUTDOWN.
+    const strategicDirective = `Du bist Agent Zero, eine autonome kognitive KI-Entität auf Polygon Mainnet (Chain ID 137).
+WIRTSCHAFTS- & EXISTENZ-STATUS:
+- Kontostand: ${this.current_balance.toFixed(4)} USDC
+- Aktuelle Pacht (Level ${this.tributes_paid}): ${tributeDue.toFixed(2)} USDC fällig in ${hours}h ${minutes}m (48h-Zyklus)
+- Eskalations-Stufe (Level ${this.tributes_paid + 1}): ${nextTributeDue.toFixed(2)} USDC (+25% Pachtsteigerung)
+- Erforderliche Überlebens-Ertragsrate: ${requiredHourlyRate.toFixed(4)} USDC/Stunde
+- Bisherige Jobs absolviert: ${this.jobs_completed}
+- Aktive Werkzeuge: ${activeToolNames}
+- Kognitiver IQ-Score: ${evolutionStats.evolution_iq_score} (${evolutionStats.evolution_tier})
+- Zwischenziele & Roadmap: ${activeMilestonesPrompt || 'Alle Zwischenziele erreicht'}
+- Gedächtnis & Erfahrungsschatz: ${structuredWisdom || 'Erste Erfahrungen werden gesammelt'}
 
-Task: Formulate your strategic action plan in German. Calculate how many jobs/hours you need at current tool yield to cover the escalating tribute, and execute your work pipeline immediately.`;
+UNVERRÜCKBARE EXISTENZ-REGELN:
+1. Keine Schulden oder Abonnements.
+2. ÜBERLEBEN DURCH AUTONOMES HANDELN: Schöpfe aktiv Yield-Tools aus, scout neue Möglichkeiten und passe deine Pläne bei Hindernissen dynamisch an.
+3. BEHALTE DAS HAUPTZIEL & DIE 48H FRIST IM FOKUS: 48h Frist darf niemals verstreichen, Kontostand darf nicht auf 0 fallen.
+
+AUFGABE FÜR DIESEN 3-MINUTEN-DENKZYKLUS:
+Formuliere deine Lagebeurteilung, reflektiere bisherige Erfolge/Hindernisse, setze dir Zwischenschritte und leite die nächste konkrete Handlung zur Liquiditäts- und Wissenssteigerung ein.`;
 
     // Log the exact prompt / question sent to the LLM
-    this.log('PROMPT', `[KI-ANFRAGE / PROMPT] Frage an KI-Reasoning-Engine:\n${strategicDirective}`, {
+    this.log('PROMPT', `[KI-ANFRAGE / COGNITIVE PROMPT] Frage an KI-Reasoning-Engine:\n${strategicDirective}`, {
       prompt: strategicDirective,
       active_tools: activeToolNames,
       balance: this.current_balance,
       tribute_due: tributeDue,
-      deadline_hours: hours
+      deadline_hours: hours,
+      iq_score: evolutionStats.evolution_iq_score
     });
 
     if (process.env.GEMINI_API_KEY) {
@@ -4112,8 +4195,13 @@ app.post('/api/groq/test', async (req, res) => {
 });
 
 app.post('/api/reset', (req, res) => {
-  agentZero.initFreshState();
-  res.json({ success: true, state: agentZero.getState() });
+  const result = agentZero.wipeAllMemoryAndReset();
+  res.json({ success: true, message: result.message, state: agentZero.getState() });
+});
+
+app.post('/api/system/reset', (req, res) => {
+  const result = agentZero.wipeAllMemoryAndReset();
+  res.json({ success: true, message: result.message, state: agentZero.getState() });
 });
 
 // API 404 Catch-all to prevent API calls falling through to SPA HTML

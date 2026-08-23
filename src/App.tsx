@@ -255,6 +255,7 @@ export function App() {
         onRefresh={handleManualRefresh}
         isLoading={isLoading}
         onToggleRun={handleToggleRun}
+        onReset={handleResetAgent}
         authRequired={authStatus?.auth_required}
         onLogout={handleLogout}
       />
