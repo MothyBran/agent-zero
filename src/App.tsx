@@ -3,7 +3,7 @@ import { AgentState, LogEntry, ReasoningStreamItem, IntelligenceEvaluation } fro
 import { MinimalVitalsBar } from './components/MinimalVitalsBar';
 import { LiveTerminal } from './components/LiveTerminal';
 import { LoginPage } from './components/LoginPage';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { safeFetchJson, safePostJson } from './lib/api';
 
 export function App() {
@@ -12,31 +12,22 @@ export function App() {
   const [reasoningStream, setReasoningStream] = useState<ReasoningStreamItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Authentication state
   const [authStatus, setAuthStatus] = useState<{ auth_required: boolean; configured: boolean } | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('agent_zero_auth') === 'true';
-    } catch {
-      return false;
-    }
+    try { return localStorage.getItem('agent_zero_auth') === 'true'; } catch { return false; }
   });
 
-  // Check auth requirement on mount
   useEffect(() => {
     safeFetchJson<{ auth_required: boolean; configured: boolean }>('/api/auth/status')
       .then(res => {
         if (res.ok && res.data) {
           setAuthStatus(res.data);
-          if (!res.data.auth_required) {
-            setIsAuthenticated(true);
-          }
+          if (!res.data.auth_required) setIsAuthenticated(true);
         } else {
           setAuthStatus({ auth_required: false, configured: false });
           setIsAuthenticated(true);
         }
-      })
-      .catch(() => {
+      }).catch(() => {
         setAuthStatus({ auth_required: false, configured: false });
         setIsAuthenticated(true);
       });
@@ -44,16 +35,12 @@ export function App() {
 
   const handleLogout = () => {
     setIsAuthenticated(false);
-    try {
-      localStorage.removeItem('agent_zero_auth');
-    } catch {}
+    try { localStorage.removeItem('agent_zero_auth'); } catch {}
   };
 
   const handleLoginSuccess = () => {
     setIsAuthenticated(true);
-    try {
-      localStorage.setItem('agent_zero_auth', 'true');
-    } catch {}
+    try { localStorage.setItem('agent_zero_auth', 'true'); } catch {}
     fetchAllData();
   };
 
@@ -64,18 +51,11 @@ export function App() {
       safeFetchJson<IntelligenceEvaluation>('/api/intelligence/evaluation')
     ]);
 
-    if (statusData.ok && statusData.data) {
-      setState(statusData.data);
-    }
-    if (logsData.ok && logsData.data?.logs) {
-      setLogs(logsData.data.logs);
-    }
-    if (evalData.ok && evalData.data?.reasoning_stream) {
-      setReasoningStream(evalData.data.reasoning_stream);
-    }
+    if (statusData.ok && statusData.data) setState(statusData.data);
+    if (logsData.ok && logsData.data?.logs) setLogs(logsData.data.logs);
+    if (evalData.ok && evalData.data?.reasoning_stream) setReasoningStream(evalData.data.reasoning_stream);
   }, []);
 
-  // Polling loop for live telemetry stream (every 2.5 seconds)
   useEffect(() => {
     if (isAuthenticated) {
       fetchAllData();
@@ -92,9 +72,7 @@ export function App() {
 
   const handleReviveAgent = async () => {
     const res = await safePostJson('/api/agent/revive', { amount: 2.5 });
-    if (res.ok) {
-      await fetchAllData();
-    }
+    if (res.ok) await fetchAllData();
   };
 
   const handleClearLogs = () => {
@@ -102,25 +80,32 @@ export function App() {
     setReasoningStream([]);
   };
 
+  // NEU: Der Toggle-Befehl für den Agenten-Loop
+  const handleToggleRun = async () => {
+    const res = await safePostJson<{ state: AgentState }>('/api/agent/toggle');
+    if (res.ok && res.data?.state) {
+      setState(res.data.state);
+      fetchAllData();
+    }
+  };
+
   const isTerminated = state?.is_terminated || state?.status === 'SHUTDOWN';
 
-  // If server requires authentication and user is not authenticated yet, show Login Page
   if (authStatus?.auth_required && !isAuthenticated) {
     return <LoginPage onLoginSuccess={handleLoginSuccess} />;
   }
 
   return (
     <div className="h-screen w-screen bg-[#05070e] text-slate-100 flex flex-col font-mono overflow-hidden select-text">
-      {/* 1. DIE VITALS (STATUS-LEISTE GANZ OBEN) */}
       <MinimalVitalsBar
         state={state}
         onRefresh={handleManualRefresh}
         isLoading={isLoading}
         onLogout={handleLogout}
         onRevive={handleReviveAgent}
+        onToggleRun={handleToggleRun} 
       />
 
-      {/* EMERGENCY SHUTDOWN BANNER (Nur wenn Agent liquidiert / offline) */}
       {isTerminated && (
         <div className="bg-rose-950/90 border-b border-rose-800 text-rose-100 py-2.5 px-4 shadow-lg shrink-0 flex items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2">
@@ -143,7 +128,6 @@ export function App() {
         </div>
       )}
 
-      {/* 2. DAS LIVE-TERMINAL (DAS HERZSTÜCK - DER GESAMTE RESTLICHE BILDSCHIRM) */}
       <main className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
         <LiveTerminal
           logs={logs}
