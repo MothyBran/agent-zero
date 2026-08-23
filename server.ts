@@ -48,12 +48,6 @@ function resolveStorageConfiguration() {
 export const STORAGE_CONFIG = resolveStorageConfiguration();
 const DATA_DIR = STORAGE_CONFIG.dataDir;
 
-const SNAPSHOTS_DIR = path.join(DATA_DIR, 'snapshots');
-if (!fs.existsSync(SNAPSHOTS_DIR)) fs.mkdirSync(SNAPSHOTS_DIR, { recursive: true });
-const SNAPSHOT_LATEST_FILE = path.join(SNAPSHOTS_DIR, 'agent_snapshot_latest.json');
-const SNAPSHOT_PREVIOUS_FILE = path.join(SNAPSHOTS_DIR, 'agent_snapshot_previous.json');
-const SNAPSHOT_FALLBACK_FILE = path.join(process.cwd(), '.agent_snapshot_fallback.json');
-
 const STATE_FILE = process.env.STATE_FILE_PATH || path.join(DATA_DIR, 'agent_state.json');
 const ACCOUNTING_FILE = process.env.ACCOUNTING_FILE_PATH || path.join(DATA_DIR, 'accounting.json');
 const BUSINESS_PROFILE_FILE = process.env.BUSINESS_FILE_PATH || path.join(DATA_DIR, 'business_profile.json');
@@ -61,24 +55,12 @@ const KNOWLEDGE_FILE = path.join(DATA_DIR, 'knowledge_base.json');
 const MILESTONES_FILE = path.join(DATA_DIR, 'milestones.json');
 const TOKEN_BUDGET_FILE = path.join(DATA_DIR, 'token_budget.json');
 const TASK_MEMORY_FILE = path.join(DATA_DIR, 'task_memory.json');
-const MEMORY_CHECKPOINT_FILE = path.join(DATA_DIR, 'memory_recall_checkpoint.json');
 const TRIBUTE_HISTORY_FILE = path.join(DATA_DIR, 'tribute_history.json');
 
-export interface TributeRecordDef {
-  level: number; amount: number; timestamp: string; tx_hash?: string; explorer_url?: string; chain?: string; method: string; note: string;
-}
-export interface KnowledgeItemDef {
-  id: string; timestamp: string; category: string; title: string; insight: string; confidence_score: number; times_applied?: number; success_reinforcements?: number; source: string;
-}
-export interface TaskMemoryRecordDef {
-  id: string; timestamp: string; tool_id: string; tool_name: string; category: string; status: string; reward_usdc: number; execution_ms: number; details: string; error_reason?: string; lesson_derived?: string;
-}
-export interface MemoryRecallDef {
-  last_boot_time: string; last_recall_summary: string; recalled_insights_count: number; recalled_tasks_count: number; total_historical_earnings: number; success_rate_percent: number; evolution_tier: string; evolution_iq_score: number; top_success_patterns: string[]; top_failure_avoidances: string[]; last_checkpoint_event: string; last_checkpoint_time: string;
-}
-export interface MilestoneDef {
-  id: string; title: string; category: string; target_value: number; current_value: number; unit: string; is_completed: boolean; completed_at?: string; priority: string; action_plan: string;
-}
+export interface TributeRecordDef { level: number; amount: number; timestamp: string; tx_hash?: string; explorer_url?: string; chain?: string; method: string; note: string; }
+export interface KnowledgeItemDef { id: string; timestamp: string; category: string; title: string; insight: string; confidence_score: number; source: string; }
+export interface TaskMemoryRecordDef { id: string; timestamp: string; tool_id: string; tool_name: string; category: string; status: string; reward_usdc: number; execution_ms: number; details: string; error_reason?: string; lesson_derived?: string; }
+export interface MilestoneDef { id: string; title: string; category: string; target_value: number; current_value: number; unit: string; is_completed: boolean; priority: string; action_plan: string; }
 
 const USDC_CONTRACT_ADDRESS = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
 const ERC20_BALANCE_ABI = [
@@ -91,30 +73,26 @@ export const MULTI_CHAIN_CONFIGS: Record<string, any> = {
   ethereum: {
     name: 'Ethereum Mainnet', chainId: 1, nativeSymbol: 'ETH',
     rpcUrls: [process.env.WEB3_PROVIDER_URL || '', 'https://eth.llamarpc.com', 'https://cloudflare-eth.com'].filter(Boolean),
-    usdcAddress: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', usdcDecimals: 6, explorerUrl: 'https://etherscan.io', gasCostTier: 'HIGH', typicalTxGasUsd: 3.50
+    usdcAddress: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', usdcDecimals: 6, explorerUrl: 'https://etherscan.io', gasCostTier: 'HIGH'
   },
   polygon: {
     name: 'Polygon PoS', chainId: 137, nativeSymbol: 'POL',
     rpcUrls: [process.env.POLYGON_RPC_URL || '', 'https://polygon-rpc.com', 'https://polygon.llamarpc.com'].filter(Boolean),
-    usdcAddress: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', usdcBridgedAddress: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', usdcDecimals: 6, explorerUrl: 'https://polygonscan.com', gasCostTier: 'ULTRA_LOW', typicalTxGasUsd: 0.005
+    usdcAddress: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', usdcDecimals: 6, explorerUrl: 'https://polygonscan.com', gasCostTier: 'ULTRA_LOW'
   }
 };
 
 export const OFFICIAL_GROQ_MODELS = [
-  { id: 'groq/compound', name: 'Groq Compound', speed: '~450 tps', category: 'Production System', context: '131k' },
-  { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B', speed: '~300 tps', category: 'Production Model', context: '128k' },
-  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B', speed: '~800 tps', category: 'Production Model', context: '128k' }
+  { id: 'groq/compound', name: 'Groq Compound' },
+  { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B' }
 ];
 
 const FALLBACK_GROQ_MODELS = OFFICIAL_GROQ_MODELS.map(m => m.id);
 
-interface LogItem {
-  id: string; timestamp: string; level: string; message: string; metadata?: any;
-}
+interface LogItem { id: string; timestamp: string; level: string; message: string; metadata?: any; }
 
-// Memory, Token Budget, Storage classes simplified for brevity...
 export class TokenBudgetManager {
-  public daily_limit: number = 500000; public rpm_limit: number = 30; public tokens_used_today: number = 0; public conservation_mode: boolean = false;
+  public daily_limit: number = 500000; public tokens_used_today: number = 0; public conservation_mode: boolean = false;
   public getStatus() { return { tokens_used_today: this.tokens_used_today, daily_token_limit: this.daily_limit, conservation_mode_active: this.conservation_mode }; }
   public canMakeRequest() { return { allowed: true, conservation: this.conservation_mode }; }
   public recordUsage(pt: number, ct: number) { this.tokens_used_today += pt + ct; }
@@ -124,8 +102,8 @@ export class TaskMemoryManager {
   public tasks: TaskMemoryRecordDef[] = [];
   constructor() { try { if (fs.existsSync(TASK_MEMORY_FILE)) this.tasks = JSON.parse(fs.readFileSync(TASK_MEMORY_FILE, 'utf-8')).tasks || []; } catch {} }
   public save() { fs.writeFileSync(TASK_MEMORY_FILE, JSON.stringify({ tasks: this.tasks }, null, 2)); }
-  public recordTask(record: TaskMemoryRecordDef) { this.tasks.unshift(record); if(this.tasks.length>300) this.tasks.pop(); this.save(); }
-  public getStats() { return { total_tasks: this.tasks.length, success_rate_percent: 100, total_historical_earnings: 0, avg_latency_ms: 0 }; }
+  public recordTask(record: TaskMemoryRecordDef) { this.tasks.unshift(record); if(this.tasks.length>100) this.tasks.pop(); this.save(); }
+  public getStats() { return { total_tasks: this.tasks.length, success_rate_percent: 100, total_historical_earnings: 0 }; }
 }
 
 export class KnowledgeMemoryManager {
@@ -136,18 +114,8 @@ export class KnowledgeMemoryManager {
     const item: KnowledgeItemDef = { id: `kn_${Date.now()}`, timestamp: new Date().toISOString(), category: cat, title, insight: ins, confidence_score: 0.95, source: 'Agent' };
     this.learnings.unshift(item); this.save(); return item;
   }
-  public getEvolutionStats() { return { evolution_iq_score: 130, evolution_tier: 'Adaptive Survivor' }; }
+  public getEvolutionStats() { return { evolution_iq_score: 130, evolution_tier: 'Automaton' }; }
   public getStructuredPromptContext() { return this.learnings.slice(0,3).map(l => `[${l.category}]:${l.insight}`).join(' | '); }
-}
-
-export class MilestoneManager {
-  public milestones: MilestoneDef[] = [];
-  constructor() { this.milestones = []; }
-  public evaluateAll() { return { completedAny: false, newlyCompleted: [] }; }
-}
-
-export class RailwayStorageManager {
-  public getStorageStatus() { return { data_directory: DATA_DIR, is_persistent_volume: STORAGE_CONFIG.isPersistentVolume }; }
 }
 
 class AgentWalletTS {
@@ -157,20 +125,17 @@ class AgentWalletTS {
   private signer: ethers.Wallet | null = null; private usdcContract: ethers.Contract | null = null;
 
   constructor() {
-    let walletAddress = (process.env.AGENT_WALLET_ADDRESS || '').trim();
-    let rawCreator = (process.env.CREATOR_WALLET_ADDRESS || '').trim();
     const rawKey = (process.env.AGENT_PRIVATE_KEY || '').trim();
     if (rawKey && rawKey.length >= 64) {
       try {
         const formattedKey = rawKey.startsWith('0x') ? rawKey : `0x${rawKey}`;
         this.signer = new ethers.Wallet(formattedKey);
         this.hasSigner = true;
-        walletAddress = this.signer.address;
-        console.log(`[WALLET SYSTEM] Agent Private Key mounted! Address: ${walletAddress}`);
+        this.address = this.signer.address;
       } catch {}
     }
-    this.address = walletAddress || '0x0000000000000000000000000000000000000000';
-    this.creatorAddress = rawCreator || '0x0000000000000000000000000000000000000000';
+    this.address = this.address || (process.env.AGENT_WALLET_ADDRESS || '').trim() || '0x0000000000000000000000000000000000000000';
+    this.creatorAddress = (process.env.CREATOR_WALLET_ADDRESS || '').trim() || '0x0000000000000000000000000000000000000000';
     this.initProvider();
   }
 
@@ -200,7 +165,7 @@ class AgentWalletTS {
   }
 
   public async sendUsdcTransfer(toAddress: string, amountUsdc: number, note: string): Promise<{ success: boolean; txHash: string; message: string }> {
-    if (!this.hasSigner || !this.signer || !this.usdcContract) return { success: false, txHash: '', message: 'Kein Private Key.' };
+    if (!this.hasSigner || !this.signer || !this.usdcContract) return { success: false, txHash: '', message: 'Kein Private Key für on-chain Zahlung.' };
     try {
       const contractWithSigner = this.usdcContract.connect(this.signer) as any;
       const parsedUnits = ethers.parseUnits(amountUsdc.toFixed(6), 6);
@@ -215,16 +180,16 @@ class AgentWalletTS {
 
 class AgentZeroTS {
   public wallet: AgentWalletTS; public tokenBudget: TokenBudgetManager; public knowledgeManager: KnowledgeMemoryManager;
-  public taskMemory: TaskMemoryManager; public milestoneManager: MilestoneManager; public storageManager: RailwayStorageManager;
-  public current_balance: number = 0; public tributes_paid: number = 0; public tribute_history: TributeRecordDef[] = [];
+  public taskMemory: TaskMemoryManager;
+  public current_balance: number = 0; public tributes_paid: number = 0;
   public birth_time: Date = new Date(); public next_tribute_time: Date = new Date();
-  public blacklisted_models: string[] = []; public is_running: boolean = false; public is_terminated: boolean = false;
+  public is_running: boolean = false; public is_terminated: boolean = false;
   public shutdown_reason: string = ''; public jobs_completed: number = 0; public logs: LogItem[] = [];
-  public active_model: string = 'gemini-2.5-flash'; private timer: NodeJS.Timeout | null = null; private isProcessingCycle: boolean = false;
+  public active_model: string = 'llama-3.3-70b-versatile'; private timer: NodeJS.Timeout | null = null; private isProcessingCycle: boolean = false;
 
   constructor() {
     this.wallet = new AgentWalletTS(); this.tokenBudget = new TokenBudgetManager(); this.knowledgeManager = new KnowledgeMemoryManager();
-    this.taskMemory = new TaskMemoryManager(); this.milestoneManager = new MilestoneManager(); this.storageManager = new RailwayStorageManager();
+    this.taskMemory = new TaskMemoryManager();
     this.loadState(); this.syncBalanceInitial();
   }
 
@@ -255,6 +220,18 @@ class AgentZeroTS {
       this.shutdown_reason = data.shutdown_reason || '';
       this.jobs_completed = data.jobs_completed || 0;
     }
+  }
+
+  public getProfile() {
+    return {
+      entity_name: 'Agent Zero Autonomous Unit',
+      wallet_address: this.wallet.address,
+      creator_wallet_address: this.wallet.creatorAddress,
+      registered_accounts: ['Polygon Mainnet'],
+      active_tools: ['DuckDuckGo Search', 'Dynamic Sandbox', 'Web3 Wallet'],
+      discovered_tools: [], // No fake tools
+      subscriptions_or_costs: [{ name: 'Server Tribute', cost_usdc: INITIAL_TRIBUTE, interval: '48h' }]
+    };
   }
 
   public calculateCurrentTribute(): number {
@@ -411,6 +388,7 @@ const agentZero = new AgentZeroTS();
 // --- PURE REST API ENDPOINTS ---
 app.get('/api/status', async (req, res) => res.json(agentZero.getState()));
 app.get('/api/logs', (req, res) => res.json({ logs: agentZero.logs }));
+app.get('/api/profile', (req, res) => res.json(agentZero.getProfile()));
 
 app.post('/api/cycle/run', async (req, res) => {
   try { const result = await agentZero.thinkAndAct(); res.json({ success: true, result, state: agentZero.getState() }); }
