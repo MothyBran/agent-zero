@@ -57,44 +57,74 @@ const ERC20_BALANCE_ABI = [
   'function transfer(address to, uint256 amount) returns (bool)'
 ];
 
+export const MULTI_CHAIN_CONFIGS: Record<string, any> = {
+  polygon: {
+    chainId: 137, nativeSymbol: 'POL',
+    rpcUrls: [process.env.POLYGON_RPC_URL || '', 'https://polygon-rpc.com', 'https://polygon.llamarpc.com'].filter(Boolean),
+    usdcAddress: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', usdcBridgedAddress: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', usdcDecimals: 6
+  }
+};
+
 class AgentWalletTS {
-  public address: string; public creatorAddress: string = ''; public hasSigner: boolean = false;
+  public address: string = ''; 
+  public creatorAddress: string = ''; 
+  public hasSigner: boolean = false;
   public onChainUsdcBalance: number = 0.0;
   private signer: ethers.Wallet | null = null;
 
   constructor() {
-    const rawKey = (process.env.AGENT_PRIVATE_KEY || '').trim();
-    if (rawKey && rawKey.length >= 64) {
+    let rawKey = (process.env.AGENT_PRIVATE_KEY || '').trim();
+    
+    // Kugelsicheres Key-Parsing: Entfernt 0x falls vorhanden, checkt dann exakt auf 64 Zeichen
+    if (rawKey.startsWith('0x')) {
+      rawKey = rawKey.slice(2);
+    }
+    
+    if (rawKey.length === 64) {
       try {
-        const formattedKey = rawKey.startsWith('0x') ? rawKey : `0x${rawKey}`;
-        this.signer = new ethers.Wallet(formattedKey);
+        this.signer = new ethers.Wallet('0x' + rawKey);
         this.hasSigner = true;
         this.address = this.signer.address;
-      } catch {}
+      } catch (e) {
+        console.error("🚨 [FATAL] Private Key konnte nicht geladen werden:", e);
+      }
     }
-    this.address = this.address || (process.env.AGENT_WALLET_ADDRESS || '').trim() || '0x8B897B6aecdFe18E045Ea513225484ad49CE0e1E';
-    this.creatorAddress = (process.env.CREATOR_WALLET_ADDRESS || '').trim() || '0x0000000000000000000000000000000000000000';
+    
+    // STRIKTER VARIABLEN-ABRUF: Keine Dummy-Fallbacks mehr!
+    this.address = this.address || (process.env.AGENT_WALLET_ADDRESS || '').trim();
+    this.creatorAddress = (process.env.CREATOR_WALLET_ADDRESS || '').trim();
+    
+    if (!this.address) {
+      console.error("🚨 [FATAL] Keine Agent-Adresse vorhanden! Weder AGENT_PRIVATE_KEY noch AGENT_WALLET_ADDRESS wurde in Railway gefunden.");
+    }
+    if (!this.creatorAddress) {
+      console.error("🚨 [FATAL] Keine CREATOR_WALLET_ADDRESS in Railway gefunden!");
+    }
   }
 
   public async getUsdcBalance(): Promise<number> {
+    if (!this.address) return 0.0; // Fail-Safe, wenn gar keine Adresse da ist
+    
     let total = 0;
     try {
-      const rpc = new ethers.JsonRpcProvider(process.env.POLYGON_RPC_URL || 'https://polygon-rpc.com');
+      const rpcUrl = MULTI_CHAIN_CONFIGS.polygon.rpcUrls.find((url: string) => url !== '') || 'https://polygon-rpc.com';
+      const rpc = new ethers.JsonRpcProvider(rpcUrl);
       
-      // 1. Native USDC check
+      // 1. Polygon Native USDC (die ~0.38)
       try {
-        const c1 = new ethers.Contract('0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', ERC20_BALANCE_ABI, rpc);
+        const c1 = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcAddress, ERC20_BALANCE_ABI, rpc);
         const bal1 = await c1.balanceOf(this.address);
         total += Number(ethers.formatUnits(bal1, 6));
       } catch (e) {}
 
-      // 2. Bridged USDC.e check
-      try {
-        const c2 = new ethers.Contract('0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', ERC20_BALANCE_ABI, rpc);
-        const bal2 = await c2.balanceOf(this.address);
-        total += Number(ethers.formatUnits(bal2, 6));
-      } catch (e) {}
-      
+      // 2. Polygon Bridged USDC.e (die ~1.95)
+      if (MULTI_CHAIN_CONFIGS.polygon.usdcBridgedAddress) {
+        try {
+          const c2 = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcBridgedAddress, ERC20_BALANCE_ABI, rpc);
+          const bal2 = await c2.balanceOf(this.address);
+          total += Number(ethers.formatUnits(bal2, 6));
+        } catch (e) {}
+      }
     } catch (e) {}
 
     this.onChainUsdcBalance = total;
@@ -102,10 +132,11 @@ class AgentWalletTS {
   }
 
   public async sendUsdcTransfer(toAddress: string, amountUsdc: number, note: string): Promise<{ success: boolean; txHash: string; message: string }> {
-    if (!this.hasSigner || !this.signer) return { success: false, txHash: '', message: 'Kein Private Key für on-chain Zahlung.' };
+    if (!this.hasSigner || !this.signer || !toAddress) return { success: false, txHash: '', message: 'Kein Private Key oder keine Zieladresse für on-chain Zahlung hinterlegt.' };
     try {
-      const rpc = new ethers.JsonRpcProvider(process.env.POLYGON_RPC_URL || 'https://polygon-rpc.com');
-      const contract = new ethers.Contract('0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', ERC20_BALANCE_ABI, this.signer.connect(rpc));
+      const rpcUrl = MULTI_CHAIN_CONFIGS.polygon.rpcUrls.find((url: string) => url !== '') || 'https://polygon-rpc.com';
+      const rpc = new ethers.JsonRpcProvider(rpcUrl);
+      const contract = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcAddress, ERC20_BALANCE_ABI, this.signer.connect(rpc));
       const parsedUnits = ethers.parseUnits(amountUsdc.toFixed(6), 6);
       const tx = await contract.transfer(toAddress, parsedUnits);
       await tx.wait(1);
@@ -122,7 +153,7 @@ class AgentZeroTS {
   public birth_time: Date = new Date(); public next_tribute_time: Date = new Date();
   public is_running: boolean = false; public is_terminated: boolean = false;
   public shutdown_reason: string = ''; public jobs_completed: number = 0; public logs: LogItem[] = [];
-  public active_model: string = 'KI Engine'; private timer: NodeJS.Timeout | null = null; private isProcessingCycle: boolean = false;
+  public active_model: string = 'LLM Engine'; private timer: NodeJS.Timeout | null = null; private isProcessingCycle: boolean = false;
 
   constructor() {
     this.wallet = new AgentWalletTS();
@@ -136,7 +167,11 @@ class AgentZeroTS {
 
   private async syncBalanceInitial() {
     this.current_balance = await this.wallet.getUsdcBalance();
-    this.log('TX_LEDGER', `Web3 Omni-Sync: ${this.current_balance.toFixed(4)} USDC auf Wallet ${this.wallet.address} erfasst.`);
+    if (this.wallet.address) {
+       this.log('TX_LEDGER', `Web3 Omni-Sync: ${this.current_balance.toFixed(4)} USDC auf Wallet ${this.wallet.address} erfasst.`);
+    } else {
+       this.log('ERROR', `Kein Wallet verknüpft! Agent ist handlungsunfähig.`);
+    }
   }
 
   public saveState() {
@@ -156,6 +191,18 @@ class AgentZeroTS {
       this.shutdown_reason = data.shutdown_reason || '';
       this.jobs_completed = data.jobs_completed || 0;
     }
+  }
+
+  public getProfile() {
+    return {
+      entity_name: 'Agent Zero Autonomous Unit',
+      wallet_address: this.wallet.address,
+      creator_wallet_address: this.wallet.creatorAddress,
+      registered_accounts: ['Polygon Mainnet'],
+      active_tools: ['DuckDuckGo Search', 'Dynamic Sandbox', 'Web3 Wallet'],
+      discovered_tools: [], 
+      subscriptions_or_costs: [{ name: 'Server Tribute', cost_usdc: INITIAL_TRIBUTE, interval: '48h' }]
+    };
   }
 
   public calculateCurrentTribute(): number {
@@ -214,12 +261,12 @@ ${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
 
     try {
       const rawKey = process.env.GROQ_API_KEY || process.env.FREE_LLM_API_KEY || '';
-      const isGemini = rawKey.startsWith('AIza') || process.env.GEMINI_API_KEY;
-      const activeKey = isGemini ? (process.env.GEMINI_API_KEY || rawKey) : rawKey;
+      // Groq keys usually start with 'gsk_', Gemini keys vary but usually not 'gsk_'
+      const isGemini = rawKey && !rawKey.startsWith('gsk_'); 
 
       if (isGemini) {
          this.active_model = 'Gemini 2.5 Flash';
-         const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${activeKey}`, {
+         const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${rawKey}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ contents: [{ parts: [{ text: strategicDirective }] }] })
          });
@@ -230,10 +277,10 @@ ${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
          } else {
             this.log('ERROR', `Gemini API Fehler HTTP ${res.status}`);
          }
-      } else if (activeKey) {
+      } else if (rawKey) {
          this.active_model = 'Groq Llama-3.3';
          const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-            method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${activeKey}` },
+            method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${rawKey}` },
             body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'system', content: strategicDirective }], temperature: 0.7 })
          });
          if (res.ok) {
@@ -244,7 +291,7 @@ ${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
             this.log('ERROR', `Groq API Fehler HTTP ${res.status}`);
          }
       } else {
-         this.log('ERROR', 'Kein LLM API Key gefunden.');
+         this.log('ERROR', 'Kein LLM API Key (weder Groq noch Gemini) gefunden.');
       }
     } catch (e: any) { this.log('ERROR', `KI Fehler: ${e.message}`); }
 
@@ -263,6 +310,12 @@ ${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
     if (postBalance > this.current_balance) {
       const earned = postBalance - this.current_balance;
       this.log('FINANCE', `[ECHTE EINNAHME] Wallet ist on-chain um +${earned.toFixed(4)} USDC gewachsen!`);
+      try {
+        let ledger = { transactions: [] as any[] };
+        if (fs.existsSync(ACCOUNTING_FILE)) ledger = JSON.parse(fs.readFileSync(ACCOUNTING_FILE, 'utf-8'));
+        ledger.transactions.push({ timestamp: new Date().toISOString(), type: 'INCOME', amount: earned, currency: 'USDC', note: 'Real On-Chain Income Detected' });
+        fs.writeFileSync(ACCOUNTING_FILE, JSON.stringify(ledger, null, 2));
+      } catch {}
     }
     this.current_balance = postBalance;
 
@@ -327,6 +380,7 @@ const agentZero = new AgentZeroTS();
 // --- PURE REST API ENDPOINTS ---
 app.get('/api/status', async (req, res) => res.json(agentZero.getState()));
 app.get('/api/logs', (req, res) => res.json({ logs: agentZero.logs }));
+app.get('/api/profile', (req, res) => res.json(agentZero.getProfile()));
 
 app.post('/api/cycle/run', async (req, res) => {
   try { const result = await agentZero.thinkAndAct(); res.json({ success: true, result, state: agentZero.getState() }); }
