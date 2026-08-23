@@ -1,3 +1,14 @@
+export interface TributeRecord {
+  level: number;
+  amount: number;
+  timestamp: string;
+  tx_hash?: string;
+  explorer_url?: string;
+  chain?: string;
+  method: 'ON_CHAIN' | 'PROTOCOL_LEDGER' | 'MANUAL_SYNC';
+  note: string;
+}
+
 export interface Transaction {
   id?: string;
   timestamp: string;
@@ -271,6 +282,10 @@ export interface MultiChainPortfolioReport {
 
 export interface AgentState {
   tributes_paid: number;
+  tribute_history?: TributeRecord[];
+  experience_level?: number;
+  survival_runway_hours?: number;
+  capital_strategy_phase?: 'INVESTMENT_AND_GROWTH' | 'TRIBUTE_DEFENSE';
   birth_time: string;
   next_tribute_time: string;
   blacklisted_models: string[];

@@ -435,7 +435,7 @@ export const ToolSandbox: React.FC<ToolSandboxProps> = ({
               </span>
             </div>
             <p className="text-[11px] text-slate-400">
-              Fragt die Ethereum Mainnet RPC-Nodes direkt nach dem aktuellen On-Chain USDC Saldo ab.
+              Fragt die Polygon Mainnet & Multi-Chain RPC-Nodes direkt nach dem aktuellen On-Chain USDC Saldo ab.
             </p>
 
             <div className="pt-1 flex gap-2">
