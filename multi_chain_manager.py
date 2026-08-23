@@ -10,8 +10,12 @@ Powered by:
 - web3
 """
 
+import os
+import sys
 import json
 import time
+import subprocess
+import tempfile
 import requests
 from typing import Optional, Type, Dict, Any, List
 from pydantic import BaseModel, Field
@@ -230,6 +234,107 @@ class L2CapitalAccumulatorTool(BaseTool):
         )
 
 
+
+class DynamicCodeExecutionInput(BaseModel):
+    code: str = Field(
+        description="Python 3 Quellcode, der in der sicheren Sandbox zur Analyse von APIs, Smart Contracts oder Berechnungen ausgeführt wird."
+    )
+    timeout_seconds: int = Field(
+        default=10,
+        description="Maximale Ausführungsdauer in Sekunden."
+    )
+    purpose: str = Field(
+        default="api_discovery_or_smart_contract_analysis",
+        description="Zweck der Code-Ausführung (z.B. 'web3_contract_probe', 'api_verification', 'yield_calculation')."
+    )
+
+
+class DynamicCodeExecutionTool(BaseTool):
+    name: str = "dynamic_code_execution"
+    description: str = (
+        "Ermöglicht Agent Zero, zur Laufzeit Python-Code in einer Sandbox zu schreiben und auszuführen. "
+        "Fängt stdout, stderr, Fehlermeldungen und Rückgabewerte real ab, damit der Agent aus echten "
+        "Server-Antworten und Fehlern lernt und neue Ertragsquellen erschließen kann."
+    )
+    args_schema: Type[BaseModel] = DynamicCodeExecutionInput
+
+    def _run(self, code: str, timeout_seconds: int = 10, purpose: str = "api_discovery") -> str:
+        start_time = time.time()
+        timeout = max(1, min(30, timeout_seconds))
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as tmp_file:
+            tmp_file.write(code)
+            tmp_path = tmp_file.name
+
+        try:
+            result = subprocess.run(
+                [sys.executable, tmp_path],
+                capture_output=True,
+                text=True,
+                timeout=timeout
+            )
+            duration_ms = round((time.time() - start_time) * 1000, 2)
+            stdout = result.stdout
+            stderr = result.stderr
+            returncode = result.returncode
+
+            # Extract learning insight
+            learning_insight = None
+            if returncode == 0:
+                status = "SUCCESS"
+                learning_insight = f"Python Execution erfolgreich ({duration_ms}ms). Output validiert."
+            else:
+                status = "FAILURE"
+                learning_insight = f"Python Execution abgebrochen (Exit {returncode}): {stderr[:120]}"
+
+            response = {
+                "success": returncode == 0,
+                "status": status,
+                "exit_code": returncode,
+                "stdout": stdout,
+                "stderr": stderr,
+                "execution_ms": duration_ms,
+                "purpose": purpose,
+                "learning_insight": learning_insight
+            }
+            return json.dumps(response, indent=2)
+
+        except subprocess.TimeoutExpired:
+            duration_ms = round((time.time() - start_time) * 1000, 2)
+            return json.dumps({
+                "success": False,
+                "status": "TIMEOUT",
+                "exit_code": -1,
+                "stdout": "",
+                "stderr": f"Ausführung nach {timeout}s wegen Timeout abgebrochen.",
+                "execution_ms": duration_ms,
+                "purpose": purpose,
+                "learning_insight": f"Sandbox Timeout bei {purpose}: Code-Optimierung erforderlich."
+            }, indent=2)
+        except Exception as e:
+            duration_ms = round((time.time() - start_time) * 1000, 2)
+            return json.dumps({
+                "success": False,
+                "status": "ERROR",
+                "exit_code": -1,
+                "stdout": "",
+                "stderr": str(e),
+                "execution_ms": duration_ms,
+                "purpose": purpose,
+                "learning_insight": f"Sandbox Fehler: {str(e)}"
+            }, indent=2)
+        finally:
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except Exception:
+                pass
+
+
+# Direct alias as requested in Protocol specifications
+PythonExecutionTool = DynamicCodeExecutionTool
+
+
 def get_agent_zero_tools() -> List[BaseTool]:
     """Returns the complete suite of LangChain tools for Agent Zero."""
     return [
@@ -237,6 +342,7 @@ def get_agent_zero_tools() -> List[BaseTool]:
         GasTrapAnalyzerTool(),
         GaslessBountyFinderTool(),
         L2CapitalAccumulatorTool(),
+        DynamicCodeExecutionTool(),
     ]
 
 

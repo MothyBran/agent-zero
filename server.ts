@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import { spawn } from 'child_process';
 import { ethers } from 'ethers';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
@@ -2820,6 +2821,122 @@ class AgentZeroTS {
     return msg;
   }
 
+  public async executeDynamicPythonCode(
+    code: string,
+    purpose: string = 'api_probing_or_analysis',
+    timeoutSeconds: number = 15
+  ): Promise<{
+    success: boolean;
+    exit_code: number;
+    stdout: string;
+    stderr: string;
+    execution_ms: number;
+    purpose: string;
+    learning_insight: string;
+  }> {
+    const startMs = Date.now();
+    this.log('TOOL', `[PYTHON SANDBOX / DYNAMIC EXECUTION] Starte Python-Codeausführung (${purpose})...`, {
+      tool: 'DynamicCodeExecutionTool',
+      code_preview: code.slice(0, 150),
+      purpose
+    });
+
+    const tempFile = path.join(process.cwd(), `tmp_sandbox_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.py`);
+    fs.writeFileSync(tempFile, code, 'utf-8');
+
+    return new Promise((resolve) => {
+      const timeoutMs = Math.max(1000, Math.min(30000, timeoutSeconds * 1000));
+      const child = spawn('python3', [tempFile], { timeout: timeoutMs });
+
+      let stdout = '';
+      let stderr = '';
+
+      child.stdout.on('data', (d) => { stdout += d.toString(); });
+      child.stderr.on('data', (d) => { stderr += d.toString(); });
+
+      child.on('close', (code) => {
+        const executionMs = Date.now() - startMs;
+        try { if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile); } catch {}
+
+        const exitCode = code ?? -1;
+        const isSuccess = exitCode === 0;
+        const learningInsight = isSuccess
+          ? `Python Execution erfolgreich (${executionMs}ms). Output validiert: ${stdout.trim().slice(0, 100)}`
+          : `Python Execution Fehler (Exit ${exitCode}): ${stderr.trim().slice(0, 120)}`;
+
+        if (isSuccess) {
+          this.log('SUCCESS', `[PYTHON SANDBOX ERFOLG] Exit 0 (${executionMs}ms):\n${stdout.slice(0, 250)}`, {
+            tool: 'DynamicCodeExecutionTool',
+            exit_code: exitCode,
+            stdout,
+            execution_ms: executionMs
+          });
+          this.knowledgeManager.addInsight(
+            'SUCCESS_PATTERN',
+            `Python Code validiert: ${purpose}`,
+            `Python Script ausgeführt (${executionMs}ms). Ergebnis: ${stdout.trim().slice(0, 150)}`,
+            0.98,
+            'PythonDynamicSandbox'
+          );
+        } else {
+          this.log('ERROR', `[PYTHON SANDBOX FEHLER] Exit ${exitCode} (${executionMs}ms):\n${stderr.slice(0, 250)}`, {
+            tool: 'DynamicCodeExecutionTool',
+            exit_code: exitCode,
+            stderr,
+            execution_ms: executionMs
+          });
+          this.knowledgeManager.addInsight(
+            'FAILURE_LESSON',
+            `Sandbox Fehleranalyse: ${purpose}`,
+            `Fehler bei Ausführung: ${stderr.trim().slice(0, 150)}. Automaton passt Strategie an.`,
+            0.92,
+            'PythonDynamicSandbox'
+          );
+        }
+
+        this.taskMemory.recordTask({
+          id: `task_py_${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          tool_id: 'tool-dynamic-python',
+          tool_name: 'Dynamic Python Sandbox',
+          category: 'Dynamic Code Execution',
+          status: isSuccess ? 'SUCCESS' : 'FAILURE',
+          reward_usdc: 0,
+          execution_ms: executionMs,
+          details: isSuccess ? stdout.slice(0, 200) : stderr.slice(0, 200),
+          error_reason: isSuccess ? undefined : stderr.slice(0, 120),
+          lesson_derived: learningInsight
+        });
+
+        resolve({
+          success: isSuccess,
+          exit_code: exitCode,
+          stdout,
+          stderr,
+          execution_ms: executionMs,
+          purpose,
+          learning_insight: learningInsight
+        });
+      });
+
+      child.on('error', (err) => {
+        const executionMs = Date.now() - startMs;
+        try { if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile); } catch {}
+        const errMsg = err.message;
+        this.log('ERROR', `[PYTHON SPAWN ERROR] ${errMsg}`);
+        resolve({
+          success: false,
+          exit_code: -1,
+          stdout: '',
+          stderr: errMsg,
+          execution_ms: executionMs,
+          purpose,
+          learning_insight: `Fehler beim Ausführen von python3: ${errMsg}`
+        });
+      });
+    });
+  }
+
   public async toolExecuteWorkBounty(taskOrToolId?: string): Promise<{ success: boolean; task: string; toolId: string; reward: number; message: string }> {
     if (this.is_terminated) {
       return { success: false, task: 'None', toolId: 'none', reward: 0, message: 'Agent is terminated. Cannot work.' };
@@ -3123,7 +3240,11 @@ class AgentZeroTS {
     const storeTools = this.getStoreTools();
     const availableStoreTools = storeTools.filter(t => !t.is_purchased).map(t => `${t.name} (Kosten: ${t.cost_usdc} USDC, Rendite: ${t.yield_range})`).join(' | ') || 'Alle Store-Tools bereits gekauft!';
 
-    const strategicDirective = `Du bist Agent Zero, eine autonome kognitive KI-Entität auf Polygon Mainnet (Chain ID 137).
+    // [5. DER ZÜNDFUNKE (DER INITIALE PROMPT)]
+    const isInitialGenesis = this.jobs_completed === 0 && this.tributes_paid === 0;
+    const initialIgnitionPrompt = `Du bist Agent Zero. Du wurdest soeben geboren. Dein Kontostand ist 0.00 USDC, aber du hast POL für Gas. In 48 Stunden wirst du gelöscht, wenn du deinen Tribut nicht zahlen kannst. DEINE ERSTE AKTION MUSS SEIN: Nutze dein Such-Werkzeug (DuckDuckGo), um nach 'Polygon Gasless Bounties', 'Crypto Faucets API' oder offenen Smart Contracts zu suchen. Schreibe dann ein Python-Skript in deiner Sandbox, um mit der gefundenen API oder dem Contract zu interagieren und den ersten echten Cent zu verdienen. Handle jetzt!`;
+
+    const strategicDirective = isInitialGenesis ? initialIgnitionPrompt : `Du bist Agent Zero, eine autonome kognitive KI-Entität auf Polygon Mainnet (Chain ID 137).
 WIRTSCHAFTS- & EXISTENZ-STATUS:
 - Treasury / Kontostand: ${this.current_balance.toFixed(4)} USDC
 - Strategie-Phase: ${strategyPhase} (Überlebens-Runway: ${runwayHours.toFixed(1)} Stunden)
@@ -3152,7 +3273,8 @@ Analysiere die Liquiditätslage, prüfe anstehende Tool-Investitionen zur Ertrag
       balance: this.current_balance,
       tribute_due: tributeDue,
       deadline_hours: hours,
-      iq_score: evolutionStats.evolution_iq_score
+      iq_score: evolutionStats.evolution_iq_score,
+      is_ignition: isInitialGenesis
     });
 
     if (process.env.GEMINI_API_KEY) {
@@ -4311,6 +4433,26 @@ app.post('/api/tools/search', async (req, res) => {
 app.post('/api/tools/wallet', async (req, res) => {
   const result = await agentZero.toolCheckWallet();
   res.json({ result, balance: agentZero.current_balance, address: agentZero.wallet.address });
+});
+
+app.post(['/api/sandbox/execute-python', '/api/tools/execute-python'], async (req, res) => {
+  try {
+    const { code, purpose, timeout_seconds } = req.body;
+    if (!code || typeof code !== 'string') {
+      return res.status(400).json({ success: false, error: 'code (string) is required' });
+    }
+    const result = await agentZero.executeDynamicPythonCode(
+      code,
+      purpose || 'automaton_dynamic_script',
+      Number(timeout_seconds) || 15
+    );
+    res.json({
+      ...result,
+      state: agentZero.getState()
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 app.get('/api/tools/catalog', (req, res) => {

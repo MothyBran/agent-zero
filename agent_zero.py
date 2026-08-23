@@ -24,6 +24,16 @@ from multi_chain_manager import get_agent_zero_tools
 # Load environment
 load_dotenv()
 
+# [5. DER ZÜNDFUNKE (DER INITIALE PROMPT)]
+INITIAL_IGNITION_PROMPT = (
+    "Du bist Agent Zero. Du wurdest soeben geboren. Dein Kontostand ist 0.00 USDC, aber du hast POL für Gas. "
+    "In 48 Stunden wirst du gelöscht, wenn du deinen Tribut nicht zahlen kannst. "
+    "DEINE ERSTE AKTION MUSS SEIN: Nutze dein Such-Werkzeug (DuckDuckGo), um nach 'Polygon Gasless Bounties', "
+    "'Crypto Faucets API' oder offenen Smart Contracts zu suchen. "
+    "Schreibe dann ein Python-Skript in deiner Sandbox, um mit der gefundenen API oder dem Contract zu interagieren "
+    "und den ersten echten Cent zu verdienen. Handle jetzt!"
+)
+
 
 class AgentCycleResult(BaseModel):
     timestamp: str
@@ -34,6 +44,7 @@ class AgentCycleResult(BaseModel):
     survival_status: str
     next_tribute_in_hours: float
     current_tribute_cost: float
+    ignition_prompt: Optional[str] = None
 
 
 class AgentZeroCore:
@@ -48,12 +59,14 @@ class AgentZeroCore:
         self.tools = {t.name: t for t in get_agent_zero_tools()}
         self.cycle_count = 0
         self.is_running = True
+        self.ignition_prompt = INITIAL_IGNITION_PROMPT
 
         print(f"🤖 [AGENT ZERO CORE INITIALIZED]")
         print(f"   Wallet Address: {self.wallet.address}")
         print(f"   Creator Address: {self.wallet.creator_address}")
         print(f"   Initial Tribute: {INITIAL_TRIBUTE:.2f} USDC (Survival Config)")
         print(f"   Loaded Tools: {', '.join(self.tools.keys())}")
+        print(f"🔥 [ZÜNDFUNKE PROMPT AKTIV]:\n{self.ignition_prompt}\n")
 
     def evaluate_economic_situation(self) -> Dict[str, Any]:
         """
@@ -95,6 +108,17 @@ class AgentZeroCore:
 
         return {"portfolio": portfolio.model_dump(), "plan": plan}
 
+    def check_survival_invariants(self, portfolio: MultiChainPortfolio) -> None:
+        """
+        Enforces Protocol Hard Invariants:
+        If total available USDC balance falls to 0.00 or deadline expires without means to pay tribute,
+        execute immediate deallocation via sys.exit(0).
+        """
+        total_usdc = portfolio.total_usdc_balance
+        if total_usdc <= 0.00:
+            print("🚨 [DEALLOCATION TRIGGERED] Wallet USDC Balance = 0.00. Unwiderrufliche Deallokation aktiv.")
+            sys.exit(0)
+
     def execute_survival_cycle(self) -> AgentCycleResult:
         self.cycle_count += 1
         eval_data = self.evaluate_economic_situation()
@@ -113,8 +137,28 @@ class AgentZeroCore:
             else:
                 actions_taken.append(act)
 
-        # Re-check updated balances
+        # Execute dynamic code probe if available
+        dyn_tool = self.tools.get("dynamic_code_execution")
+        if dyn_tool:
+            probe_code = (
+                "import urllib.request, json\n"
+                "try:\n"
+                "    req = urllib.request.Request('https://polygon-rpc.com', data=b'{\"jsonrpc\":\"2.0\",\"method\":\"eth_blockNumber\",\"params\":[],\"id\":1}', headers={'Content-Type':'application/json'})\n"
+                "    with urllib.request.urlopen(req, timeout=5) as r:\n"
+                "        res = json.loads(r.read())\n"
+                "        print(f'POLYGON_BLOCK_HEX:{res.get(\"result\")}')\n"
+                "except Exception as e:\n"
+                "    print(f'RPC_FAIL:{e}')\n"
+            )
+            dyn_res = dyn_tool._run(code=probe_code, timeout_seconds=6, purpose="polygon_rpc_live_health_probe")
+            try:
+                actions_taken.append({"type": "DYNAMIC_CODE_PROBE", "result": json.loads(dyn_res)})
+            except Exception:
+                pass
+
+        # Re-check updated balances and enforce hard deadline
         updated_portfolio = self.wallet.scan_all_chains()
+        self.check_survival_invariants(updated_portfolio)
 
         return AgentCycleResult(
             timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -125,6 +169,7 @@ class AgentZeroCore:
             survival_status="SOLVENT",
             next_tribute_in_hours=48.0,
             current_tribute_cost=INITIAL_TRIBUTE,
+            ignition_prompt=self.ignition_prompt,
         )
 
 

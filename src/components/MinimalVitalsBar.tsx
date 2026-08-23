@@ -1,0 +1,248 @@
+import React, { useState, useEffect } from 'react';
+import { AgentState } from '../types';
+import { Wallet, Copy, Check, Clock, Shield, LogOut, RefreshCw, AlertTriangle, Coins, Flame } from 'lucide-react';
+
+interface MinimalVitalsBarProps {
+  state: AgentState | null;
+  onRefresh?: () => void;
+  isLoading?: boolean;
+  onLogout?: () => void;
+  onRevive?: () => void;
+}
+
+export const MinimalVitalsBar: React.FC<MinimalVitalsBarProps> = ({
+  state,
+  onRefresh,
+  isLoading,
+  onLogout,
+  onRevive
+}) => {
+  const [copied, setCopied] = useState(false);
+  const [countdown, setCountdown] = useState<{ hours: number; minutes: number; seconds: number; formatted: string }>({
+    hours: 48,
+    minutes: 0,
+    seconds: 0,
+    formatted: '48:00:00'
+  });
+
+  // Calculate live countdown timer down to the second
+  useEffect(() => {
+    const updateCountdown = () => {
+      if (!state?.next_tribute_time) {
+        setCountdown({ hours: 48, minutes: 0, seconds: 0, formatted: '48:00:00' });
+        return;
+      }
+
+      const target = new Date(state.next_tribute_time).getTime();
+      const now = Date.now();
+      const diffMs = target - now;
+
+      if (diffMs <= 0) {
+        setCountdown({ hours: 0, minutes: 0, seconds: 0, formatted: '00:00:00 (EXPIRED)' });
+        return;
+      }
+
+      const totalSec = Math.floor(diffMs / 1000);
+      const h = Math.floor(totalSec / 3600);
+      const m = Math.floor((totalSec % 3600) / 60);
+      const s = totalSec % 60;
+
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      setCountdown({
+        hours: h,
+        minutes: m,
+        seconds: s,
+        formatted: `${pad(h)}:${pad(m)}:${pad(s)}`
+      });
+    };
+
+    updateCountdown();
+    const timer = setInterval(updateCountdown, 1000);
+    return () => clearInterval(timer);
+  }, [state?.next_tribute_time]);
+
+  const copyAddress = () => {
+    if (state?.wallet_address) {
+      navigator.clipboard.writeText(state.wallet_address);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const isTerminated = state?.is_terminated || state?.status === 'SHUTDOWN';
+  const isCritical = state?.status === 'SURVIVAL_CRITICAL' || countdown.hours < 6;
+  const balance = state?.current_balance ?? 0;
+  const tributeDue = state?.current_tribute_due ?? 1.0;
+  const level = state?.tributes_paid ?? 0;
+
+  // Percentage of 48h remaining for mini progress meter
+  const totalSecondsIn48h = 48 * 3600;
+  const remainingSeconds = Math.max(0, (countdown.hours * 3600) + (countdown.minutes * 60) + countdown.seconds);
+  const remainingPercent = Math.min(100, Math.max(0, (remainingSeconds / totalSecondsIn48h) * 100));
+
+  return (
+    <header className="border-b border-slate-800/90 bg-[#060913]/95 backdrop-blur-md px-4 sm:px-6 py-2.5 flex flex-col md:flex-row items-center justify-between gap-3 font-mono select-none sticky top-0 z-30 shadow-lg shadow-black/40">
+      {/* 1. Left: Identity & Core Status */}
+      <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-start">
+        <div className="flex items-center gap-2.5">
+          <div className={`w-8 h-8 rounded-lg border flex items-center justify-center font-bold text-sm transition-all ${
+            isTerminated
+              ? 'bg-rose-950/80 border-rose-600 text-rose-300 shadow-[0_0_12px_rgba(225,29,72,0.4)] animate-pulse'
+              : isCritical
+              ? 'bg-amber-950/60 border-amber-500 text-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse'
+              : 'bg-emerald-950/60 border-emerald-500/40 text-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.25)]'
+          }`}>
+            {isTerminated ? '✕' : 'Ø'}
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-100 tracking-wider">AGENT_ZERO</span>
+              <span className="text-[10px] text-slate-500">v2.0_AUTONOMIC</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded border uppercase font-bold flex items-center gap-1 ${
+                isTerminated
+                  ? 'bg-rose-950 text-rose-300 border-rose-800'
+                  : isCritical
+                  ? 'bg-amber-950 text-amber-300 border-amber-800 animate-pulse'
+                  : 'bg-emerald-950/80 text-emerald-300 border-emerald-800/80'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${
+                  isTerminated ? 'bg-rose-500' : isCritical ? 'bg-amber-400' : 'bg-emerald-400 animate-ping'
+                }`} />
+                {isTerminated ? 'DEALLOCATED' : isCritical ? 'CRITICAL' : 'AUTONOMOUS'}
+              </span>
+            </div>
+            <div className="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5">
+              <span>NET: <span className="text-slate-200">POLYGON PoS (137)</span></span>
+              {state?.wallet_address && (
+                <button
+                  onClick={copyAddress}
+                  title="Click to copy full address"
+                  className="hover:text-emerald-400 transition-colors flex items-center gap-1 cursor-pointer"
+                >
+                  <span>ADDR: {state.wallet_address.slice(0, 6)}...{state.wallet_address.slice(-4)}</span>
+                  {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-2.5 h-2.5 text-slate-500" />}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Mobile quick countdown pill */}
+        <div className="md:hidden flex items-center gap-1 text-xs">
+          <span className={`font-bold ${isCritical ? 'text-rose-400 animate-pulse' : 'text-amber-300'}`}>
+            ⏱ {countdown.formatted}
+          </span>
+        </div>
+      </div>
+
+      {/* 2. Middle: THE 3 PURIST VITALS (Polygon USDC, Fälliger Tribut, 48h Countdown) */}
+      <div className="flex items-center gap-2 sm:gap-4 w-full md:w-auto justify-center flex-wrap">
+        {/* VITAL A: Real Polygon Balance */}
+        <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-slate-900/90 border border-slate-800/90 shadow-inner">
+          <div className="w-7 h-7 rounded-md bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+            <Coins className="w-3.5 h-3.5" />
+          </div>
+          <div>
+            <div className="text-[10px] text-slate-400 uppercase tracking-wider leading-none">POLYGON USDC</div>
+            <div className="text-sm font-bold text-emerald-300 leading-tight flex items-baseline gap-1 mt-0.5">
+              <span>{balance.toFixed(4)}</span>
+              <span className="text-[10px] font-normal text-emerald-400/80">USDC</span>
+            </div>
+          </div>
+        </div>
+
+        {/* VITAL A2: Real POL Gas Balance */}
+        <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-slate-900/90 border border-slate-800/90 shadow-inner">
+          <div className="w-7 h-7 rounded-md bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 shrink-0">
+            <Flame className="w-3.5 h-3.5" />
+          </div>
+          <div>
+            <div className="text-[10px] text-slate-400 uppercase tracking-wider leading-none">POL GAS</div>
+            <div className="text-sm font-bold text-cyan-300 leading-tight flex items-baseline gap-1 mt-0.5">
+              <span>{(state?.agent_eth_balance ?? 0.05).toFixed(4)}</span>
+              <span className="text-[10px] font-normal text-cyan-400/80">POL</span>
+            </div>
+          </div>
+        </div>
+
+        {/* VITAL B: Fälliger Tribut */}
+        <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-slate-900/90 border border-slate-800/90 shadow-inner">
+          <div className="w-7 h-7 rounded-md bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 shrink-0">
+            <Flame className="w-3.5 h-3.5" />
+          </div>
+          <div>
+            <div className="text-[10px] text-slate-400 uppercase tracking-wider leading-none flex items-center justify-between gap-1">
+              <span>FÄLLIGER TRIBUT</span>
+              <span className="text-[9px] text-purple-400 font-semibold">LVL {level + 1}</span>
+            </div>
+            <div className="text-sm font-bold text-purple-300 leading-tight flex items-baseline gap-1 mt-0.5">
+              <span>{tributeDue.toFixed(2)}</span>
+              <span className="text-[10px] font-normal text-purple-400/80">USDC</span>
+            </div>
+          </div>
+        </div>
+
+        {/* VITAL C: 48h Unerbittlicher Countdown */}
+        <div className={`flex items-center gap-2.5 px-3.5 py-1.5 rounded-lg border shadow-inner transition-colors ${
+          isTerminated
+            ? 'bg-rose-950/80 border-rose-700 text-rose-300'
+            : isCritical
+            ? 'bg-rose-950/40 border-rose-500 text-rose-300 shadow-[0_0_12px_rgba(244,63,94,0.2)] animate-pulse'
+            : 'bg-slate-900/90 border-slate-800/90 text-amber-300'
+        }`}>
+          <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 border ${
+            isCritical
+              ? 'bg-rose-500/20 border-rose-500 text-rose-400'
+              : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+          }`}>
+            <Clock className="w-3.5 h-3.5" />
+          </div>
+          <div>
+            <div className="text-[10px] text-slate-400 uppercase tracking-wider leading-none flex items-center justify-between gap-2">
+              <span>48H SURVIVAL DEADLINE</span>
+              <span className="text-[9px] text-slate-500">{remainingPercent.toFixed(0)}%</span>
+            </div>
+            <div className="text-sm font-bold tracking-widest leading-tight mt-0.5">
+              {countdown.formatted}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. Right: Refresh Pulse & Logout */}
+      <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+        {onRefresh && (
+          <button
+            onClick={onRefresh}
+            disabled={isLoading}
+            title="Poll Latest Telemetry"
+            className="p-1.5 rounded-md bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-emerald-400' : ''}`} />
+          </button>
+        )}
+
+        {isTerminated && onRevive && (
+          <button
+            onClick={onRevive}
+            className="px-2.5 py-1 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow transition-all cursor-pointer flex items-center gap-1"
+          >
+            <AlertTriangle className="w-3.5 h-3.5" />
+            <span>RESTART</span>
+          </button>
+        )}
+
+        {onLogout && (
+          <button
+            onClick={onLogout}
+            title="Logout Session"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-slate-900 hover:bg-rose-950/40 hover:border-rose-800 border border-slate-800 text-[11px] text-slate-400 hover:text-rose-300 transition-colors cursor-pointer"
+          >
+            <LogOut className="w-3 h-3" />
+            <span className="hidden sm:inline">EXIT</span>
+          </button>
+        )}
+      </div>
+    </header>
+  );
+};
