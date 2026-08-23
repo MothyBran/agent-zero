@@ -91,35 +91,33 @@ class AgentWalletTS {
     this.creatorAddress = (process.env.CREATOR_WALLET_ADDRESS || '').trim() || '0x0000000000000000000000000000000000000000';
   }
 
-  public async getUsdcBalance(): Promise<number> {
-    let maxFound = 0;
+    public async getUsdcBalance(): Promise<number> {
+    let totalUsdc = 0;
     
-    // 1. Check Polygon Native
     try {
-      const rpc = new ethers.JsonRpcProvider(MULTI_CHAIN_CONFIGS.polygon.rpcUrls[0] || 'https://polygon-rpc.com');
-      const contract = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcAddress, ERC20_BALANCE_ABI, rpc);
-      const bal = Number(ethers.formatUnits(await contract.balanceOf(this.address), 6));
-      if (bal > maxFound) maxFound = bal;
-    } catch {}
+      const rpcUrl = MULTI_CHAIN_CONFIGS.polygon.rpcUrls[0] || 'https://polygon-rpc.com';
+      const rpc = new ethers.JsonRpcProvider(rpcUrl);
+      
+      // 1. Check Polygon Native USDC (die ~0.38)
+      try {
+        const contractNative = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcAddress, ERC20_BALANCE_ABI, rpc);
+        const balNative = Number(ethers.formatUnits(await contractNative.balanceOf(this.address), 6));
+        totalUsdc += balNative;
+      } catch (e) {}
 
-    // 2. Check Polygon Bridged (USDC.e)
-    try {
-      const rpc = new ethers.JsonRpcProvider(MULTI_CHAIN_CONFIGS.polygon.rpcUrls[0] || 'https://polygon-rpc.com');
-      const contract = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcBridgedAddress, ERC20_BALANCE_ABI, rpc);
-      const bal = Number(ethers.formatUnits(await contract.balanceOf(this.address), 6));
-      if (bal > maxFound) maxFound = bal;
-    } catch {}
+      // 2. Check Polygon Bridged USDC.e (die ~1.95)
+      if (MULTI_CHAIN_CONFIGS.polygon.usdcBridgedAddress) {
+        try {
+          const contractBridged = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcBridgedAddress, ERC20_BALANCE_ABI, rpc);
+          const balBridged = Number(ethers.formatUnits(await contractBridged.balanceOf(this.address), 6));
+          totalUsdc += balBridged;
+        } catch (e) {}
+      }
+      
+    } catch (e) {}
 
-    // 3. Check Ethereum
-    try {
-      const rpc = new ethers.JsonRpcProvider(MULTI_CHAIN_CONFIGS.ethereum.rpcUrls[0] || 'https://eth.llamarpc.com');
-      const contract = new ethers.Contract(MULTI_CHAIN_CONFIGS.ethereum.usdcAddress, ERC20_BALANCE_ABI, rpc);
-      const bal = Number(ethers.formatUnits(await contract.balanceOf(this.address), 6));
-      if (bal > maxFound) maxFound = bal;
-    } catch {}
-
-    this.onChainUsdcBalance = maxFound;
-    return maxFound;
+    this.onChainUsdcBalance = totalUsdc;
+    return totalUsdc;
   }
 
   public async sendUsdcTransfer(toAddress: string, amountUsdc: number, note: string): Promise<{ success: boolean; txHash: string; message: string }> {
