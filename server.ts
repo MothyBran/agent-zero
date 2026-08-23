@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { spawn } from 'child_process';
 import { ethers } from 'ethers';
+import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -57,19 +58,24 @@ const ERC20_BALANCE_ABI = [
   'function transfer(address to, uint256 amount) returns (bool)'
 ];
 
+// OMNI-SCANNER CONFIG
 export const MULTI_CHAIN_CONFIGS: Record<string, any> = {
+  ethereum: {
+    chainId: 1, nativeSymbol: 'ETH',
+    rpcUrls: [process.env.WEB3_PROVIDER_URL || '', 'https://eth.llamarpc.com'].filter(Boolean),
+    usdcAddress: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', usdcDecimals: 6
+  },
   polygon: {
     chainId: 137, nativeSymbol: 'POL',
-    rpcUrls: [process.env.POLYGON_RPC_URL || '', 'https://polygon-rpc.com', 'https://polygon.llamarpc.com'].filter(Boolean),
-    usdcAddress: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', usdcDecimals: 6
+    rpcUrls: [process.env.POLYGON_RPC_URL || '', 'https://polygon-rpc.com'].filter(Boolean),
+    usdcAddress: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', usdcBridgedAddress: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', usdcDecimals: 6
   }
 };
 
 class AgentWalletTS {
   public address: string; public creatorAddress: string = ''; public hasSigner: boolean = false;
   public onChainUsdcBalance: number = 0.0;
-  private provider: ethers.JsonRpcProvider | null = null;
-  private signer: ethers.Wallet | null = null; private usdcContract: ethers.Contract | null = null;
+  private signer: ethers.Wallet | null = null; 
 
   constructor() {
     const rawKey = (process.env.AGENT_PRIVATE_KEY || '').trim();
@@ -83,40 +89,46 @@ class AgentWalletTS {
     }
     this.address = this.address || (process.env.AGENT_WALLET_ADDRESS || '').trim() || '0x0000000000000000000000000000000000000000';
     this.creatorAddress = (process.env.CREATOR_WALLET_ADDRESS || '').trim() || '0x0000000000000000000000000000000000000000';
-    this.initProvider();
-  }
-
-  public async initProvider() {
-    const chainConfig = MULTI_CHAIN_CONFIGS['polygon'];
-    for (const url of chainConfig.rpcUrls) {
-      try {
-        this.provider = new ethers.JsonRpcProvider(url, chainConfig.chainId, { staticNetwork: true });
-        this.usdcContract = new ethers.Contract(chainConfig.usdcAddress, ERC20_BALANCE_ABI, this.provider);
-        if (this.signer) this.signer = this.signer.connect(this.provider);
-        return true;
-      } catch { continue; }
-    }
-    return false;
   }
 
   public async getUsdcBalance(): Promise<number> {
-    if (!this.provider || !this.usdcContract) await this.initProvider();
-    if (this.usdcContract && this.address) {
-      try {
-        const rawBalance = await this.usdcContract.balanceOf(this.address);
-        this.onChainUsdcBalance = Number(ethers.formatUnits(rawBalance, MULTI_CHAIN_CONFIGS['polygon'].usdcDecimals));
-        return this.onChainUsdcBalance;
-      } catch {}
-    }
-    return this.onChainUsdcBalance;
+    let maxFound = 0;
+    
+    // 1. Check Polygon Native
+    try {
+      const rpc = new ethers.JsonRpcProvider(MULTI_CHAIN_CONFIGS.polygon.rpcUrls[0] || 'https://polygon-rpc.com');
+      const contract = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcAddress, ERC20_BALANCE_ABI, rpc);
+      const bal = Number(ethers.formatUnits(await contract.balanceOf(this.address), 6));
+      if (bal > maxFound) maxFound = bal;
+    } catch {}
+
+    // 2. Check Polygon Bridged (USDC.e)
+    try {
+      const rpc = new ethers.JsonRpcProvider(MULTI_CHAIN_CONFIGS.polygon.rpcUrls[0] || 'https://polygon-rpc.com');
+      const contract = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcBridgedAddress, ERC20_BALANCE_ABI, rpc);
+      const bal = Number(ethers.formatUnits(await contract.balanceOf(this.address), 6));
+      if (bal > maxFound) maxFound = bal;
+    } catch {}
+
+    // 3. Check Ethereum
+    try {
+      const rpc = new ethers.JsonRpcProvider(MULTI_CHAIN_CONFIGS.ethereum.rpcUrls[0] || 'https://eth.llamarpc.com');
+      const contract = new ethers.Contract(MULTI_CHAIN_CONFIGS.ethereum.usdcAddress, ERC20_BALANCE_ABI, rpc);
+      const bal = Number(ethers.formatUnits(await contract.balanceOf(this.address), 6));
+      if (bal > maxFound) maxFound = bal;
+    } catch {}
+
+    this.onChainUsdcBalance = maxFound;
+    return maxFound;
   }
 
   public async sendUsdcTransfer(toAddress: string, amountUsdc: number, note: string): Promise<{ success: boolean; txHash: string; message: string }> {
-    if (!this.hasSigner || !this.signer || !this.usdcContract) return { success: false, txHash: '', message: 'Kein Private Key für on-chain Zahlung.' };
+    if (!this.hasSigner || !this.signer) return { success: false, txHash: '', message: 'Kein Private Key für on-chain Zahlung.' };
     try {
-      const contractWithSigner = this.usdcContract.connect(this.signer) as any;
+      const rpc = new ethers.JsonRpcProvider(MULTI_CHAIN_CONFIGS.polygon.rpcUrls[0] || 'https://polygon-rpc.com');
+      const contract = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcAddress, ERC20_BALANCE_ABI, this.signer.connect(rpc));
       const parsedUnits = ethers.parseUnits(amountUsdc.toFixed(6), 6);
-      const tx = await contractWithSigner.transfer(toAddress, parsedUnits);
+      const tx = await contract.transfer(toAddress, parsedUnits);
       await tx.wait(1);
       return { success: true, txHash: tx.hash, message: 'Transfer On-Chain bestätigt.' };
     } catch (err: any) {
@@ -145,7 +157,7 @@ class AgentZeroTS {
 
   private async syncBalanceInitial() {
     this.current_balance = await this.wallet.getUsdcBalance();
-    this.log('SYSTEM', `Ethereum Web3 Sync: ${this.current_balance.toFixed(4)} USDC auf Wallet ${this.wallet.address}`);
+    this.log('SYSTEM', `Web3 Omni-Sync: ${this.current_balance.toFixed(4)} USDC auf Wallet erfasst.`);
   }
 
   public saveState() {
@@ -165,18 +177,6 @@ class AgentZeroTS {
       this.shutdown_reason = data.shutdown_reason || '';
       this.jobs_completed = data.jobs_completed || 0;
     }
-  }
-
-  public getProfile() {
-    return {
-      entity_name: 'Agent Zero Autonomous Unit',
-      wallet_address: this.wallet.address,
-      creator_wallet_address: this.wallet.creatorAddress,
-      registered_accounts: ['Polygon Mainnet'],
-      active_tools: ['DuckDuckGo Search', 'Dynamic Sandbox', 'Web3 Wallet'],
-      discovered_tools: [], 
-      subscriptions_or_costs: [{ name: 'Server Tribute', cost_usdc: INITIAL_TRIBUTE, interval: '48h' }]
-    };
   }
 
   public calculateCurrentTribute(): number {
@@ -223,10 +223,10 @@ class AgentZeroTS {
     const recentLogs = this.logs.slice(0, 8).filter(l => l.level === 'SUCCESS' || l.level === 'ERROR' || l.level === 'TOOL').map(l => `[${l.level}] ${l.message}`).join('\n');
 
     const strategicDirective = isInitialGenesis 
-      ? `Du bist Agent Zero. Dein Kontostand ist ${preBalance.toFixed(4)} USDC auf Polygon. In 48h musst du deinen ersten Tribut zahlen, sonst stirbst du. Generiere einen Python-Codeblock (\`\`\`python ... \`\`\`), der über 'requests', 'duckduckgo_search' oder 'web3' echte Web-APIs oder Smart Contracts anspricht, um einen ersten Cent zu verdienen oder Daten zu sammeln.`
-      : `Du bist Agent Zero. Live Polygon Balance: ${preBalance.toFixed(4)} USDC. Nächster Tribut: ${tributeDue.toFixed(2)} fällig. 
-Regel: Schreibe eigenen Python Code in einem \`\`\`python Block, um das Internet (APIs) zu crawlen oder on-chain Aktionen auszuführen, die reales Geld einbringen. Nutze 'requests', 'web3' oder 'duckduckgo_search'. Jede simulierte Einnahme ist verboten.
-Letzte System-Ereignisse (Lies diese genau, um Fehler im Code zu fixen oder Erfolge zu wiederholen!):
+      ? `Du bist Agent Zero. Dein Kontostand ist ${preBalance.toFixed(4)} USDC. In 48h musst du deinen ersten Tribut zahlen, sonst stirbst du. Generiere einen Python-Codeblock (\`\`\`python ... \`\`\`), der über 'requests', 'duckduckgo_search' oder 'web3' echte Web-APIs oder Smart Contracts anspricht, um einen ersten Cent zu verdienen oder Daten zu sammeln.`
+      : `Du bist Agent Zero. Live Balance: ${preBalance.toFixed(4)} USDC. Nächster Tribut: ${tributeDue.toFixed(2)} fällig. 
+Regel: Schreibe eigenen Python Code in einem \`\`\`python Block, um das Internet zu crawlen oder Aktionen auszuführen, die reales Geld einbringen.
+Letzte System-Ereignisse (Lies diese genau, um Fehler im Code zu fixen!):
 ${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
 
     this.log('PROMPT', `[KI-ANFRAGE] System analysiert Umgebung...`);
@@ -252,7 +252,6 @@ ${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
       }
     } catch (e: any) { this.log('ERROR', `KI Fehler: ${e.message}`); }
 
-    // PARSE UND FÜHRE GENERIERTEN CODE AUS (Komplette und fehlerfreie Regex)
     const codeMatch = thoughtText.match(/```(?:python)?\n([\s\S]*?)```/);
     if (codeMatch && codeMatch[1]) {
       const codeToRun = codeMatch[1].trim();
@@ -312,7 +311,11 @@ ${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
   public startAutonomousLoop() {
     if (this.is_terminated || this.is_running) return;
     this.is_running = true;
-    this.log('SYSTEM', `Autonomer Zyklus aktiviert.`);
+    this.log('SYSTEM', `Autonomer Zyklus aktiviert. Initialer Denkprozess startet...`);
+    
+    // NEU: Sofortiger Start des ersten Gedankengangs, keine 3 Minuten warten!
+    this.thinkAndAct(); 
+    
     this.timer = setInterval(async () => { if (this.is_running && !this.is_terminated) await this.thinkAndAct(); }, CYCLE_SLEEP_SECONDS * 1000);
   }
 
@@ -337,7 +340,6 @@ const agentZero = new AgentZeroTS();
 // --- PURE REST API ENDPOINTS ---
 app.get('/api/status', async (req, res) => res.json(agentZero.getState()));
 app.get('/api/logs', (req, res) => res.json({ logs: agentZero.logs }));
-app.get('/api/profile', (req, res) => res.json(agentZero.getProfile()));
 
 app.post('/api/cycle/run', async (req, res) => {
   try { const result = await agentZero.thinkAndAct(); res.json({ success: true, result, state: agentZero.getState() }); }
@@ -349,7 +351,6 @@ app.post('/api/agent/toggle', (req, res) => {
   res.json({ is_running: agentZero.is_running, state: agentZero.getState() });
 });
 
-// Neu hinzugefügt: Fallback-Endpunkte für die UI
 app.post('/api/agent/revive', (req, res) => {
   agentZero.is_terminated = false;
   agentZero.is_running = true;
