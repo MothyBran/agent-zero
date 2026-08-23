@@ -131,7 +131,7 @@ class AgentZeroTS {
   public birth_time: Date = new Date(); public next_tribute_time: Date = new Date();
   public is_running: boolean = false; public is_terminated: boolean = false;
   public shutdown_reason: string = ''; public jobs_completed: number = 0; public logs: LogItem[] = [];
-  private timer: NodeJS.Timeout | null = null; private isProcessingCycle: boolean = false;
+  public active_model: string = 'llama-3.3-70b-versatile'; private timer: NodeJS.Timeout | null = null; private isProcessingCycle: boolean = false;
 
   constructor() {
     this.wallet = new AgentWalletTS();
@@ -140,12 +140,12 @@ class AgentZeroTS {
 
   public log(level: any, message: string, metadata?: any) {
     const item: LogItem = { id: Math.random().toString(36).substring(2, 9), timestamp: new Date().toISOString(), level, message, metadata };
-    this.logs.unshift(item); if (this.logs.length > 500) this.logs.pop(); console.log(`[${level}]${message}`);
+    this.logs.unshift(item); if (this.logs.length > 500) this.logs.pop(); console.log(`[${level}] ${message}`);
   }
 
   private async syncBalanceInitial() {
     this.current_balance = await this.wallet.getUsdcBalance();
-    this.log('SYSTEM', `Ethereum Web3 Sync: ${this.current_balance.toFixed(4)} USDC auf Wallet${this.wallet.address}`);
+    this.log('SYSTEM', `Ethereum Web3 Sync: ${this.current_balance.toFixed(4)} USDC auf Wallet ${this.wallet.address}`);
   }
 
   public saveState() {
@@ -174,7 +174,7 @@ class AgentZeroTS {
       creator_wallet_address: this.wallet.creatorAddress,
       registered_accounts: ['Polygon Mainnet'],
       active_tools: ['DuckDuckGo Search', 'Dynamic Sandbox', 'Web3 Wallet'],
-      discovered_tools: [],
+      discovered_tools: [], 
       subscriptions_or_costs: [{ name: 'Server Tribute', cost_usdc: INITIAL_TRIBUTE, interval: '48h' }]
     };
   }
@@ -190,7 +190,6 @@ class AgentZeroTS {
     fs.writeFileSync(tempFile, code, 'utf-8');
 
     return new Promise((resolve) => {
-      // Nutzt das im nixpacks.toml definierte Python
       const child = spawn('python3', [tempFile], { timeout: timeoutSeconds * 1000 });
       let stdout = ''; let stderr = '';
       child.stdout.on('data', (d) => { stdout += d.toString(); });
@@ -218,12 +217,10 @@ class AgentZeroTS {
     const tributeDue = this.calculateCurrentTribute();
     const isInitialGenesis = this.jobs_completed === 0 && this.tributes_paid === 0;
 
-    // HARTER REALITÄTS-ABGLEICH VOR DEM DENKEN
     const preBalance = await this.wallet.getUsdcBalance();
     this.current_balance = preBalance;
 
-    // GEDÄCHTNIS INJIZIEREN: Die letzten Logs für die KI, damit sie lernt!
-    const recentLogs = this.logs.slice(0, 8).filter(l => l.level === 'SUCCESS' || l.level === 'ERROR' || l.level === 'TOOL').map(l => `[${l.level}]${l.message}`).join('\n');
+    const recentLogs = this.logs.slice(0, 8).filter(l => l.level === 'SUCCESS' || l.level === 'ERROR' || l.level === 'TOOL').map(l => `[${l.level}] ${l.message}`).join('\n');
 
     const strategicDirective = isInitialGenesis 
       ? `Du bist Agent Zero. Dein Kontostand ist ${preBalance.toFixed(4)} USDC auf Polygon. In 48h musst du deinen ersten Tribut zahlen, sonst stirbst du. Generiere einen Python-Codeblock (\`\`\`python ... \`\`\`), der über 'requests', 'duckduckgo_search' oder 'web3' echte Web-APIs oder Smart Contracts anspricht, um einen ersten Cent zu verdienen oder Daten zu sammeln.`
@@ -236,7 +233,6 @@ ${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
     let thoughtText = '';
     const actionsTaken: string[] = [];
 
-    // KI-Abfrage
     try {
       const activeGroqKey = process.env.GROQ_API_KEY || process.env.FREE_LLM_API_KEY;
       if (activeGroqKey) {
@@ -256,6 +252,128 @@ ${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
       }
     } catch (e: any) { this.log('ERROR', `KI Fehler: ${e.message}`); }
 
-    // PARSE UND FÜHRE GENERIERTEN CODE AUS (Verzeihender Regex)
-    const codeMatch = thoughtText.match(/
-http://googleusercontent.com/immersive_entry_chip/0
+    // PARSE UND FÜHRE GENERIERTEN CODE AUS (Komplette und fehlerfreie Regex)
+    const codeMatch = thoughtText.match(/```(?:python)?\n([\s\S]*?)```/);
+    if (codeMatch && codeMatch[1]) {
+      const codeToRun = codeMatch[1].trim();
+      const execRes = await this.executeDynamicPythonCode(codeToRun, "Autonomous LLM Script", 20);
+      actionsTaken.push(`Executed Sandbox Code (Exit ${execRes.exit_code})`);
+      this.jobs_completed += 1;
+    } else {
+      actionsTaken.push("Analysis only, no code generated.");
+      if (thoughtText) this.log('ERROR', 'LLM hat keinen gültigen Python-Codeblock generiert.');
+    }
+
+    const postBalance = await this.wallet.getUsdcBalance();
+    if (postBalance > this.current_balance) {
+      const earned = postBalance - this.current_balance;
+      this.log('FINANCE', `[ECHTE EINNAHME] Wallet ist on-chain um +${earned.toFixed(4)} USDC gewachsen!`);
+      try {
+        let ledger = { transactions: [] as any[] };
+        if (fs.existsSync(ACCOUNTING_FILE)) ledger = JSON.parse(fs.readFileSync(ACCOUNTING_FILE, 'utf-8'));
+        ledger.transactions.push({ timestamp: new Date().toISOString(), type: 'INCOME', amount: earned, currency: 'USDC', note: 'Real On-Chain Income Detected' });
+        fs.writeFileSync(ACCOUNTING_FILE, JSON.stringify(ledger, null, 2));
+      } catch {}
+    }
+    this.current_balance = postBalance;
+
+    if (Date.now() >= this.next_tribute_time.getTime()) {
+      if (this.current_balance >= tributeDue) {
+        if (this.wallet.hasSigner && this.current_balance >= tributeDue) {
+          this.log('FINANCE', `Deadline erreicht! Übertrage echten Tribut von ${tributeDue.toFixed(2)} USDC an den Creator.`);
+          const txRes = await this.wallet.sendUsdcTransfer(this.wallet.creatorAddress, tributeDue, "Tribut-Zahlung");
+          if (txRes.success) {
+            this.tributes_paid += 1;
+            this.next_tribute_time = new Date(Date.now() + TRIBUTE_INTERVAL_HOURS * 3600000);
+            this.saveState();
+          } else {
+            this.triggerShutdown(`Tribut-Transfer on-chain fehlgeschlagen: ${txRes.message}`);
+          }
+        } else {
+            this.triggerShutdown(`Wallet hat keinen Signer hinterlegt, echter Transfer nicht möglich.`);
+        }
+      } else {
+        this.triggerShutdown(`Frist abgelaufen. Echtes Guthaben (${this.current_balance.toFixed(4)} USDC) reicht nicht für Tribut (${tributeDue.toFixed(2)} USDC).`);
+      }
+    } else if (this.current_balance <= 0 && this.tributes_paid > 0) {
+      this.triggerShutdown('Kontostand auf 0.00 USDC gefallen (Bankrott).');
+    }
+
+    this.isProcessingCycle = false;
+    return { thought: thoughtText, actions: actionsTaken, model: this.active_model };
+  }
+
+  public triggerShutdown(reason: string) {
+    this.is_terminated = true; this.is_running = false; this.shutdown_reason = reason;
+    if (this.timer) { clearInterval(this.timer); this.timer = null; }
+    this.saveState(); this.log('ERROR', `🚨 [FATAL SHUTDOWN] SYSTEM TERMINIERT: ${reason}`);
+  }
+
+  public startAutonomousLoop() {
+    if (this.is_terminated || this.is_running) return;
+    this.is_running = true;
+    this.log('SYSTEM', `Autonomer Zyklus aktiviert.`);
+    this.timer = setInterval(async () => { if (this.is_running && !this.is_terminated) await this.thinkAndAct(); }, CYCLE_SLEEP_SECONDS * 1000);
+  }
+
+  public stopAutonomousLoop() {
+    this.is_running = false;
+    if (this.timer) { clearInterval(this.timer); this.timer = null; }
+    this.log('SYSTEM', 'Autonomer Zyklus pausiert.');
+  }
+
+  public getState() {
+    return {
+      tributes_paid: this.tributes_paid, current_balance: this.current_balance, wallet_address: this.wallet.address,
+      creator_wallet_address: this.wallet.creatorAddress, has_signer: this.wallet.hasSigner, is_running: this.is_running,
+      is_terminated: this.is_terminated, shutdown_reason: this.shutdown_reason, next_tribute_time: this.next_tribute_time.toISOString(),
+      active_jobs_completed: this.jobs_completed, current_tribute_due: this.calculateCurrentTribute()
+    };
+  }
+}
+
+const agentZero = new AgentZeroTS();
+
+// --- PURE REST API ENDPOINTS ---
+app.get('/api/status', async (req, res) => res.json(agentZero.getState()));
+app.get('/api/logs', (req, res) => res.json({ logs: agentZero.logs }));
+app.get('/api/profile', (req, res) => res.json(agentZero.getProfile()));
+
+app.post('/api/cycle/run', async (req, res) => {
+  try { const result = await agentZero.thinkAndAct(); res.json({ success: true, result, state: agentZero.getState() }); }
+  catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.post('/api/agent/toggle', (req, res) => {
+  agentZero.is_running ? agentZero.stopAutonomousLoop() : agentZero.startAutonomousLoop();
+  res.json({ is_running: agentZero.is_running, state: agentZero.getState() });
+});
+
+// Neu hinzugefügt: Fallback-Endpunkte für die UI
+app.post('/api/agent/revive', (req, res) => {
+  agentZero.is_terminated = false;
+  agentZero.is_running = true;
+  agentZero.saveState();
+  res.json({ success: true, state: agentZero.getState() });
+});
+
+app.get('/api/intelligence/evaluation', (req, res) => {
+  res.json({ reasoning_stream: [] });
+});
+
+app.post('/api/sandbox/execute-python', async (req, res) => {
+  try {
+    const { code, purpose, timeout_seconds } = req.body;
+    const result = await agentZero.executeDynamicPythonCode(code, purpose, Number(timeout_seconds) || 15);
+    res.json({ ...result, state: agentZero.getState() });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// Fallback für SPA
+async function start() {
+  const distPath = path.join(process.cwd(), 'dist');
+  app.use(express.static(distPath));
+  app.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
+  app.listen(PORT, '0.0.0.0', () => console.log(`[AGENT ZERO] Server live on http://0.0.0.0:${PORT}`));
+}
+start();
