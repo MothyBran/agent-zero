@@ -1,6 +1,6 @@
 {
   "name": "Agent Zero",
-  "description": "Autonomous survival and crypto economic agent with Smart Multi-Chain EVM management (Ethereum, Polygon, Base), gas-trap avoidance, persistent memory self-evolution, and 48h tribute management.",
+  "description": "Real-data autonomous economic unit operating exclusively on Polygon PoS with real Web3 RPC, live HTTP request tools, cognitive intelligence evaluation, and self-managed persistent storage.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

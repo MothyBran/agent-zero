@@ -108,6 +108,55 @@ export interface MemoryRecallStatus {
   last_checkpoint_time: string;
 }
 
+export interface HttpRequestResult {
+  url: string;
+  method: string;
+  status_code: number;
+  status_text: string;
+  headers: Record<string, string>;
+  latency_ms: number;
+  body_snippet: string;
+  is_success: boolean;
+  error?: string;
+  timestamp: string;
+  extracted_knowledge?: string;
+}
+
+export interface IntelligenceEvaluation {
+  iq_score: number;
+  evolution_tier: string;
+  cognitive_rank: string;
+  metrics: {
+    total_actions: number;
+    success_rate_percent: number;
+    failure_recovery_rate_percent: number;
+    knowledge_density: number;
+    gas_efficiency_score: number;
+    token_economy_score: number;
+    reasoning_depth_level: number;
+  };
+  skills: Array<{
+    name: string;
+    level: number;
+    max_level: number;
+    category: string;
+    description: string;
+  }>;
+  recent_reflections: Array<{
+    timestamp: string;
+    type: string;
+    text: string;
+    impact: string;
+  }>;
+  active_reasoning_pipeline: {
+    primary_model: string;
+    fallback_chain: string[];
+    avg_inference_latency_ms: number;
+    tokens_consumed_today: number;
+    conservation_mode: boolean;
+  };
+}
+
 export interface TokenBudgetStatus {
   tokens_used_today: number;
   daily_token_limit: number;
@@ -209,6 +258,7 @@ export interface AgentState {
   status: 'ACTIVE' | 'PAUSED' | 'SURVIVAL_CRITICAL' | 'SHUTDOWN';
   current_balance: number;
   wallet_address: string;
+  creator_address?: string;
   creator_wallet_address?: string;
   has_signer?: boolean;
   agent_eth_balance?: number;

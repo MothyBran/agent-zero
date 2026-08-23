@@ -4,16 +4,28 @@ import { Header } from './components/Header';
 import { VitalsGrid } from './components/VitalsGrid';
 import { TerminalLogs } from './components/TerminalLogs';
 import { LedgerTable } from './components/LedgerTable';
-import { ToolSandbox } from './components/ToolSandbox';
+import { RealIntelligenceCard } from './components/RealIntelligenceCard';
+import { KnowledgeStorageManager } from './components/KnowledgeStorageManager';
+import { LiveAutomatonWorkbench } from './components/LiveAutomatonWorkbench';
 import { BusinessProfileCard } from './components/BusinessProfileCard';
 import { GroqModelsCard } from './components/GroqModelsCard';
 import { MilestonesCard } from './components/MilestonesCard';
 import { TokenBudgetCard } from './components/TokenBudgetCard';
 import { RailwayStorageCard } from './components/RailwayStorageCard';
-import { MemoryEvolutionCard } from './components/MemoryEvolutionCard';
 import { MultiChainWalletCard } from './components/MultiChainWalletCard';
 import { LoginPage } from './components/LoginPage';
-import { LayoutDashboard, Target, Gauge, HardDrive, FileText, Wrench, Shield, Cpu, AlertTriangle, Brain, Layers } from 'lucide-react';
+import {
+  LayoutDashboard,
+  Brain,
+  Database,
+  Globe,
+  Layers,
+  Target,
+  FileText,
+  Shield,
+  AlertTriangle,
+  Cpu
+} from 'lucide-react';
 import { safeFetchJson, safePostJson } from './lib/api';
 
 export function App() {
@@ -24,7 +36,9 @@ export function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [isProcessingCycle, setIsProcessingCycle] = useState(false);
   const [isSyncingWallet, setIsSyncingWallet] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'multichain' | 'milestones' | 'memory' | 'tokens' | 'storage' | 'models' | 'ledger' | 'tools' | 'profile'>('dashboard');
+  const [activeTab, setActiveTab] = useState<
+    'dashboard' | 'intelligence' | 'knowledge' | 'workbench' | 'multichain' | 'milestones' | 'ledger' | 'models' | 'profile'
+  >('dashboard');
 
   const [localBackupSnapshot, setLocalBackupSnapshot] = useState<any>(null);
   const [isRestoringBackup, setIsRestoringBackup] = useState(false);
@@ -49,7 +63,6 @@ export function App() {
             setIsAuthenticated(true);
           }
         } else {
-          // Default to open if endpoint fails
           setAuthStatus({ auth_required: false, configured: false });
           setIsAuthenticated(true);
         }
@@ -140,7 +153,7 @@ export function App() {
   useEffect(() => {
     if (isAuthenticated) {
       fetchAllData();
-      const interval = setInterval(fetchAllData, 2500);
+      const interval = setInterval(fetchAllData, 3000);
       return () => clearInterval(interval);
     }
   }, [fetchAllData, isAuthenticated]);
@@ -166,25 +179,6 @@ export function App() {
       await fetchAllData();
     }
     setIsProcessingCycle(false);
-  };
-
-  const handleDeposit = async (amount: number) => {
-    const res = await safePostJson('/api/agent/deposit', { amount, note: `User manual sandbox seed (+${amount} USDC)` });
-    if (res.ok) {
-      await fetchAllData();
-    }
-  };
-
-  const handleSearchTool = async (query: string): Promise<string> => {
-    const res = await safePostJson<{ result?: string }>('/api/tools/search', { query });
-    fetchAllData();
-    return res.data?.result || 'No output';
-  };
-
-  const handleWalletTool = async (): Promise<string> => {
-    const res = await safePostJson<{ result?: string }>('/api/tools/wallet');
-    fetchAllData();
-    return res.data?.result || 'No output';
   };
 
   const handleResetAgent = async () => {
@@ -268,10 +262,10 @@ export function App() {
               <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 animate-bounce" />
               <div>
                 <span className="font-bold uppercase tracking-wider font-mono text-rose-300">
-                  CRITICAL: AGENT ZERO SHUTDOWN / TERMINIERT
+                  CRITICAL: AGENT ZERO TERMINIERT
                 </span>
                 <p className="text-rose-300/90 text-[11px] mt-0.5">
-                  Grund: {state?.shutdown_reason || 'Pacht/Tribut nicht bezahlt oder Guthaben auf 0$ gefallen. Der Agent wurde planmäßig heruntergefahren.'}
+                  Grund: {state?.shutdown_reason || 'Pacht/Tribut nicht innerhalb 48h bezahlt oder Liquidität erschöpft.'}
                 </p>
               </div>
             </div>
@@ -279,7 +273,7 @@ export function App() {
               onClick={handleReviveAgent}
               className="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold font-mono text-xs shadow transition-all cursor-pointer whitespace-nowrap"
             >
-              ⚡ Notfall-Bailout (+2.5 USDC Re-Activation)
+              ⚡ Reaktivieren (Notfall-Restart)
             </button>
           </div>
         </div>
@@ -296,7 +290,7 @@ export function App() {
                   🔄 Re-Deployment / Reset erkannt — Lokales Backup gefunden!
                 </span>
                 <p className="text-blue-200/90 text-[11px] mt-0.5">
-                  Der Server läuft im Startzustand (Level 0). Im Browser ist ein Snapshot mit <strong>Level {localBackupSnapshot.state?.tributes_paid}</strong>, <strong>{localBackupSnapshot.state?.jobs_completed} Aufträgen</strong> und <strong>{localBackupSnapshot.knowledge?.length || 0} Erkenntnissen</strong> (gesichert: {new Date(localBackupSnapshot.exported_at || Date.now()).toLocaleString('de-DE')}) vorhanden.
+                  Im Browser ist ein Snapshot mit <strong>Level {localBackupSnapshot.state?.tributes_paid}</strong>, <strong>{localBackupSnapshot.state?.jobs_completed} Aufträgen</strong> und <strong>{localBackupSnapshot.knowledge?.length || 0} Erkenntnissen</strong> vorhanden.
                 </p>
               </div>
             </div>
@@ -310,7 +304,7 @@ export function App() {
               </button>
               <button
                 onClick={() => setLocalBackupSnapshot(null)}
-                className="px-2.5 py-2 text-slate-400 hover:text-slate-200 text-xs"
+                className="px-2.5 py-2 text-slate-400 hover:text-slate-200 text-xs cursor-pointer"
               >
                 Ignorieren
               </button>
@@ -323,7 +317,6 @@ export function App() {
         {/* Vitals Summary Grid */}
         <VitalsGrid
           state={state}
-          onDeposit={handleDeposit}
           onRunCycle={handleRunCycle}
           onSyncWallet={handleSyncWallet}
           onChangeWalletAddress={handleChangeWalletAddress}
@@ -334,11 +327,11 @@ export function App() {
           isSyncingWallet={isSyncingWallet}
         />
 
-        {/* Navigation Tabs for Granular Views */}
+        {/* Navigation Tabs for Granular Real-Data Views */}
         <div className="flex items-center gap-2 border-b border-slate-800 pb-1 overflow-x-auto">
           <button
             onClick={() => setActiveTab('dashboard')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all cursor-pointer ${
               activeTab === 'dashboard'
                 ? 'bg-slate-900 text-emerald-400 border-t-2 border-emerald-500 border-x border-slate-800'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
@@ -349,20 +342,56 @@ export function App() {
           </button>
 
           <button
+            onClick={() => setActiveTab('intelligence')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all cursor-pointer ${
+              activeTab === 'intelligence'
+                ? 'bg-slate-900 text-purple-400 border-t-2 border-purple-500 border-x border-slate-800'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
+            }`}
+          >
+            <Brain className="w-3.5 h-3.5 text-purple-400" />
+            <span>Kognitive Intelligenz & IQ</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('knowledge')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all cursor-pointer ${
+              activeTab === 'knowledge'
+                ? 'bg-slate-900 text-indigo-400 border-t-2 border-indigo-500 border-x border-slate-800'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
+            }`}
+          >
+            <Database className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Wissens-Storage & Memory ({state?.total_learnings_count ?? 0})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('workbench')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all cursor-pointer ${
+              activeTab === 'workbench'
+                ? 'bg-slate-900 text-cyan-400 border-t-2 border-cyan-500 border-x border-slate-800'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
+            }`}
+          >
+            <Globe className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Live HTTP & API Workbench</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('multichain')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all cursor-pointer ${
               activeTab === 'multichain'
                 ? 'bg-slate-900 text-cyan-400 border-t-2 border-cyan-500 border-x border-slate-800'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
             }`}
           >
             <Layers className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Smart Multi-Chain & Gas Manager</span>
+            <span>Polygon PoS & L2 Gas</span>
           </button>
 
           <button
             onClick={() => setActiveTab('milestones')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all cursor-pointer ${
               activeTab === 'milestones'
                 ? 'bg-slate-900 text-emerald-400 border-t-2 border-emerald-500 border-x border-slate-800'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
@@ -373,56 +402,8 @@ export function App() {
           </button>
 
           <button
-            onClick={() => setActiveTab('memory')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all ${
-              activeTab === 'memory'
-                ? 'bg-slate-900 text-indigo-400 border-t-2 border-indigo-500 border-x border-slate-800'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
-            }`}
-          >
-            <Brain className="w-3.5 h-3.5 text-indigo-400" />
-            <span>Gedächtnis & Evolution ({state?.evolution_iq_score ?? 135} IQ)</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('tokens')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all ${
-              activeTab === 'tokens'
-                ? 'bg-slate-900 text-amber-400 border-t-2 border-amber-500 border-x border-slate-800'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
-            }`}
-          >
-            <Gauge className="w-3.5 h-3.5 text-amber-400" />
-            <span>Token-Budget & Shield</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('storage')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all ${
-              activeTab === 'storage'
-                ? 'bg-slate-900 text-indigo-400 border-t-2 border-indigo-500 border-x border-slate-800'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
-            }`}
-          >
-            <HardDrive className="w-3.5 h-3.5 text-indigo-400" />
-            <span>Railway Storage & Memory</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('models')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all ${
-              activeTab === 'models'
-                ? 'bg-slate-900 text-amber-400 border-t-2 border-amber-500 border-x border-slate-800'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
-            }`}
-          >
-            <Cpu className="w-3.5 h-3.5 text-amber-400" />
-            <span>Groq Intelligence</span>
-          </button>
-
-          <button
             onClick={() => setActiveTab('ledger')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all cursor-pointer ${
               activeTab === 'ledger'
                 ? 'bg-slate-900 text-emerald-400 border-t-2 border-emerald-500 border-x border-slate-800'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
@@ -433,20 +414,20 @@ export function App() {
           </button>
 
           <button
-            onClick={() => setActiveTab('tools')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all ${
-              activeTab === 'tools'
-                ? 'bg-slate-900 text-emerald-400 border-t-2 border-emerald-500 border-x border-slate-800'
+            onClick={() => setActiveTab('models')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all cursor-pointer ${
+              activeTab === 'models'
+                ? 'bg-slate-900 text-amber-400 border-t-2 border-amber-500 border-x border-slate-800'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
             }`}
           >
-            <Wrench className="w-3.5 h-3.5" />
-            <span>Tools & Arbeitsplatz</span>
+            <Cpu className="w-3.5 h-3.5 text-amber-400" />
+            <span>LLM Telemetrie</span>
           </button>
 
           <button
             onClick={() => setActiveTab('profile')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-mono font-medium whitespace-nowrap transition-all cursor-pointer ${
               activeTab === 'profile'
                 ? 'bg-slate-900 text-emerald-400 border-t-2 border-emerald-500 border-x border-slate-800'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'
@@ -463,25 +444,20 @@ export function App() {
             <MultiChainWalletCard state={state} onRefreshState={fetchAllData} />
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2 space-y-6">
-                <MemoryEvolutionCard
-                  iqScore={state?.evolution_iq_score}
-                  evolutionTier={state?.evolution_tier}
-                  totalMemories={state?.total_memories_count}
-                  recallSummary={state?.memory_recall_summary}
-                  onRefresh={fetchAllData}
-                />
+                <RealIntelligenceCard onRefresh={fetchAllData} />
+                <KnowledgeStorageManager onRefresh={fetchAllData} />
                 <MilestonesCard />
                 <TerminalLogs logs={logs} />
               </div>
               <div className="space-y-6">
-                <TokenBudgetCard />
-                <ToolSandbox
-                  onExecuteSearch={handleSearchTool}
-                  onExecuteWallet={handleWalletTool}
-                  onExecuteWork={handleExecuteWork}
-                  onPayTribute={handlePayTribute}
+                <LiveAutomatonWorkbench
+                  onRefresh={fetchAllData}
+                  walletAddress={state?.wallet_address}
+                  creatorAddress={state?.creator_address}
+                  tributesPaid={state?.tributes_paid}
                 />
                 <RailwayStorageCard />
+                <TokenBudgetCard />
                 <BusinessProfileCard
                   profile={profile}
                   state={state}
@@ -491,6 +467,32 @@ export function App() {
                 />
               </div>
             </div>
+          </div>
+        )}
+
+        {activeTab === 'intelligence' && (
+          <div className="space-y-6">
+            <RealIntelligenceCard onRefresh={fetchAllData} />
+            <GroqModelsCard />
+            <TokenBudgetCard />
+          </div>
+        )}
+
+        {activeTab === 'knowledge' && (
+          <div className="space-y-6">
+            <KnowledgeStorageManager onRefresh={fetchAllData} />
+            <RailwayStorageCard />
+          </div>
+        )}
+
+        {activeTab === 'workbench' && (
+          <div className="space-y-6">
+            <LiveAutomatonWorkbench
+              onRefresh={fetchAllData}
+              walletAddress={state?.wallet_address}
+              creatorAddress={state?.creator_address}
+              tributesPaid={state?.tributes_paid}
+            />
           </div>
         )}
 
@@ -506,53 +508,15 @@ export function App() {
           </div>
         )}
 
-        {activeTab === 'memory' && (
-          <div className="space-y-6">
-            <MemoryEvolutionCard
-              iqScore={state?.evolution_iq_score}
-              evolutionTier={state?.evolution_tier}
-              totalMemories={state?.total_memories_count}
-              recallSummary={state?.memory_recall_summary}
-              onRefresh={fetchAllData}
-            />
-            <RailwayStorageCard />
-          </div>
-        )}
-
-        {activeTab === 'tokens' && (
-          <div className="space-y-6">
-            <TokenBudgetCard />
-            <GroqModelsCard />
-          </div>
-        )}
-
-        {activeTab === 'storage' && (
-          <div className="space-y-6">
-            <RailwayStorageCard />
-          </div>
-        )}
-
-        {activeTab === 'models' && (
-          <div className="space-y-6">
-            <TokenBudgetCard />
-            <GroqModelsCard />
-          </div>
-        )}
-
         {activeTab === 'ledger' && (
           <div className="space-y-6">
             <LedgerTable transactions={transactions} />
           </div>
         )}
 
-        {activeTab === 'tools' && (
+        {activeTab === 'models' && (
           <div className="space-y-6">
-            <ToolSandbox
-              onExecuteSearch={handleSearchTool}
-              onExecuteWallet={handleWalletTool}
-              onExecuteWork={handleExecuteWork}
-              onPayTribute={handlePayTribute}
-            />
+            <TokenBudgetCard />
             <GroqModelsCard />
           </div>
         )}
@@ -571,11 +535,11 @@ export function App() {
         )}
       </main>
 
-      {/* Footer */}
+      {/* Puristic Footer */}
       <footer className="border-t border-slate-800/80 bg-slate-950 py-4 mt-auto">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs font-mono text-slate-500">
-          <div>Agent Zero Autonomous Economic Unit · {state?.network || 'Polygon (USDC)'}</div>
-          <div>Strict Protocol: Zero Debt · 48h Survival Kill Switch · Multi-Model Fallback</div>
+          <div>Agent Zero Autonomous Economic Unit · {state?.network || 'Polygon PoS (USDC)'}</div>
+          <div>Hard Survival Protocol: 48h Kill Switch · Reale Daten & Autonomes Lernen</div>
         </div>
       </footer>
     </div>

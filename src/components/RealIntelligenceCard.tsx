@@ -1,0 +1,262 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Brain,
+  Sparkles,
+  Zap,
+  TrendingUp,
+  Award,
+  Cpu,
+  RotateCw,
+  CheckCircle2,
+  AlertTriangle,
+  BarChart3,
+  Lightbulb,
+  Shield,
+  Layers
+} from 'lucide-react';
+import { IntelligenceEvaluation } from '../types';
+import { safeFetchJson, safePostJson } from '../lib/api';
+
+interface RealIntelligenceCardProps {
+  onRefresh?: () => void;
+}
+
+export const RealIntelligenceCard: React.FC<RealIntelligenceCardProps> = ({ onRefresh }) => {
+  const [evaluation, setEvaluation] = useState<IntelligenceEvaluation | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [synthesizing, setSynthesizing] = useState(false);
+  const [synthesizeResult, setSynthesizeResult] = useState<string | null>(null);
+
+  const fetchEvaluation = async () => {
+    setLoading(true);
+    const res = await safeFetchJson<{ evaluation?: IntelligenceEvaluation }>('/api/intelligence/evaluation');
+    if (res.ok && res.data?.evaluation) {
+      setEvaluation(res.data.evaluation);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchEvaluation();
+    const interval = setInterval(fetchEvaluation, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleSynthesize = async () => {
+    setSynthesizing(true);
+    setSynthesizeResult(null);
+    const res = await safePostJson<{ success: boolean; summary?: string }>('/api/knowledge/synthesize');
+    if (res.ok && res.data?.success) {
+      setSynthesizeResult(res.data.summary || 'Erfolgreich synthetisiert.');
+      await fetchEvaluation();
+      if (onRefresh) onRefresh();
+    } else {
+      setSynthesizeResult(`Fehler bei Synthese: ${res.error || 'Serverfehler'}`);
+    }
+    setSynthesizing(false);
+  };
+
+  const getTierBadge = (tier: string) => {
+    if (tier.includes('Tier 4')) return 'bg-amber-500/10 text-amber-300 border-amber-500/30';
+    if (tier.includes('Tier 3')) return 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30';
+    if (tier.includes('Tier 2')) return 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30';
+    return 'bg-slate-800 text-slate-300 border-slate-700';
+  };
+
+  return (
+    <div id="real-intelligence-card" className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-xl space-y-6">
+      {/* Header with Live IQ & Cognitive Tier */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
+        <div className="flex items-center gap-3.5">
+          <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400">
+            <Brain className="w-6 h-6 animate-pulse" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-bold text-slate-100">Reale Intelligenz & Kognitions-Bewertung</h2>
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                Verifizierte Telemetrie
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Mathematisch abgeleitete Intelligenz aus echten HTTP-Aufrufen, Blockchain-Aktionen, Wissensdichte & Fehlerkorrektur.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={fetchEvaluation}
+            disabled={loading}
+            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors disabled:opacity-50"
+            title="Intelligenz-Werte aktualisieren"
+          >
+            <RotateCw className={`w-4 h-4 ${loading ? 'animate-spin text-purple-400' : ''}`} />
+          </button>
+          <button
+            onClick={handleSynthesize}
+            disabled={synthesizing}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-mono text-xs font-semibold shadow transition-all disabled:opacity-50 cursor-pointer"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>{synthesizing ? 'Synthetisiere...' : 'Wissen Autonom Synthetisieren'}</span>
+          </button>
+        </div>
+      </div>
+
+      {synthesizeResult && (
+        <div className="p-3 rounded-lg bg-purple-950/40 border border-purple-700/50 text-purple-200 text-xs font-mono flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />
+          <span>{synthesizeResult}</span>
+        </div>
+      )}
+
+      {/* 4 Core Intelligence Metrics */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* IQ Score */}
+        <div className="bg-slate-950/80 border border-slate-800/80 rounded-xl p-4 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-slate-400 mb-2">
+            <span className="text-[11px] font-mono uppercase tracking-wider">Kognitiver IQ</span>
+            <Award className="w-4 h-4 text-purple-400" />
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-3xl font-bold font-mono text-purple-400">
+              {evaluation?.iq_score ?? 100}
+            </span>
+            <span className="text-xs text-slate-500 font-mono">/ 220 Max</span>
+          </div>
+          <div className="mt-2">
+            <span className={`inline-block text-[10px] font-mono px-2 py-0.5 rounded border ${getTierBadge(evaluation?.evolution_tier || '')}`}>
+              {evaluation?.evolution_tier || 'Tier 1: Initial'}
+            </span>
+          </div>
+        </div>
+
+        {/* Real Task Success Rate */}
+        <div className="bg-slate-950/80 border border-slate-800/80 rounded-xl p-4 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-slate-400 mb-2">
+            <span className="text-[11px] font-mono uppercase tracking-wider">Erfolgsquote</span>
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-3xl font-bold font-mono text-emerald-400">
+              {evaluation?.metrics.success_rate_percent ?? 100}%
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-2 font-mono">
+            {evaluation?.metrics.total_actions ?? 0} Aktionen ausgeführt
+          </p>
+        </div>
+
+        {/* Self-Correction Rate */}
+        <div className="bg-slate-950/80 border border-slate-800/80 rounded-xl p-4 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-slate-400 mb-2">
+            <span className="text-[11px] font-mono uppercase tracking-wider">Selbst-Korrektur</span>
+            <TrendingUp className="w-4 h-4 text-cyan-400" />
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-3xl font-bold font-mono text-cyan-400">
+              {evaluation?.metrics.failure_recovery_rate_percent ?? 100}%
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-2 font-mono">
+            Fehler-Kompensation & Fallback
+          </p>
+        </div>
+
+        {/* Knowledge Density */}
+        <div className="bg-slate-950/80 border border-slate-800/80 rounded-xl p-4 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-slate-400 mb-2">
+            <span className="text-[11px] font-mono uppercase tracking-wider">Wissens-Dichte</span>
+            <Lightbulb className="w-4 h-4 text-amber-400" />
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-3xl font-bold font-mono text-amber-400">
+              {evaluation?.metrics.knowledge_density ?? 0}
+            </span>
+            <span className="text-xs text-slate-500 font-mono">Regeln im Storage</span>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-2 font-mono">
+            Tiefe: Stufe {evaluation?.metrics.reasoning_depth_level ?? 3}/10
+          </p>
+        </div>
+      </div>
+
+      {/* Verified Skill Matrix */}
+      <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-4 space-y-3">
+        <h3 className="text-xs font-bold uppercase font-mono tracking-wider text-slate-300 flex items-center gap-2">
+          <BarChart3 className="w-4 h-4 text-purple-400" /> Reale Kognitive & Praktische Fähigkeiten
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+          {evaluation?.skills.map((skill, idx) => (
+            <div key={idx} className="p-3 rounded-lg bg-slate-900 border border-slate-800/80 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-200">{skill.name}</span>
+                <span className="text-xs font-mono font-bold text-purple-400">
+                  Level {skill.level}/{skill.max_level}
+                </span>
+              </div>
+              <div className="w-full bg-slate-950 rounded-full h-1.5 overflow-hidden">
+                <div
+                  className="bg-gradient-to-r from-purple-600 to-indigo-400 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${(skill.level / skill.max_level) * 100}%` }}
+                />
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">{skill.description}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Live AI Reasoning Pipeline Telemetry */}
+      <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-bold uppercase font-mono tracking-wider text-slate-300 flex items-center gap-2">
+            <Cpu className="w-4 h-4 text-cyan-400" /> Live Modell- & Inferenz-Pipeline
+          </h3>
+          <span className={`px-2 py-0.5 rounded text-[10px] font-mono border ${
+            evaluation?.active_reasoning_pipeline.conservation_mode
+              ? 'bg-amber-500/10 text-amber-300 border-amber-500/30'
+              : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+          }`}>
+            {evaluation?.active_reasoning_pipeline.conservation_mode ? 'Sparmodus Aktiv' : 'Optimaler Durchsatz'}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+          <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-xs">
+            <span className="text-slate-400 block text-[10px] font-mono uppercase">Primäres Modell</span>
+            <span className="text-slate-200 font-mono font-semibold block mt-0.5 truncate">
+              {evaluation?.active_reasoning_pipeline.primary_model || 'Groq llama-3.3-70b-versatile'}
+            </span>
+          </div>
+          <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-xs">
+            <span className="text-slate-400 block text-[10px] font-mono uppercase">Durchschnittliche Latenz</span>
+            <span className="text-cyan-400 font-mono font-semibold block mt-0.5">
+              {evaluation?.active_reasoning_pipeline.avg_inference_latency_ms ?? 0} ms
+            </span>
+          </div>
+          <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-xs">
+            <span className="text-slate-400 block text-[10px] font-mono uppercase">Tokens Heute Verbraucht</span>
+            <span className="text-purple-400 font-mono font-semibold block mt-0.5">
+              {evaluation?.active_reasoning_pipeline.tokens_consumed_today ?? 0} Tokens
+            </span>
+          </div>
+        </div>
+
+        {evaluation?.active_reasoning_pipeline.fallback_chain && evaluation.active_reasoning_pipeline.fallback_chain.length > 0 && (
+          <div className="text-[11px] text-slate-400 flex items-center gap-2 pt-1">
+            <span className="font-mono text-slate-500">Fallback-Kette:</span>
+            <div className="flex flex-wrap gap-1.5 font-mono text-[10px]">
+              {evaluation.active_reasoning_pipeline.fallback_chain.map((m, i) => (
+                <span key={i} className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                  {m}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
