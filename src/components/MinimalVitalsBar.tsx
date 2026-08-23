@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AgentState } from '../types';
-import { Wallet, Copy, Check, Clock, Shield, LogOut, RefreshCw, AlertTriangle, Coins, Flame } from 'lucide-react';
+import { Copy, Check, Clock, LogOut, RefreshCw, AlertTriangle, Coins, Flame, Power } from 'lucide-react';
 
 interface MinimalVitalsBarProps {
   state: AgentState | null;
@@ -8,6 +8,7 @@ interface MinimalVitalsBarProps {
   isLoading?: boolean;
   onLogout?: () => void;
   onRevive?: () => void;
+  onToggleRun?: () => void; // NEU: Prop für den Button
 }
 
 export const MinimalVitalsBar: React.FC<MinimalVitalsBarProps> = ({
@@ -15,47 +16,34 @@ export const MinimalVitalsBar: React.FC<MinimalVitalsBarProps> = ({
   onRefresh,
   isLoading,
   onLogout,
-  onRevive
+  onRevive,
+  onToggleRun
 }) => {
   const [copied, setCopied] = useState(false);
   const [countdown, setCountdown] = useState<{ hours: number; minutes: number; seconds: number; formatted: string }>({
-    hours: 48,
-    minutes: 0,
-    seconds: 0,
-    formatted: '48:00:00'
+    hours: 48, minutes: 0, seconds: 0, formatted: '48:00:00'
   });
 
-  // Calculate live countdown timer down to the second
   useEffect(() => {
     const updateCountdown = () => {
       if (!state?.next_tribute_time) {
         setCountdown({ hours: 48, minutes: 0, seconds: 0, formatted: '48:00:00' });
         return;
       }
-
       const target = new Date(state.next_tribute_time).getTime();
       const now = Date.now();
       const diffMs = target - now;
-
       if (diffMs <= 0) {
         setCountdown({ hours: 0, minutes: 0, seconds: 0, formatted: '00:00:00 (EXPIRED)' });
         return;
       }
-
       const totalSec = Math.floor(diffMs / 1000);
       const h = Math.floor(totalSec / 3600);
       const m = Math.floor((totalSec % 3600) / 60);
       const s = totalSec % 60;
-
       const pad = (n: number) => n.toString().padStart(2, '0');
-      setCountdown({
-        hours: h,
-        minutes: m,
-        seconds: s,
-        formatted: `${pad(h)}:${pad(m)}:${pad(s)}`
-      });
+      setCountdown({ hours: h, minutes: m, seconds: s, formatted: `${pad(h)}:${pad(m)}:${pad(s)}` });
     };
-
     updateCountdown();
     const timer = setInterval(updateCountdown, 1000);
     return () => clearInterval(timer);
@@ -74,8 +62,6 @@ export const MinimalVitalsBar: React.FC<MinimalVitalsBarProps> = ({
   const balance = state?.current_balance ?? 0;
   const tributeDue = state?.current_tribute_due ?? 1.0;
   const level = state?.tributes_paid ?? 0;
-
-  // Percentage of 48h remaining for mini progress meter
   const totalSecondsIn48h = 48 * 3600;
   const remainingSeconds = Math.max(0, (countdown.hours * 3600) + (countdown.minutes * 60) + countdown.seconds);
   const remainingPercent = Math.min(100, Math.max(0, (remainingSeconds / totalSecondsIn48h) * 100));
@@ -126,18 +112,10 @@ export const MinimalVitalsBar: React.FC<MinimalVitalsBarProps> = ({
             </div>
           </div>
         </div>
-
-        {/* Mobile quick countdown pill */}
-        <div className="md:hidden flex items-center gap-1 text-xs">
-          <span className={`font-bold ${isCritical ? 'text-rose-400 animate-pulse' : 'text-amber-300'}`}>
-            ⏱ {countdown.formatted}
-          </span>
-        </div>
       </div>
 
-      {/* 2. Middle: THE 3 PURIST VITALS (Polygon USDC, Fälliger Tribut, 48h Countdown) */}
+      {/* 2. Middle: THE 3 PURIST VITALS */}
       <div className="flex items-center gap-2 sm:gap-4 w-full md:w-auto justify-center flex-wrap">
-        {/* VITAL A: Real Polygon Balance */}
         <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-slate-900/90 border border-slate-800/90 shadow-inner">
           <div className="w-7 h-7 rounded-md bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
             <Coins className="w-3.5 h-3.5" />
@@ -151,21 +129,6 @@ export const MinimalVitalsBar: React.FC<MinimalVitalsBarProps> = ({
           </div>
         </div>
 
-        {/* VITAL A2: Real POL Gas Balance */}
-        <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-slate-900/90 border border-slate-800/90 shadow-inner">
-          <div className="w-7 h-7 rounded-md bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 shrink-0">
-            <Flame className="w-3.5 h-3.5" />
-          </div>
-          <div>
-            <div className="text-[10px] text-slate-400 uppercase tracking-wider leading-none">POL GAS</div>
-            <div className="text-sm font-bold text-cyan-300 leading-tight flex items-baseline gap-1 mt-0.5">
-              <span>{(state?.agent_eth_balance ?? 0.05).toFixed(4)}</span>
-              <span className="text-[10px] font-normal text-cyan-400/80">POL</span>
-            </div>
-          </div>
-        </div>
-
-        {/* VITAL B: Fälliger Tribut */}
         <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-slate-900/90 border border-slate-800/90 shadow-inner">
           <div className="w-7 h-7 rounded-md bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 shrink-0">
             <Flame className="w-3.5 h-3.5" />
@@ -182,7 +145,6 @@ export const MinimalVitalsBar: React.FC<MinimalVitalsBarProps> = ({
           </div>
         </div>
 
-        {/* VITAL C: 48h Unerbittlicher Countdown */}
         <div className={`flex items-center gap-2.5 px-3.5 py-1.5 rounded-lg border shadow-inner transition-colors ${
           isTerminated
             ? 'bg-rose-950/80 border-rose-700 text-rose-300'
@@ -191,9 +153,7 @@ export const MinimalVitalsBar: React.FC<MinimalVitalsBarProps> = ({
             : 'bg-slate-900/90 border-slate-800/90 text-amber-300'
         }`}>
           <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 border ${
-            isCritical
-              ? 'bg-rose-500/20 border-rose-500 text-rose-400'
-              : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+            isCritical ? 'bg-rose-500/20 border-rose-500 text-rose-400' : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
           }`}>
             <Clock className="w-3.5 h-3.5" />
           </div>
@@ -209,8 +169,25 @@ export const MinimalVitalsBar: React.FC<MinimalVitalsBarProps> = ({
         </div>
       </div>
 
-      {/* 3. Right: Refresh Pulse & Logout */}
+      {/* 3. Right: Action Controls (Start/Pause, Refresh, Exit) */}
       <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+        {onToggleRun && (
+          <button
+            onClick={onToggleRun}
+            disabled={isTerminated}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all shadow-sm ${
+              isTerminated
+                ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+                : state?.is_running
+                ? 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30 cursor-pointer'
+                : 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-emerald-950 cursor-pointer'
+            }`}
+          >
+            <Power className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{state?.is_running ? 'Pause Loop' : 'Start Auto Loop'}</span>
+          </button>
+        )}
+
         {onRefresh && (
           <button
             onClick={onRefresh}
@@ -219,16 +196,6 @@ export const MinimalVitalsBar: React.FC<MinimalVitalsBarProps> = ({
             className="p-1.5 rounded-md bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-emerald-400' : ''}`} />
-          </button>
-        )}
-
-        {isTerminated && onRevive && (
-          <button
-            onClick={onRevive}
-            className="px-2.5 py-1 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow transition-all cursor-pointer flex items-center gap-1"
-          >
-            <AlertTriangle className="w-3.5 h-3.5" />
-            <span>RESTART</span>
           </button>
         )}
 
