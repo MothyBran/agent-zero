@@ -1,0 +1,13 @@
+{
+  "entity_name": "Agent Zero",
+  "wallet_address": "",
+  "creator_address": "",
+  "registered_nodes": [
+    "Polygon PoS Mainnet RPC Pool"
+  ],
+  "active_tools": [
+    "Dynamic Python Sandbox Engine",
+    "Polygon RPC Web3 Connector"
+  ],
+  "discovered_tools": []
+}

@@ -629,12 +629,70 @@ const agentZero = new AgentZeroTS();
 // 4. REST API ENDPOINTS FÜR DAS DASHBOARD
 // ==========================================
 
-app.get('/api/status', async (req, res) => res.json(agentZero.getState()));
+app.get('/api/status', async (req, res) => {
+  res.json({
+    ...agentZero.getState(),
+    birth_time: agentZero.birth_time.toISOString(),
+    active_model: agentZero.active_model
+  });
+});
 app.get('/api/logs', (req, res) => res.json({ logs: agentZero.logs }));
+
+app.get('/api/accounting', (req, res) => {
+  try {
+    if (fs.existsSync(ACCOUNTING_FILE)) {
+      const data = JSON.parse(fs.readFileSync(ACCOUNTING_FILE, 'utf-8'));
+      return res.json({ transactions: Array.isArray(data.transactions) ? data.transactions : [] });
+    }
+  } catch {}
+  res.json({ transactions: [] });
+});
+
+app.get('/api/business-profile', (req, res) => {
+  try {
+    if (fs.existsSync(BUSINESS_PROFILE_FILE)) {
+      const data = JSON.parse(fs.readFileSync(BUSINESS_PROFILE_FILE, 'utf-8'));
+      return res.json({
+        entity_name: data.entity_name || 'Agent Zero',
+        wallet_address: agentZero.wallet.address || data.wallet_address || '',
+        creator_address: agentZero.wallet.creatorAddress || data.creator_address || '',
+        registered_nodes: Array.isArray(data.registered_nodes) ? data.registered_nodes : ['Polygon PoS Mainnet RPC Pool'],
+        active_tools: Array.isArray(data.active_tools) ? data.active_tools : ['Dynamic Python Sandbox Engine', 'Polygon RPC Web3 Connector'],
+        discovered_tools: Array.isArray(data.discovered_tools) ? data.discovered_tools : []
+      });
+    }
+  } catch {}
+  res.json({
+    entity_name: 'Agent Zero',
+    wallet_address: agentZero.wallet.address || '',
+    creator_address: agentZero.wallet.creatorAddress || '',
+    registered_nodes: ['Polygon PoS Mainnet RPC Pool'],
+    active_tools: ['Dynamic Python Sandbox Engine', 'Polygon RPC Web3 Connector'],
+    discovered_tools: []
+  });
+});
+
+app.get('/api/memory', (req, res) => {
+  res.json({
+    tasks: agentZero.taskMemory.tasks || [],
+    learnings: agentZero.knowledgeManager.learnings || [],
+    milestones: agentZero.milestoneManager.milestones || [],
+    token_budget: agentZero.tokenBudget.getStatus(),
+    active_model: agentZero.active_model,
+    blacklisted_models: agentZero.blacklisted_models || []
+  });
+});
 
 app.post('/api/cycle/run', async (req, res) => {
   try { const result = await agentZero.thinkAndAct(); res.json({ success: true, result, state: agentZero.getState() }); }
   catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.post('/api/blacklist/clear', (req, res) => {
+  agentZero.blacklisted_models = [];
+  agentZero.saveState();
+  agentZero.log('SYSTEM', 'Modell-Blacklist manuell vom Admin geleert.');
+  res.json({ success: true, blacklisted_models: [] });
 });
 
 app.post('/api/agent/toggle', (req, res) => {
