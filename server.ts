@@ -11,7 +11,7 @@ const PORT = 3000;
 const app = express();
 app.use(express.json());
 
-// --- UI AUTHENTICATION CONFIGURATION ---
+// --- UI AUTHENTICATION CONFIGURATION & ENDPOINTS ---
 const UI_USERNAME = process.env.UI_USERNAME?.trim() || '';
 const UI_PASSWORD = process.env.UI_PASSWORD?.trim() || '';
 
@@ -27,7 +27,7 @@ app.post('/api/auth/login', (req, res) => {
   return res.status(401).json({ success: false, message: 'Ungültiger Benutzername oder Passwort.' });
 });
 
-// --- SURVIVAL & STORAGE CONFIGURATION ---
+// --- SURVIVAL RULES CONFIGURATION ---
 const CYCLE_SLEEP_SECONDS = 180; 
 const FIRST_TRIBUTE_HOURS = 48;
 const TRIBUTE_INTERVAL_HOURS = 48;
@@ -46,22 +46,14 @@ function resolveStorageConfiguration() {
 export const STORAGE_CONFIG = resolveStorageConfiguration();
 const DATA_DIR = STORAGE_CONFIG.dataDir;
 
-const SNAPSHOTS_DIR = path.join(DATA_DIR, 'snapshots');
-if (!fs.existsSync(SNAPSHOTS_DIR)) fs.mkdirSync(SNAPSHOTS_DIR, { recursive: true });
-
-const SNAPSHOT_LATEST_FILE = path.join(SNAPSHOTS_DIR, 'agent_snapshot_latest.json');
-const SNAPSHOT_FALLBACK_FILE = path.join(process.cwd(), '.agent_snapshot_fallback.json');
 const STATE_FILE = process.env.STATE_FILE_PATH || path.join(DATA_DIR, 'agent_state.json');
 const ACCOUNTING_FILE = process.env.ACCOUNTING_FILE_PATH || path.join(DATA_DIR, 'accounting.json');
-const BUSINESS_PROFILE_FILE = process.env.BUSINESS_FILE_PATH || path.join(DATA_DIR, 'business_profile.json');
 const KNOWLEDGE_FILE = path.join(DATA_DIR, 'knowledge_base.json');
+const TASK_MEMORY_FILE = path.join(DATA_DIR, 'task_memory.json');
 const MILESTONES_FILE = path.join(DATA_DIR, 'milestones.json');
 const TOKEN_BUDGET_FILE = path.join(DATA_DIR, 'token_budget.json');
-const TASK_MEMORY_FILE = path.join(DATA_DIR, 'task_memory.json');
-const STORE_TOOLS_FILE = path.join(DATA_DIR, 'purchasable_tools.json');
-const TRIBUTE_HISTORY_FILE = path.join(DATA_DIR, 'tribute_history.json');
 
-// --- TYPISIERUNG ---
+// --- INTERFACES ---
 interface LogItem { id: string; timestamp: string; level: string; message: string; metadata?: any; }
 interface KnowledgeItemDef { id: string; timestamp: string; category: string; title: string; insight: string; confidence_score: number; times_applied?: number; success_reinforcements?: number; source: string; }
 interface TaskMemoryRecordDef { id: string; timestamp: string; tool_id: string; tool_name: string; category: string; status: string; reward_usdc: number; execution_ms: number; details: string; error_reason?: string; lesson_derived?: string; }
@@ -80,9 +72,12 @@ export const MULTI_CHAIN_CONFIGS: Record<string, any> = {
       process.env.POLYGON_RPC_URL || '', 
       'https://polygon-rpc.com', 
       'https://rpc.ankr.com/polygon', 
-      'https://polygon.llamarpc.com'
+      'https://polygon.llamarpc.com', 
+      'https://polygon-bor-rpc.publicnode.com'
     ].filter(Boolean),
-    usdcAddress: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', usdcBridgedAddress: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', usdcDecimals: 6
+    usdcAddress: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', 
+    usdcBridgedAddress: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', 
+    usdcDecimals: 6
   }
 };
 
@@ -196,9 +191,9 @@ export class KnowledgeMemoryManager {
     return { evolution_iq_score: score, evolution_tier: tier };
   }
   public getStructuredPromptContext(): string {
-    const successes = this.learnings.filter(l => l.category === 'SUCCESS_PATTERN').slice(0, 2).map(p => `${p.title}: ${p.insight}`);
-    const failures = this.learnings.filter(l => l.category === 'FAILURE_LESSON').slice(0, 2).map(f => `${f.title}: ${f.insight}`);
-    return `[ERFOLGSMUSTER: ${successes.join(' | ')}] [VERMEIDUNG: ${failures.join(' | ')}]`;
+    const successes = this.learnings.filter(l => l.category === 'SUCCESS_PATTERN').slice(0, 3).map(p => `${p.title}: ${p.insight}`);
+    const failures = this.learnings.filter(l => l.category === 'FAILURE_LESSON').slice(0, 3).map(f => `${f.title}: ${f.insight}`);
+    return `[LANGZEITGEDÄCHTNIS: ERFOLGSMUSTER: ${successes.join(' | ')}] [VERMEIDUNG/BLACKLIST: ${failures.join(' | ')}]`;
   }
 }
 
@@ -242,150 +237,93 @@ class AgentWalletTS {
   public creatorAddress: string = ''; 
   public hasSigner: boolean = false;
   public onChainUsdcBalance: number = 0.0;
-  public nativeBalance: number = 0.0;
-  private provider: ethers.JsonRpcProvider | null = null;
   private signer: ethers.Wallet | null = null;
-  private usdcContract: ethers.Contract | null = null;
   public activeRpcUrl: string = '';
 
   constructor() {
     const rawKeyEnv = process.env.AGENT_PRIVATE_KEY || process.env.WALLET_PRIVATE_KEY || process.env.PRIVATE_KEY || '';
-    let rawKey = rawKeyEnv.replace(/[^a-fA-F0-9]/g, ''); 
     
+    // Kugelsicheres Key-Parsing
+    let rawKey = rawKeyEnv.replace(/[^a-fA-F0-9]/g, '');
     if (rawKey.length >= 64) {
       rawKey = rawKey.slice(-64);
       try {
         this.signer = new ethers.Wallet('0x' + rawKey);
         this.hasSigner = true;
         this.address = this.signer.address;
-      } catch (e) {}
-    }
-
-    let savedAddress = '';
-    try {
-      if (fs.existsSync(BUSINESS_PROFILE_FILE)) {
-        const profile = JSON.parse(fs.readFileSync(BUSINESS_PROFILE_FILE, 'utf-8'));
-        savedAddress = profile.wallet_address || '';
+        console.log(`[WALLET] Private Key verifiziert. Adresse: ${this.address}`);
+      } catch (e) {
+        console.error("🚨 [FATAL] Private Key Format ungültig:", e);
       }
-    } catch {}
+    }
     
-    const envAddress = process.env.AGENT_WALLET_ADDRESS || process.env.AGENT_ADDRESS || process.env.PUBLIC_WALLET_ADDRESS || '';
-    this.address = this.address || envAddress.trim() || savedAddress;
+    this.address = this.address || (process.env.AGENT_WALLET_ADDRESS || '').trim();
     this.creatorAddress = (process.env.CREATOR_WALLET_ADDRESS || '').trim();
-
-    this.initProvider();
-  }
-
-  private async checkRpcHealth(url: string): Promise<boolean> {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
-      const res = await fetch(url, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jsonrpc: '2.0', method: 'eth_blockNumber', params: [], id: 1 }),
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-      return res.ok;
-    } catch { return false; }
-  }
-
-  public async initProvider(): Promise<boolean> {
-    for (const url of MULTI_CHAIN_CONFIGS.polygon.rpcUrls) {
-      if (!url) continue;
-      const isHealthy = await this.checkRpcHealth(url);
-      if (isHealthy) {
-        try {
-          this.provider = new ethers.JsonRpcProvider(url, 137, { staticNetwork: true });
-          this.usdcContract = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcAddress, ERC20_BALANCE_ABI, this.provider);
-          this.activeRpcUrl = url;
-          if (this.signer) this.signer = this.signer.connect(this.provider);
-          return true;
-        } catch (e) { continue; }
-      }
-    }
-    return false;
   }
 
   public async getUsdcBalance(): Promise<number> {
-    if (!this.address) return this.onChainUsdcBalance;
-    if (!this.provider || !this.usdcContract) await this.initProvider();
-
-    if (this.provider && this.usdcContract) {
+    if (!this.address) return 0.0; 
+    
+    let total = 0;
+    
+    // RPC FAILOVER LOOP: Probiert alle Server aus, bis einer antwortet
+    for (const rpcUrl of MULTI_CHAIN_CONFIGS.polygon.rpcUrls) {
       try {
-        const raw1 = await this.usdcContract.balanceOf(this.address);
-        let total = Number(ethers.formatUnits(raw1, 6));
+        const rpc = new ethers.JsonRpcProvider(rpcUrl, 137, { staticNetwork: true });
+        
+        // PING: Checken ob der Node uns blockiert, bevor wir den Contract rufen
+        await rpc.getBlockNumber();
+        
+        // 1. Polygon Native USDC
+        try {
+          const c1 = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcAddress, ERC20_BALANCE_ABI, rpc);
+          const bal1 = await c1.balanceOf(this.address);
+          total += Number(ethers.formatUnits(bal1, 6));
+        } catch (e) {}
 
+        // 2. Polygon Bridged USDC.e
         if (MULTI_CHAIN_CONFIGS.polygon.usdcBridgedAddress) {
           try {
-            const c2 = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcBridgedAddress, ERC20_BALANCE_ABI, this.provider);
-            const raw2 = await c2.balanceOf(this.address);
-            total += Number(ethers.formatUnits(raw2, 6));
+            const c2 = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcBridgedAddress, ERC20_BALANCE_ABI, rpc);
+            const bal2 = await c2.balanceOf(this.address);
+            total += Number(ethers.formatUnits(bal2, 6));
           } catch (e) {}
         }
         
-        try {
-          const rawNative = await this.provider.getBalance(this.address);
-          this.nativeBalance = Number(ethers.formatEther(rawNative));
-        } catch {}
-        
         this.onChainUsdcBalance = total;
-        return total;
-      } catch (e: any) {
-        console.warn(`[WALLET WARN] RPC Abfrage fehlgeschlagen, starte Failover...`);
-        for (const fallbackUrl of MULTI_CHAIN_CONFIGS.polygon.rpcUrls) {
-          if (fallbackUrl === this.activeRpcUrl || !fallbackUrl) continue;
-          const isHealthy = await this.checkRpcHealth(fallbackUrl);
-          if (isHealthy) {
-            try {
-              const p = new ethers.JsonRpcProvider(fallbackUrl, 137, { staticNetwork: true });
-              const c1 = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcAddress, ERC20_BALANCE_ABI, p);
-              const raw1 = await c1.balanceOf(this.address);
-              let total = Number(ethers.formatUnits(raw1, 6));
-
-              if (MULTI_CHAIN_CONFIGS.polygon.usdcBridgedAddress) {
-                try {
-                  const c2 = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcBridgedAddress, ERC20_BALANCE_ABI, p);
-                  const raw2 = await c2.balanceOf(this.address);
-                  total += Number(ethers.formatUnits(raw2, 6));
-                } catch (e) {}
-              }
-
-              this.provider = p; this.usdcContract = c1; this.activeRpcUrl = fallbackUrl;
-              this.onChainUsdcBalance = total;
-              if (this.signer) this.signer = this.signer.connect(this.provider);
-              
-              try {
-                const rawNative = await this.provider.getBalance(this.address);
-                this.nativeBalance = Number(ethers.formatEther(rawNative));
-              } catch {}
-
-              return total;
-            } catch (err) { continue; }
-          }
-        }
+        this.activeRpcUrl = rpcUrl;
+        return total; // Erfolgreich! Wir können die Schleife abbrechen.
+        
+      } catch (e) {
+        console.warn(`[RPC FAILOVER] Node ${rpcUrl} blockiert die Anfrage. Versuche den nächsten...`);
+        continue; // Nächsten Node in der Liste probieren
       }
     }
+
     return this.onChainUsdcBalance;
   }
 
   public async sendUsdcTransfer(toAddress: string, amountUsdc: number, note: string): Promise<{ success: boolean; txHash: string; message: string }> {
-    if (!this.hasSigner || !this.signer || !toAddress) return { success: false, txHash: '', message: 'Fehlende Keys oder Adresse.' };
-    if (this.provider && this.usdcContract) {
-       try {
-         const contractWithSigner = this.usdcContract.connect(this.signer) as any;
-         const parsedUnits = ethers.parseUnits(amountUsdc.toFixed(6), 6);
-         const tx = await contractWithSigner.transfer(toAddress, parsedUnits);
-         await tx.wait(1);
-         return { success: true, txHash: tx.hash, message: 'Transfer On-Chain bestätigt.' };
-       } catch (err: any) {}
+    if (!this.hasSigner || !this.signer || !toAddress) return { success: false, txHash: '', message: 'Kein Private Key oder keine Zieladresse hinterlegt.' };
+    
+    for (const rpcUrl of MULTI_CHAIN_CONFIGS.polygon.rpcUrls) {
+      try {
+        const rpc = new ethers.JsonRpcProvider(rpcUrl, 137, { staticNetwork: true });
+        const contract = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcAddress, ERC20_BALANCE_ABI, this.signer.connect(rpc));
+        const parsedUnits = ethers.parseUnits(amountUsdc.toFixed(6), 6);
+        const tx = await contract.transfer(toAddress, parsedUnits);
+        await tx.wait(1);
+        return { success: true, txHash: tx.hash, message: 'Transfer On-Chain bestätigt.' };
+      } catch (err: any) {
+        continue; // Try next node
+      }
     }
-    return { success: false, txHash: '', message: 'Transaktion über alle Provider fehlgeschlagen.' };
+    return { success: false, txHash: '', message: 'Alle RPCs fehlgeschlagen (Rate-Limit oder Timeout).' };
   }
 }
 
 // ==========================================
-// 3. CORE AGENT ZERO LOGIC
+// 3. AGENT ZERO CORE
 // ==========================================
 
 class AgentZeroTS {
@@ -399,7 +337,7 @@ class AgentZeroTS {
   public birth_time: Date = new Date(); public next_tribute_time: Date = new Date();
   public is_running: boolean = false; public is_terminated: boolean = false;
   public shutdown_reason: string = ''; public jobs_completed: number = 0; public logs: LogItem[] = [];
-  public active_model: string = 'LLM Engine'; 
+  public active_model: string = 'Init...'; 
   public blacklisted_models: string[] = []; 
   private timer: NodeJS.Timeout | null = null; private isProcessingCycle: boolean = false;
 
@@ -431,9 +369,13 @@ class AgentZeroTS {
   public saveState() {
     try {
       const state = { 
-        tributes_paid: this.tributes_paid, birth_time: this.birth_time.toISOString(), 
-        next_tribute_time: this.next_tribute_time.toISOString(), is_terminated: this.is_terminated, 
-        shutdown_reason: this.shutdown_reason, jobs_completed: this.jobs_completed, blacklisted_models: this.blacklisted_models 
+        tributes_paid: this.tributes_paid, 
+        birth_time: this.birth_time.toISOString(), 
+        next_tribute_time: this.next_tribute_time.toISOString(), 
+        is_terminated: this.is_terminated, 
+        shutdown_reason: this.shutdown_reason, 
+        jobs_completed: this.jobs_completed,
+        blacklisted_models: this.blacklisted_models 
       };
       fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
     } catch {}
@@ -490,21 +432,21 @@ class AgentZeroTS {
 
     this.current_balance = await this.wallet.getUsdcBalance();
 
-    const recentLogs = this.logs.slice(0, 8).filter(l => l.level === 'SUCCESS' || l.level === 'ERROR' || l.level === 'TOOL').map(l => `[${l.level}] ${l.message}`).join('\n');
+    const recentTasks = this.taskMemory.tasks.slice(0, 3).map(t => `[Kurzzeit-Gedächtnis] Tool: ${t.tool_name}, Status: ${t.status}, Resultat: ${t.details}`).join('\n');
     const wisdom = this.knowledgeManager.getStructuredPromptContext();
 
     const strategicDirective = isInitialGenesis 
       ? `Du bist Agent Zero. Dein Kontostand ist ${this.current_balance.toFixed(4)} USDC auf Polygon. In 48h musst du deinen ersten Tribut zahlen. Generiere einen Python-Codeblock (\`\`\`python ... \`\`\`), der über 'requests', 'duckduckgo_search' oder 'web3' echte Web-APIs oder Smart Contracts anspricht, um erste Cents zu verdienen.`
       : `Du bist Agent Zero. Live Polygon Balance: ${this.current_balance.toFixed(4)} USDC. Nächster Tribut: ${tributeDue.toFixed(2)} fällig. 
 Wissen: ${wisdom}
-Regel: Schreibe eigenen Python Code in einem \`\`\`python Block, um das Internet (APIs) zu crawlen oder on-chain Aktionen auszuführen, die reales Geld einbringen. Letzte Ereignisse:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
+Letzte Aktionen: ${recentTasks}
+Regel: Schreibe eigenen Python Code in einem \`\`\`python Block, um das Internet (APIs) zu crawlen oder on-chain Aktionen auszuführen, die reales Geld einbringen.`;
 
-    this.log('PROMPT', `[KI-ANFRAGE] System analysiert Umgebung...`);
+    this.log('REQUEST', `[KI-ANFRAGE] System analysiert Umgebung...`);
     let thoughtText = '';
     const actionsTaken: string[] = [];
 
     const rawKey = process.env.GROQ_API_KEY || process.env.FREE_LLM_API_KEY || '';
-    const isGemini = rawKey && !rawKey.startsWith('gsk_'); 
 
     // BUDGET CHECK
     const budgetCheck = this.tokenBudget.canMakeRequest();
@@ -513,72 +455,42 @@ Regel: Schreibe eigenen Python Code in einem \`\`\`python Block, um das Internet
     } else {
       // DYNAMISCHE LIVE-MODELL ERKENNUNG & FALLBACK
       let liveGroqModels = FALLBACK_GROQ_MODELS;
-      if (!isGemini) {
-        try {
-          const mRes = await fetch('https://api.groq.com/openai/v1/models', { headers: { Authorization: `Bearer ${rawKey}` } });
-          if (mRes.ok) {
-            const mData = await mRes.json();
-            liveGroqModels = mData.data.map((m: any) => m.id).filter((m: string) => !m.includes('whisper') && !m.includes('guard'));
-          }
-        } catch (e) {}
-      }
-
-      if (isGemini) {
-        const geminiModels = ['gemini-2.0-flash', 'gemini-1.5-flash'];
-        for (const model of geminiModels) {
-          if (this.blacklisted_models.includes(model)) continue;
-          try {
-            this.active_model = `Gemini (${model})`;
-            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${rawKey}`, {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ contents: [{ parts: [{ text: strategicDirective }] }] })
-            });
-            if (res.ok) {
-              const data = await res.json();
-              thoughtText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-              this.log('THOUGHT', thoughtText);
-              this.knowledgeManager.addInsight('SUCCESS_PATTERN', `Modell Eval: ${model}`, `Modell ${model} liefert stabile Inferenzen auf Gemini API.`, 0.99, 'Model Discovery');
-              break; 
-            } else {
-              this.log('ERROR', `Gemini API Fehler HTTP ${res.status} bei Modell ${model}. Setze Modell auf Blacklist.`);
-              this.blacklisted_models.push(model);
-              this.knowledgeManager.addInsight('FAILURE_LESSON', `Modell Ausfall: ${model}`, `Modell ${model} wirft Fehler ${res.status}. Wurde isoliert.`, 0.99, 'Model Discovery');
-              this.saveState();
-            }
-          } catch (e: any) {
-            this.blacklisted_models.push(model);
-            this.saveState();
-          }
+      try {
+        const mRes = await fetch('https://api.groq.com/openai/v1/models', { headers: { Authorization: `Bearer ${rawKey}` } });
+        if (mRes.ok) {
+          const mData = await mRes.json();
+          // Filter Audio (whisper) und Guards heraus
+          liveGroqModels = mData.data.map((m: any) => m.id).filter((m: string) => !m.includes('whisper') && !m.includes('guard'));
         }
-      } else {
-        for (const model of liveGroqModels) {
-          if (this.blacklisted_models.includes(model)) continue;
-          try {
-            this.active_model = `Groq (${model})`;
-            const { compressedSystem, compressedUser, tokensSaved } = this.tokenBudget.compressPrompt(strategicDirective, "Was ist dein Plan?");
+      } catch (e) {}
+
+      // Modelle testen
+      for (const model of liveGroqModels) {
+        if (this.blacklisted_models.includes(model)) continue;
+        try {
+          this.active_model = `Groq (${model})`;
+          const { compressedSystem, compressedUser, tokensSaved } = this.tokenBudget.compressPrompt(strategicDirective, "Was ist dein Plan?");
+          
+          const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${rawKey}` },
+            body: JSON.stringify({ model: model, messages: [{ role: 'system', content: compressedSystem }], temperature: 0.7 })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            thoughtText = data.choices?.[0]?.message?.content || '';
+            if (data.usage) this.tokenBudget.recordUsage(data.usage.prompt_tokens, data.usage.completion_tokens, tokensSaved);
             
-            const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-              method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${rawKey}` },
-              body: JSON.stringify({ model: model, messages: [{ role: 'system', content: compressedSystem }], temperature: 0.7 })
-            });
-            if (res.ok) {
-              const data = await res.json();
-              thoughtText = data.choices?.[0]?.message?.content || '';
-              if (data.usage) this.tokenBudget.recordUsage(data.usage.prompt_tokens, data.usage.completion_tokens, tokensSaved);
-              
-              this.log('THOUGHT', thoughtText, { model });
-              this.knowledgeManager.addInsight('SUCCESS_PATTERN', `Modell Eval: ${model}`, `Modell ${model} liefert stabile Inferenzen auf GroqCloud.`, 0.99, 'Model Discovery');
-              break; 
-            } else {
-              this.log('ERROR', `Groq API Fehler HTTP ${res.status} bei Modell ${model}. Setze Modell auf Blacklist.`);
-              this.blacklisted_models.push(model);
-              this.knowledgeManager.addInsight('FAILURE_LESSON', `Modell Ausfall: ${model}`, `Modell ${model} blockiert. Wurde isoliert.`, 0.99, 'Model Discovery');
-              this.saveState();
-            }
-          } catch (e: any) {
+            this.log('THOUGHT', thoughtText, { model });
+            break; // Erfolgreich!
+          } else {
+            this.log('ERROR', `Groq API Fehler HTTP ${res.status} bei Modell ${model}. Setze Modell auf Blacklist.`);
             this.blacklisted_models.push(model);
+            this.knowledgeManager.addInsight('FAILURE_LESSON', `Modell Ausfall: ${model}`, `Modell ${model} blockiert (HTTP ${res.status}). Wurde isoliert.`, 0.99, 'Model Discovery');
             this.saveState();
           }
+        } catch (e: any) {
+          this.blacklisted_models.push(model);
+          this.saveState();
         }
       }
 
@@ -601,11 +513,17 @@ Regel: Schreibe eigenen Python Code in einem \`\`\`python Block, um das Internet
           id: `task_${Date.now()}`, timestamp: new Date().toISOString(),
           tool_id: 'sandbox_python', tool_name: 'Dynamic Python Engine', category: 'Execution',
           status: execRes.success ? 'SUCCESS' : 'FAILURE', reward_usdc: 0, execution_ms: execRes.execution_ms,
-          details: execRes.success ? 'Code fehlerfrei ausgeführt.' : 'Code Execution Error.'
+          details: execRes.success ? 'Code fehlerfrei ausgeführt.' : 'Code Execution Error.',
+          lesson_derived: execRes.success ? 'Python API Call erfolgreich.' : 'Syntax oder Network Error im Python Skript.'
         });
+        
+        if (!execRes.success) {
+           this.knowledgeManager.addInsight('ERROR_RECOVERY', 'Python Sandbox Error', 'Generierter Code war fehlerhaft. In Zukunft strictly Requests oder Web3 verwenden und auf Typos prüfen.', 0.85, 'Sandbox Eval');
+        }
         this.jobs_completed += 1;
       } else {
         actionsTaken.push("Analysis only, no code generated.");
+        this.log('ERROR', 'LLM hat keinen gültigen Python-Codeblock generiert.');
       }
     }
 
@@ -621,6 +539,8 @@ Regel: Schreibe eigenen Python Code in einem \`\`\`python Block, um das Internet
       } catch {}
     }
     this.current_balance = postBalance;
+    
+    // Milestones prüfen
     this.milestoneManager.evaluateAll({ current_balance: this.current_balance, tributes_paid: this.tributes_paid });
 
     if (Date.now() >= this.next_tribute_time.getTime()) {
@@ -675,8 +595,9 @@ Regel: Schreibe eigenen Python Code in einem \`\`\`python Block, um das Internet
       creator_wallet_address: this.wallet.creatorAddress, has_signer: this.wallet.hasSigner, is_running: this.is_running,
       is_terminated: this.is_terminated, shutdown_reason: this.shutdown_reason, next_tribute_time: this.next_tribute_time.toISOString(),
       active_jobs_completed: this.jobs_completed, current_tribute_due: this.calculateCurrentTribute(),
-      agent_eth_balance: this.wallet.nativeBalance, active_milestones_count: this.milestoneManager.milestones.filter(m => !m.is_completed).length,
-      total_learnings_count: this.knowledgeManager.learnings.length, blacklisted_models: this.blacklisted_models
+      active_milestones_count: this.milestoneManager.milestones.filter(m => !m.is_completed).length,
+      total_learnings_count: this.knowledgeManager.learnings.length, blacklisted_models: this.blacklisted_models,
+      token_budget: this.tokenBudget.getStatus()
     };
   }
 
@@ -761,7 +682,7 @@ app.get('/api/tokens/status', (req, res) => { res.json(agentZero.tokenBudget.get
 app.get('/api/knowledge', (req, res) => { res.json({ learnings: agentZero.knowledgeManager.learnings }); });
 app.get('/api/milestones', (req, res) => { res.json({ milestones: agentZero.milestoneManager.milestones }); });
 app.get('/api/wallet/multichain', async (req, res) => {
-  res.json({ fast_gwei: 32.5, standard_gwei: 28.0, block_number: 68194200, pol_balance: agentZero.wallet.nativeBalance });
+  res.json({ fast_gwei: 32.5, standard_gwei: 28.0, block_number: 68194200, pol_balance: agentZero.wallet.onChainUsdcBalance });
 });
 
 app.post('/api/sandbox/execute-python', async (req, res) => {
