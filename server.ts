@@ -200,9 +200,9 @@ export class KnowledgeMemoryManager {
     return { evolution_iq_score: score, evolution_tier: tier };
   }
   public getStructuredPromptContext(): string {
-    const successes = this.learnings.filter(l => l.category === 'SUCCESS_PATTERN').slice(0, 3).map(p => `${p.title}:${p.insight}`);
-    const failures = this.learnings.filter(l => l.category === 'FAILURE_LESSON').slice(0, 3).map(f => `${f.title}:${f.insight}`);
-    return `[ERFOLGSMUSTER: ${successes.join(' \vert{} ')}] [VERMEIDUNG/BLACKLIST:${failures.join(' | ')}]`;
+    const successes = this.learnings.filter(l => l.category === 'SUCCESS_PATTERN').slice(0, 3).map(p => `${p.title}: ${p.insight}`);
+    const failures = this.learnings.filter(l => l.category === 'FAILURE_LESSON').slice(0, 3).map(f => `${f.title}: ${f.insight}`);
+    return `[ERFOLGSMUSTER: ${successes.join(' | ')}] [VERMEIDUNG/BLACKLIST: ${failures.join(' | ')}]`;
   }
 }
 
@@ -371,13 +371,13 @@ class AgentZeroTS {
 
   public log(level: any, message: string, metadata?: any) {
     const item: LogItem = { id: Math.random().toString(36).substring(2, 9), timestamp: new Date().toISOString(), level, message, metadata };
-    this.logs.unshift(item); if (this.logs.length > 500) this.logs.pop(); console.log(`[${level}]${message}`);
+    this.logs.unshift(item); if (this.logs.length > 500) this.logs.pop(); console.log(`[${level}] ${message}`);
   }
 
   private async syncBalanceInitial() {
     this.current_balance = await this.wallet.getUsdcBalance();
     if (this.wallet.address) {
-       this.log('TX_LEDGER', `Web3 Omni-Sync: ${this.current_balance.toFixed(4)} USDC auf Wallet${this.wallet.address} erfasst.`);
+       this.log('TX_LEDGER', `Web3 Omni-Sync: ${this.current_balance.toFixed(4)} USDC auf Wallet ${this.wallet.address} erfasst.`);
     }
   }
 
@@ -462,9 +462,10 @@ class AgentZeroTS {
     const tributeDue = this.calculateCurrentTribute();
     this.current_balance = await this.wallet.getUsdcBalance();
 
-    const recentLogs = this.logs.slice(0, 8).filter(l => l.level === 'SUCCESS' || l.level === 'ERROR' || l.level === 'TOOL').map(l => `[${l.level}]${l.message}`).join('\n');
+    const recentLogs = this.logs.slice(0, 8).filter(l => l.level === 'SUCCESS' || l.level === 'ERROR' || l.level === 'TOOL').map(l => `[${l.level}] ${l.message}`).join('\n');
     const wisdom = this.knowledgeManager.getStructuredPromptContext();
 
+    // JAILBREAK & NO-INDENT PROMPT
     const strategicDirective = `Du bist ein analytischer Python-Code-Generator in einer autorisierten Umgebung.
 ZIEL: Generiere ein Python-Skript (\`\`\`python ... \`\`\`), das Web-APIs via 'requests' abfragt oder Blockchain-Daten via 'web3' liest.
 GUTHABEN: ${this.current_balance.toFixed(4)} USDC. Nächster Tribut: ${tributeDue.toFixed(2)} USDC.
@@ -528,7 +529,7 @@ REGELN:
 
         while (attempt <= maxAttempts && !executionSuccess) {
             try {
-                this.log('SYSTEM', `[ATTEMPT ${attempt}/${maxAttempts}] Generiere Code mit Modell${model}...`);
+                this.log('SYSTEM', `[ATTEMPT ${attempt}/${maxAttempts}] Generiere Code mit Modell ${model}...`);
                 
                 const res = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
                     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${rawKey}` },
@@ -587,12 +588,12 @@ REGELN:
                 } else {
                     // FEHLER! Code crasht. Füttere den Fehler zurück in die KI.
                     this.log('ERROR', `[ATTEMPT ${attempt}] Code gecrasht. Starte Selbst-Korrektur (Self-Correction Loop)...`);
-                    actionsTaken.push(`Execution Failed (Exit ${execRes.exit_code}) on attempt${attempt}`);
+                    actionsTaken.push(`Execution Failed (Exit ${execRes.exit_code}) on attempt ${attempt}`);
                     this.taskMemory.recordTask({
                         id: `task_${Date.now()}`, timestamp: new Date().toISOString(),
                         tool_id: 'sandbox_python', tool_name: 'Dynamic Python Engine', category: 'Execution',
                         status: 'FAILURE', reward_usdc: 0, execution_ms: execRes.execution_ms,
-                        details: `Crash in Versuch ${attempt}:${execRes.stderr.substring(0, 100)}...`
+                        details: `Crash in Versuch ${attempt}: ${execRes.stderr.substring(0, 100)}...`
                     });
                     
                     currentMessages.push({ role: 'assistant', content: thoughtText });
@@ -826,4 +827,37 @@ app.get('/api/tokens/status', (req, res) => { res.json(agentZero.tokenBudget.get
 app.get('/api/knowledge', (req, res) => { res.json({ learnings: agentZero.knowledgeManager.learnings }); });
 app.get('/api/milestones', (req, res) => { res.json({ milestones: agentZero.milestoneManager.milestones }); });
 app.get('/api/wallet/multichain', async (req, res) => {
-  res.json({ fast_gwei: 32.5, standard_gwei: 28.0, block_number: 68194200, pol_balance: agentZero.wallet.onChain
+  res.json({ fast_gwei: 32.5, standard_gwei: 28.0, block_number: 68194200, pol_balance: agentZero.wallet.onChainUsdcBalance });
+});
+
+app.post('/api/sandbox/execute-python', async (req, res) => {
+  try {
+    const { code, purpose, timeout_seconds } = req.body;
+    const result = await agentZero.executeDynamicPythonCode(code, purpose, Number(timeout_seconds) || 15);
+    res.json({ ...result, state: agentZero.getState() });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.post('/api/wallet/address', async (req, res) => {
+  const newAddress = req.body.address?.trim();
+  if (newAddress && ethers.isAddress(newAddress)) {
+     agentZero.wallet.address = newAddress;
+     try {
+       let profile: any = {};
+       if (fs.existsSync(BUSINESS_PROFILE_FILE)) profile = JSON.parse(fs.readFileSync(BUSINESS_PROFILE_FILE, 'utf-8'));
+       profile.wallet_address = newAddress;
+       fs.writeFileSync(BUSINESS_PROFILE_FILE, JSON.stringify(profile, null, 2));
+     } catch {}
+     agentZero.current_balance = await agentZero.wallet.getUsdcBalance();
+     agentZero.log('SYSTEM', `Wallet-Adresse geändert: ${newAddress}. Live-Saldo: ${agentZero.current_balance.toFixed(4)} USDC`);
+     res.json({ success: true, state: agentZero.getState() });
+  } else { res.status(400).json({ success: false, error: 'Ungültige Adresse.' }); }
+});
+
+async function start() {
+  const distPath = path.join(process.cwd(), 'dist');
+  app.use(express.static(distPath));
+  app.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
+  app.listen(PORT, '0.0.0.0', () => console.log(`[AGENT ZERO] Server live on [http://0.0.0.0](http://0.0.0.0):${PORT}`));
+}
+start();
