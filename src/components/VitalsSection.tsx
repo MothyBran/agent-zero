@@ -11,6 +11,7 @@ interface VitalsSectionProps {
 export const VitalsSection: React.FC<VitalsSectionProps> = ({ state, onRefresh }) => {
   const [isClearing, setIsClearing] = useState(false);
   const [isRunningCycle, setIsRunningCycle] = useState(false);
+  const [isResettingDeadline, setIsResettingDeadline] = useState(false);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
 
   const blacklisted = state?.blacklisted_models || [];
@@ -20,6 +21,20 @@ export const VitalsSection: React.FC<VitalsSectionProps> = ({ state, onRefresh }
   const birthTime = state?.birth_time ? new Date(state.birth_time).toLocaleString() : 'Unbekannt';
   const nextTributeTime = state?.next_tribute_time ? new Date(state.next_tribute_time).toLocaleString() : 'Unbekannt';
   const activeModel = state?.active_model || 'GroqCloud LLM';
+
+  const handleResetDeadline = async () => {
+    setIsResettingDeadline(true);
+    const res = await safePostJson<{ success: boolean }>('/api/deadline/reset');
+    setIsResettingDeadline(false);
+    if (res.ok) {
+      setActionFeedback('48h-Überlebensfrist erfolgreich auf 48 Stunden ab jetzt zurückgesetzt.');
+      setTimeout(() => setActionFeedback(null), 4000);
+      onRefresh();
+    } else {
+      setActionFeedback('Fehler beim Zurücksetzen der Deadline: ' + (res.error || 'Serverfehler'));
+      setTimeout(() => setActionFeedback(null), 4000);
+    }
+  };
 
   const handleClearBlacklist = async () => {
     setIsClearing(true);
@@ -62,6 +77,15 @@ export const VitalsSection: React.FC<VitalsSectionProps> = ({ state, onRefresh }
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={handleResetDeadline}
+            disabled={isResettingDeadline}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 text-xs font-semibold shadow transition-all cursor-pointer"
+            title="Überlebensfrist auf 48 Stunden ab jetzt zurücksetzen"
+          >
+            <Clock className={`w-3.5 h-3.5 ${isResettingDeadline ? 'animate-spin' : ''}`} />
+            <span>{isResettingDeadline ? 'Resette...' : 'Deadline resetten (48h)'}</span>
+          </button>
           <button
             onClick={handleTriggerCycle}
             disabled={isRunningCycle || state?.is_terminated}
@@ -129,8 +153,15 @@ export const VitalsSection: React.FC<VitalsSectionProps> = ({ state, onRefresh }
           <div className="text-2xl font-bold text-purple-400 font-mono">
             {tributeDue.toFixed(2)} <span className="text-sm font-normal text-purple-400/80">USDC</span>
           </div>
-          <div className="text-[11px] text-slate-400 space-y-0.5 pt-1 border-t border-slate-800/80">
+          <div className="text-[11px] text-slate-400 space-y-1 pt-1 border-t border-slate-800/80">
             <div>Fälligkeit: <span className="text-amber-300 font-mono">{nextTributeTime}</span></div>
+            <button
+              onClick={handleResetDeadline}
+              disabled={isResettingDeadline}
+              className="text-[10px] text-amber-400 hover:text-amber-300 underline font-mono cursor-pointer"
+            >
+              Frist jetzt auf +48h verlängern
+            </button>
           </div>
         </div>
 
