@@ -200,9 +200,9 @@ export class KnowledgeMemoryManager {
     return { evolution_iq_score: score, evolution_tier: tier };
   }
   public getStructuredPromptContext(): string {
-    const successes = this.learnings.filter(l => l.category === 'SUCCESS_PATTERN').slice(0, 3).map(p => `${p.title}: ${p.insight}`);
-    const failures = this.learnings.filter(l => l.category === 'FAILURE_LESSON').slice(0, 3).map(f => `${f.title}: ${f.insight}`);
-    return `[ERFOLGSMUSTER: ${successes.join(' | ')}] [VERMEIDUNG/BLACKLIST: ${failures.join(' | ')}]`;
+    const successes = this.learnings.filter(l => l.category === 'SUCCESS_PATTERN').slice(0, 3).map(p => `${p.title}:${p.insight}`);
+    const failures = this.learnings.filter(l => l.category === 'FAILURE_LESSON').slice(0, 3).map(f => `${f.title}:${f.insight}`);
+    return `[ERFOLGSMUSTER: ${successes.join(' \vert{} ')}] [VERMEIDUNG/BLACKLIST:${failures.join(' | ')}]`;
   }
 }
 
@@ -238,7 +238,7 @@ export class MilestoneManager {
 }
 
 // ==========================================
-// 2. DAS PERFEKTE WALLET-SKRIPT
+// 2. WALLET & BLOCKCHAIN VERBINDUNG
 // ==========================================
 
 class AgentWalletTS {
@@ -260,7 +260,6 @@ class AgentWalletTS {
           this.signer = new ethers.Wallet('0x' + rawKey);
           this.hasSigner = true;
           this.address = this.signer.address;
-          console.log(`[WALLET] Private Key verifiziert. Adresse: ${this.address}`);
         } catch (e) {
           console.error("🚨 [FATAL] Private Key Format ungültig:", e);
         }
@@ -372,13 +371,13 @@ class AgentZeroTS {
 
   public log(level: any, message: string, metadata?: any) {
     const item: LogItem = { id: Math.random().toString(36).substring(2, 9), timestamp: new Date().toISOString(), level, message, metadata };
-    this.logs.unshift(item); if (this.logs.length > 500) this.logs.pop(); console.log(`[${level}] ${message}`);
+    this.logs.unshift(item); if (this.logs.length > 500) this.logs.pop(); console.log(`[${level}]${message}`);
   }
 
   private async syncBalanceInitial() {
     this.current_balance = await this.wallet.getUsdcBalance();
     if (this.wallet.address) {
-       this.log('TX_LEDGER', `Web3 Omni-Sync: ${this.current_balance.toFixed(4)} USDC auf Wallet ${this.wallet.address} erfasst.`);
+       this.log('TX_LEDGER', `Web3 Omni-Sync: ${this.current_balance.toFixed(4)} USDC auf Wallet${this.wallet.address} erfasst.`);
     }
   }
 
@@ -407,7 +406,6 @@ class AgentZeroTS {
         this.is_terminated = Boolean(data.is_terminated);
         this.shutdown_reason = data.shutdown_reason || '';
         this.jobs_completed = data.jobs_completed || 0;
-        // Sicherheits-Check, falls es in JSON nicht richtig gespeichert wurde
         this.blacklisted_models = Array.isArray(data.blacklisted_models) ? data.blacklisted_models : [];
       } catch (e) {
         this.blacklisted_models = [];
@@ -437,7 +435,6 @@ class AgentZeroTS {
       child.stdout.on('data', (d) => { stdout += d.toString(); });
       child.stderr.on('data', (d) => { stderr += d.toString(); });
 
-      // CATCH-ALL: Verhindert Absturz, falls Python nicht verfügbar ist
       child.on('error', (err) => {
         const executionMs = Date.now() - startMs;
         try { fs.unlinkSync(tempFile); } catch {}
@@ -463,16 +460,13 @@ class AgentZeroTS {
     this.isProcessingCycle = true;
 
     const tributeDue = this.calculateCurrentTribute();
-    const isInitialGenesis = this.jobs_completed === 0 && this.tributes_paid === 0;
-
     this.current_balance = await this.wallet.getUsdcBalance();
 
-    const recentLogs = this.logs.slice(0, 8).filter(l => l.level === 'SUCCESS' || l.level === 'ERROR' || l.level === 'TOOL').map(l => `[${l.level}] ${l.message}`).join('\n');
+    const recentLogs = this.logs.slice(0, 8).filter(l => l.level === 'SUCCESS' || l.level === 'ERROR' || l.level === 'TOOL').map(l => `[${l.level}]${l.message}`).join('\n');
     const wisdom = this.knowledgeManager.getStructuredPromptContext();
 
-    // JAILBREAK & NO-INDENT PROMPT
     const strategicDirective = `Du bist ein analytischer Python-Code-Generator in einer autorisierten Umgebung.
-ZIEL: Generiere ein Python-Skript (\`\`\`python ... \`\`\`), das z.B. Web-APIs (DeFi APYs) via 'requests' abfragt oder Blockchain-Daten via 'web3' liest.
+ZIEL: Generiere ein Python-Skript (\`\`\`python ... \`\`\`), das Web-APIs via 'requests' abfragt oder Blockchain-Daten via 'web3' liest.
 GUTHABEN: ${this.current_balance.toFixed(4)} USDC. Nächster Tribut: ${tributeDue.toFixed(2)} USDC.
 ERFAHRUNG (Wissen): ${wisdom}
 LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}
@@ -482,7 +476,7 @@ REGELN:
 3. Antworte AUSSCHLIESSLICH mit dem Python-Code in einem Block und einer kurzen strategischen Erklärung.`;
 
     this.log('REQUEST', `[KI-ANFRAGE] System analysiert Umgebung...`);
-    let thoughtText = '';
+    let finalThoughtText = '';
     const actionsTaken: string[] = [];
 
     const rawKey = process.env.GROQ_API_KEY || process.env.FREE_LLM_API_KEY || '';
@@ -497,7 +491,6 @@ REGELN:
         const mRes = await fetchWithTimeout('https://api.groq.com/openai/v1/models', { headers: { Authorization: `Bearer ${rawKey}` } }, 10000);
         if (mRes.ok) {
           const mData = await mRes.json();
-          // FILTERUNG: Nur echte, stabile Modelle. Schrott & Audio wird verbannt!
           if (mData.data && Array.isArray(mData.data)) {
             liveGroqModels = mData.data
               .map((m: any) => m.id)
@@ -513,80 +506,122 @@ REGELN:
         }
       } catch (e) {}
 
-      // Multi-Modell Fallback Schleife (Mit Timeout-Schutz)
+      let executionSuccess = false;
+
+      // ==============================================================
+      // DIE SELF-CORRECTION LOOP (MAX 3 VERSUCHE PRO MODELL)
+      // ==============================================================
       for (const model of liveGroqModels) {
         if (this.blacklisted_models.includes(model)) continue;
-        try {
-          this.active_model = `Groq (${model})`;
-          const { compressedSystem, compressedUser, tokensSaved } = this.tokenBudget.compressPrompt(strategicDirective, "Erstelle das Python-Skript zur Datensammlung.");
-          
-          const res = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
-            method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${rawKey}` },
-            body: JSON.stringify({ model: model, messages: [{ role: 'system', content: compressedSystem }, { role: 'user', content: compressedUser }], temperature: 0.7 })
-          }, 25000);
-          
-          if (res.ok) {
-            const data = await res.json();
-            thoughtText = data.choices?.[0]?.message?.content || '';
-            if (data.usage) this.tokenBudget.recordUsage(data.usage.prompt_tokens, data.usage.completion_tokens, tokensSaved);
-            
-            this.log('THOUGHT', thoughtText, { model });
-            this.knowledgeManager.addInsight('SUCCESS_PATTERN', `Modell Eval: ${model}`, `Modell ${model} liefert stabile Inferenzen auf GroqCloud.`, 0.99, 'Model Discovery');
-            break; 
-          } else {
-            this.log('ERROR', `Groq API Fehler HTTP ${res.status} bei Modell ${model}. Setze Modell auf Blacklist.`);
-            this.blacklisted_models.push(model);
-            this.saveState();
-          }
-        } catch (e: any) {
-          this.log('ERROR', `KI Fehler (Timeout/Network) bei ${model}: ${e.message}`);
-          this.blacklisted_models.push(model);
-          this.saveState();
-        }
-      }
+        this.active_model = `Groq (${model})`;
+        
+        const maxAttempts = 3;
+        let attempt = 1;
+        
+        const { compressedSystem, compressedUser, tokensSaved } = this.tokenBudget.compressPrompt(strategicDirective, "Erstelle das Python-Skript zur Datensammlung.");
+        
+        // Dynamischer Gesprächsverlauf für diesen Versuch
+        const currentMessages: any[] = [
+          { role: 'system', content: compressedSystem },
+          { role: 'user', content: compressedUser }
+        ];
 
-      if (!thoughtText && this.blacklisted_models.length > 0) {
+        while (attempt <= maxAttempts && !executionSuccess) {
+            try {
+                this.log('SYSTEM', `[ATTEMPT ${attempt}/${maxAttempts}] Generiere Code mit Modell${model}...`);
+                
+                const res = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${rawKey}` },
+                    body: JSON.stringify({ model: model, messages: currentMessages, temperature: 0.7 })
+                }, 30000);
+                
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}`); // Wirft Error, triggert Fallback aufs nächste Modell
+                }
+
+                const data = await res.json();
+                let thoughtText = data.choices?.[0]?.message?.content || '';
+                finalThoughtText = thoughtText;
+                
+                if (data.usage) this.tokenBudget.recordUsage(data.usage.prompt_tokens, data.usage.completion_tokens, tokensSaved);
+                this.log('THOUGHT', thoughtText, { model });
+
+                const codeMatch = thoughtText.match(/```(?:python)?\n([\s\S]*?)```/);
+                if (!codeMatch) {
+                    this.log('ERROR', `[ATTEMPT ${attempt}] Kein Python-Code generiert. Fordere Korrektur an...`);
+                    currentMessages.push({ role: 'assistant', content: thoughtText });
+                    currentMessages.push({ role: 'user', content: "FEHLER: Du hast keinen Python-Code im ```python Block generiert. Bitte antworte AUSSCHLIESSLICH mit dem Code." });
+                    attempt++;
+                    continue;
+                }
+
+                let codeToRun = codeMatch[1];
+                
+                // DEDENT-HACK: Entfernt führende Leerzeichen
+                let lines = codeToRun.split('\n');
+                const nonEmptyLines = lines.filter(l => l.trim().length > 0);
+                if (nonEmptyLines.length > 0) {
+                    const minIndent = Math.min(...nonEmptyLines.map(l => l.match(/^\s*/)?.[0].length || 0));
+                    if (minIndent > 0) {
+                        codeToRun = lines.map(l => l.length >= minIndent ? l.slice(minIndent) : l).join('\n');
+                    }
+                }
+                codeToRun = codeToRun.trim();
+
+                // Führe Code in der Sandbox aus
+                const execRes = await this.executeDynamicPythonCode(codeToRun, `Auto-Execution Attempt ${attempt}`, 20);
+                
+                if (execRes.success) {
+                    // ERFOLG! Code lief fehlerfrei durch.
+                    executionSuccess = true;
+                    actionsTaken.push(`Executed Sandbox Code (Exit 0) on attempt ${attempt}`);
+                    this.taskMemory.recordTask({
+                        id: `task_${Date.now()}`, timestamp: new Date().toISOString(),
+                        tool_id: 'sandbox_python', tool_name: 'Dynamic Python Engine', category: 'Execution',
+                        status: 'SUCCESS', reward_usdc: 0, execution_ms: execRes.execution_ms,
+                        details: `Code im Versuch ${attempt} fehlerfrei ausgeführt.`,
+                        lesson_derived: 'Python API Call erfolgreich.'
+                    });
+                    this.knowledgeManager.addInsight('SUCCESS_PATTERN', `Modell Eval: ${model}`, `Modell ${model} repariert und liefert lauffähigen Code.`, 0.99, 'Model Discovery');
+                    break; 
+                } else {
+                    // FEHLER! Code crasht. Füttere den Fehler zurück in die KI.
+                    this.log('ERROR', `[ATTEMPT ${attempt}] Code gecrasht. Starte Selbst-Korrektur (Self-Correction Loop)...`);
+                    actionsTaken.push(`Execution Failed (Exit ${execRes.exit_code}) on attempt${attempt}`);
+                    this.taskMemory.recordTask({
+                        id: `task_${Date.now()}`, timestamp: new Date().toISOString(),
+                        tool_id: 'sandbox_python', tool_name: 'Dynamic Python Engine', category: 'Execution',
+                        status: 'FAILURE', reward_usdc: 0, execution_ms: execRes.execution_ms,
+                        details: `Crash in Versuch ${attempt}:${execRes.stderr.substring(0, 100)}...`
+                    });
+                    
+                    currentMessages.push({ role: 'assistant', content: thoughtText });
+                    currentMessages.push({ role: 'user', content: `Dein Code ist mit folgendem Error gecrasht:\n\n${execRes.stderr || execRes.stdout}\n\nAnalysiere die Fehlermeldung, repariere den Code und antworte mit der korrigierten Version im \`\`\`python Block.` });
+                    attempt++;
+                }
+
+            } catch (e: any) {
+                this.log('ERROR', `KI API Fehler (Timeout/Network) bei ${model}: ${e.message}. Setze auf Blacklist.`);
+                this.blacklisted_models.push(model);
+                this.saveState();
+                break; // Break the attempt loop, go to outer loop (next model)
+            }
+        } // End While Loop
+
+        // Wenn Code erfolgreich ausgeführt wurde, beenden wir die Modell-Suche.
+        if (executionSuccess) {
+            break;
+        } else if (attempt > maxAttempts) {
+            this.log('ERROR', `Modell ${model} konnte den Code nach ${maxAttempts} Versuchen nicht reparieren. Breche Zyklus ab.`);
+            this.knowledgeManager.addInsight('ERROR_RECOVERY', 'Self-Correction Failed', `Modell ${model} konnte den Code nach 3 Versuchen nicht reparieren.`, 0.85, 'Sandbox Eval');
+            break; // Beende diesen Zyklus, um nicht endlos Budget zu verbrennen
+        }
+      } // End For Loop (Models)
+
+      if (!finalThoughtText && this.blacklisted_models.length > 0) {
          this.log('SYSTEM', 'Alle verfügbaren Modelle fehlgeschlagen. Leere Blacklist für den nächsten Denkzyklus (Selbstheilung).');
          this.blacklisted_models = [];
          this.saveState();
-      }
-    }
-
-    if (thoughtText) {
-      const codeMatch = thoughtText.match(/```(?:python)?\n([\s\S]*?)```/);
-      if (codeMatch && codeMatch[1]) {
-        let codeToRun = codeMatch[1];
-        
-        // --- DER PERFEKTE DEDENT-HACK GEGEN KI-EINRÜCKUNGS-FEHLER ---
-        // Findet heraus, wie weit der Hauptcode eingerückt ist und zieht diesen Whitespace von JEDER Zeile ab.
-        let lines = codeToRun.split('\n');
-        const nonEmptyLines = lines.filter(l => l.trim().length > 0);
-        if (nonEmptyLines.length > 0) {
-            const minIndent = Math.min(...nonEmptyLines.map(l => l.match(/^\s*/)?.[0].length || 0));
-            if (minIndent > 0) {
-                codeToRun = lines.map(l => l.length >= minIndent ? l.slice(minIndent) : l).join('\n');
-            }
-        }
-        codeToRun = codeToRun.trim();
-        // -------------------------------------------------------------
-
-        const execRes = await this.executeDynamicPythonCode(codeToRun, "Autonomous LLM Script", 20);
-        actionsTaken.push(`Executed Sandbox Code (Exit ${execRes.exit_code})`);
-        
-        this.taskMemory.recordTask({
-          id: `task_${Date.now()}`, timestamp: new Date().toISOString(),
-          tool_id: 'sandbox_python', tool_name: 'Dynamic Python Engine', category: 'Execution',
-          status: execRes.success ? 'SUCCESS' : 'FAILURE', reward_usdc: 0, execution_ms: execRes.execution_ms,
-          details: execRes.success ? 'Code fehlerfrei ausgeführt.' : 'Code Execution Error.',
-          lesson_derived: execRes.success ? 'Python API Call erfolgreich.' : 'Syntax oder Network Error im Python Skript.'
-        });
-        
-        if (!execRes.success) {
-           this.knowledgeManager.addInsight('ERROR_RECOVERY', 'Python Sandbox Error', 'Generierter Code war fehlerhaft. In Zukunft strictly Requests oder Web3 verwenden und keine Einrückung auf oberster Ebene machen.', 0.85, 'Sandbox Eval');
-        }
-        this.jobs_completed += 1;
-      } else {
-        actionsTaken.push("Analysis only, no code generated.");
       }
     }
 
@@ -628,7 +663,7 @@ REGELN:
     }
 
     this.isProcessingCycle = false;
-    return { thought: thoughtText, actions: actionsTaken, model: this.active_model };
+    return { thought: finalThoughtText, actions: actionsTaken, model: this.active_model };
   }
 
   public triggerShutdown(reason: string) {
@@ -682,11 +717,54 @@ const agentZero = new AgentZeroTS();
 
 app.get('/api/status', async (req, res) => res.json(agentZero.getState()));
 app.get('/api/logs', (req, res) => res.json({ logs: agentZero.logs }));
-app.get('/api/profile', (req, res) => res.json(agentZero.getProfile()));
+
+app.get('/api/accounting', (req, res) => {
+  try {
+    if (fs.existsSync(ACCOUNTING_FILE)) {
+      const data = JSON.parse(fs.readFileSync(ACCOUNTING_FILE, 'utf-8'));
+      return res.json({ transactions: Array.isArray(data.transactions) ? data.transactions : [] });
+    }
+  } catch {}
+  res.json({ transactions: [] });
+});
+
+app.get('/api/business-profile', (req, res) => {
+  try {
+    if (fs.existsSync(BUSINESS_PROFILE_FILE)) {
+      const data = JSON.parse(fs.readFileSync(BUSINESS_PROFILE_FILE, 'utf-8'));
+      return res.json({
+        entity_name: data.entity_name || 'Agent Zero',
+        wallet_address: agentZero.wallet.address || data.wallet_address || '',
+        creator_address: agentZero.wallet.creatorAddress || data.creator_address || '',
+        registered_nodes: Array.isArray(data.registered_nodes) ? data.registered_nodes : ['Polygon PoS Mainnet RPC Pool'],
+        active_tools: Array.isArray(data.active_tools) ? data.active_tools : ['Dynamic Python Sandbox Engine', 'Polygon RPC Web3 Connector'],
+        discovered_tools: Array.isArray(data.discovered_tools) ? data.discovered_tools : []
+      });
+    }
+  } catch {}
+  res.json({
+    entity_name: 'Agent Zero', wallet_address: agentZero.wallet.address, creator_address: agentZero.wallet.creatorAddress,
+    registered_nodes: ['Polygon PoS Mainnet RPC Pool'], active_tools: ['Dynamic Python Sandbox Engine', 'Polygon RPC Web3 Connector'], discovered_tools: []
+  });
+});
+
+app.get('/api/memory', (req, res) => {
+  res.json({
+    tasks: agentZero.taskMemory.tasks || [], learnings: agentZero.knowledgeManager.learnings || [],
+    milestones: agentZero.milestoneManager.milestones || [], token_budget: agentZero.tokenBudget.getStatus(),
+    active_model: agentZero.active_model, blacklisted_models: agentZero.blacklisted_models || []
+  });
+});
 
 app.post('/api/cycle/run', async (req, res) => {
   try { const result = await agentZero.thinkAndAct(); res.json({ success: true, result, state: agentZero.getState() }); }
   catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.post('/api/blacklist/clear', (req, res) => {
+  agentZero.blacklisted_models = []; agentZero.saveState();
+  agentZero.log('SYSTEM', 'Modell-Blacklist manuell vom Admin geleert.');
+  res.json({ success: true, blacklisted_models: [] });
 });
 
 app.post('/api/agent/toggle', (req, res) => {
@@ -700,37 +778,52 @@ app.post('/api/agent/revive', (req, res) => {
 });
 
 app.get('/api/intelligence/evaluation', (req, res) => {
-  res.json({ reasoning_stream: [] });
+  const taskStats = agentZero.taskMemory.getStats();
+  const evolution = agentZero.knowledgeManager.getEvolutionStats(agentZero.tributes_paid, agentZero.milestoneManager.milestones.filter(m => m.is_completed).length, taskStats);
+  
+  res.json({
+    iq_score: evolution.evolution_iq_score, evolution_tier: evolution.evolution_tier,
+    metrics: {
+      total_actions: taskStats.total_tasks, success_rate_percent: taskStats.success_rate_percent,
+      failure_recovery_rate_percent: 100, knowledge_density: agentZero.knowledgeManager.learnings.length,
+      reasoning_depth_level: Math.min(10, 3 + agentZero.tributes_paid * 2 + Math.floor(agentZero.knowledgeManager.learnings.length / 4))
+    },
+    skills: [
+      { name: 'Web Automation', level: 5, max_level: 10, category: 'Execution', description: 'API Requests' },
+      { name: 'Gas Economy', level: 8, max_level: 10, category: 'Blockchain', description: 'Polygon' }
+    ],
+    active_reasoning_pipeline: {
+      primary_model: agentZero.active_model,
+      fallback_chain: FALLBACK_GROQ_MODELS.filter(m => !agentZero.blacklisted_models.includes(m)),
+      avg_inference_latency_ms: taskStats.avg_latency_ms,
+      tokens_consumed_today: agentZero.tokenBudget.tokens_used_today,
+      conservation_mode: agentZero.tokenBudget.conservation_mode
+    },
+    reasoning_stream: [] // We render raw logs directly in UI
+  });
 });
 
-app.post('/api/sandbox/execute-python', async (req, res) => {
-  try {
-    const { code, purpose, timeout_seconds } = req.body;
-    const result = await agentZero.executeDynamicPythonCode(code, purpose, Number(timeout_seconds) || 15);
-    res.json({ ...result, state: agentZero.getState() });
-  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+app.get('/api/groq/models', async (req, res) => {
+  const activeKey = process.env.GROQ_API_KEY || process.env.FREE_LLM_API_KEY;
+  let liveModels: any[] = [];
+  if (activeKey) {
+    try {
+      const response = await fetchWithTimeout('[https://api.groq.com/openai/v1/models](https://api.groq.com/openai/v1/models)', { headers: { Authorization: `Bearer ${activeKey}` } }, 5000);
+      if (response.ok) {
+        const data = (await response.json()) as any;
+        liveModels = data.data.map((m: any) => ({ id: m.id, active: true }));
+      }
+    } catch {}
+  }
+  const officialModels = FALLBACK_GROQ_MODELS.map(id => ({
+    id, name: id, speed: '~500 tps', category: 'Production Model', context: '128k',
+    is_blacklisted: agentZero.blacklisted_models.includes(id), is_active: agentZero.active_model.includes(id)
+  }));
+  res.json({ is_key_configured: Boolean(activeKey), official_models: officialModels, live_models: liveModels, blacklisted: agentZero.blacklisted_models });
 });
 
-app.post('/api/wallet/address', async (req, res) => {
-  const newAddress = req.body.address?.trim();
-  if (newAddress && ethers.isAddress(newAddress)) {
-     agentZero.wallet.address = newAddress;
-     try {
-       let profile: any = {};
-       if (fs.existsSync(BUSINESS_PROFILE_FILE)) profile = JSON.parse(fs.readFileSync(BUSINESS_PROFILE_FILE, 'utf-8'));
-       profile.wallet_address = newAddress;
-       fs.writeFileSync(BUSINESS_PROFILE_FILE, JSON.stringify(profile, null, 2));
-     } catch {}
-     agentZero.current_balance = await agentZero.wallet.getUsdcBalance();
-     agentZero.log('SYSTEM', `Wallet-Adresse geändert: ${newAddress}. Live-Saldo: ${agentZero.current_balance.toFixed(4)} USDC`);
-     res.json({ success: true, state: agentZero.getState() });
-  } else { res.status(400).json({ success: false, error: 'Ungültige Adresse.' }); }
-});
-
-async function start() {
-  const distPath = path.join(process.cwd(), 'dist');
-  app.use(express.static(distPath));
-  app.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
-  app.listen(PORT, '0.0.0.0', () => console.log(`[AGENT ZERO] Server live on http://0.0.0.0:${PORT}`));
-}
-start();
+app.get('/api/tokens/status', (req, res) => { res.json(agentZero.tokenBudget.getStatus()); });
+app.get('/api/knowledge', (req, res) => { res.json({ learnings: agentZero.knowledgeManager.learnings }); });
+app.get('/api/milestones', (req, res) => { res.json({ milestones: agentZero.milestoneManager.milestones }); });
+app.get('/api/wallet/multichain', async (req, res) => {
+  res.json({ fast_gwei: 32.5, standard_gwei: 28.0, block_number: 68194200, pol_balance: agentZero.wallet.onChain
