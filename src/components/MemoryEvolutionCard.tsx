@@ -26,8 +26,8 @@ interface MemoryEvolutionCardProps {
 }
 
 export const MemoryEvolutionCard: React.FC<MemoryEvolutionCardProps> = ({
-  iqScore = 135,
-  evolutionTier = 'Tier 2: Adaptiver Überlebender',
+  iqScore: initialIq,
+  evolutionTier: initialTier,
   totalMemories = 0,
   recallSummary,
   onRefresh
@@ -38,6 +38,8 @@ export const MemoryEvolutionCard: React.FC<MemoryEvolutionCardProps> = ({
   const [tasks, setTasks] = useState<TaskMemoryRecord[]>([]);
   const [taskStats, setTaskStats] = useState<any>(null);
   const [recallStatus, setRecallStatus] = useState<MemoryRecallStatus | null>(null);
+  const [liveIq, setLiveIq] = useState<number>(initialIq || 100);
+  const [liveTier, setLiveTier] = useState<string>(initialTier || 'Tier 1: Reaktiv & Vulnerabel');
   const [loading, setLoading] = useState<boolean>(false);
   const [reflecting, setReflecting] = useState<boolean>(false);
   const [reflectMessage, setReflectMessage] = useState<string | null>(null);
@@ -49,16 +51,21 @@ export const MemoryEvolutionCard: React.FC<MemoryEvolutionCardProps> = ({
 
   const fetchMemoryData = async () => {
     setLoading(true);
-    const [resK, resT, resS] = await Promise.all([
+    const [resK, resT, resS, resE] = await Promise.all([
       safeFetchJson<{ learnings?: KnowledgeItem[] }>('/api/knowledge'),
       safeFetchJson<{ tasks?: TaskMemoryRecord[]; stats?: any }>('/api/memory/tasks?limit=40'),
-      safeFetchJson<{ checkpoint?: MemoryRecallStatus }>('/api/memory/status')
+      safeFetchJson<{ checkpoint?: MemoryRecallStatus }>('/api/memory/status'),
+      safeFetchJson<{ iq_score?: number; evolution_tier?: string }>('/api/intelligence/evaluation')
     ]);
 
     if (resK.ok && resK.data?.learnings) setLearnings(resK.data.learnings);
     if (resT.ok && resT.data?.tasks) setTasks(resT.data.tasks);
     if (resT.ok && resT.data?.stats) setTaskStats(resT.data.stats);
     if (resS.ok && resS.data?.checkpoint) setRecallStatus(resS.data.checkpoint);
+    if (resE.ok && resE.data) {
+      if (resE.data.iq_score !== undefined) setLiveIq(resE.data.iq_score);
+      if (resE.data.evolution_tier) setLiveTier(resE.data.evolution_tier);
+    }
     setLoading(false);
   };
 
@@ -144,8 +151,8 @@ export const MemoryEvolutionCard: React.FC<MemoryEvolutionCardProps> = ({
               <h2 className="text-lg font-semibold text-zinc-100">
                 Langzeitgedächtnis & Selbst-Evolution
               </h2>
-              <span className={`text-xs px-2.5 py-0.5 rounded-full border font-medium ${getTierColor(evolutionTier)}`}>
-                {evolutionTier}
+              <span className={`text-xs px-2.5 py-0.5 rounded-full border font-medium ${getTierColor(liveTier)}`}>
+                {liveTier}
               </span>
             </div>
             <p className="text-xs text-zinc-400 mt-0.5">
@@ -195,12 +202,12 @@ export const MemoryEvolutionCard: React.FC<MemoryEvolutionCardProps> = ({
             <Award className="w-3.5 h-3.5 text-amber-400" />
           </div>
           <div className="text-2xl font-bold text-amber-300">
-            {iqScore} <span className="text-xs font-normal text-zinc-500">IQ</span>
+            {liveIq} <span className="text-xs font-normal text-zinc-500">IQ</span>
           </div>
           <div className="w-full bg-zinc-800 h-1.5 rounded-full mt-2 overflow-hidden">
             <div
               className="bg-gradient-to-r from-cyan-500 via-indigo-500 to-amber-400 h-full rounded-full transition-all duration-500"
-              style={{ width: `${Math.min(100, Math.max(10, (iqScore - 90) * 1.1))}%` }}
+              style={{ width: `${Math.min(100, Math.max(10, (liveIq - 90) * 1.1))}%` }}
             />
           </div>
         </div>
@@ -224,10 +231,10 @@ export const MemoryEvolutionCard: React.FC<MemoryEvolutionCardProps> = ({
             <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
           </div>
           <div className="text-2xl font-bold text-emerald-400">
-            {taskStats?.success_rate_percent ?? 100}%
+            {taskStats?.total_tasks > 0 ? `${taskStats.success_rate_percent}%` : '0%'}
           </div>
           <div className="text-[11px] text-zinc-500 mt-1">
-            {taskStats?.total_success ?? tasks.length} von {taskStats?.total_tasks ?? tasks.length} erfolgreich
+            {taskStats?.total_success ?? 0} von {taskStats?.total_tasks ?? 0} erfolgreich
           </div>
         </div>
 

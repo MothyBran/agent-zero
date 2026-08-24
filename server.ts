@@ -300,7 +300,7 @@ export class TaskMemoryManager {
     const successes = this.tasks.filter(t => t.status === 'SUCCESS').length;
     return {
       total_tasks: total, total_success: successes, total_failures: this.tasks.filter(t => t.status === 'FAILURE').length,
-      success_rate_percent: total > 0 ? Number(((successes / total) * 100).toFixed(1)) : 100,
+      success_rate_percent: total > 0 ? Number(((successes / total) * 100).toFixed(1)) : 0,
       total_historical_earnings: Number(this.tasks.reduce((sum, t) => sum + (t.reward_usdc || 0), 0).toFixed(4)),
       avg_latency_ms: total > 0 ? Math.round(this.tasks.reduce((sum, t) => sum + (t.execution_ms || 0), 0) / total) : 0
     };
@@ -341,16 +341,13 @@ export class MilestoneManager {
     try {
       if (fs.existsSync(MILESTONES_FILE)) {
         const data = JSON.parse(fs.readFileSync(MILESTONES_FILE, 'utf-8'));
-        if (Array.isArray(data.milestones) && data.milestones.length > 0) { this.milestones = data.milestones; return; }
+        if (Array.isArray(data.milestones)) { this.milestones = data.milestones; return; }
       }
       this.initDefault();
     } catch { this.initDefault(); }
   }
   private initDefault() {
-    this.milestones = [
-      { id: 'ms_liquid_buffer', title: 'Liquiditäts-Puffer aufbauen', category: 'LIQUIDITY', target_value: 3.50, current_value: 0.0, unit: 'USDC', is_completed: false, priority: 'CRITICAL', action_plan: 'Führe Web3 Bounties aus.' },
-      { id: 'ms_runrate_target', title: 'Ertrags-Rate auf ≥ 0.08 USDC/h steigern', category: 'RUN_RATE', target_value: 0.08, current_value: 0, unit: 'USDC/h', is_completed: false, priority: 'HIGH', action_plan: 'Nutze Multi-Tool Parallelisierung.' }
-    ];
+    this.milestones = [];
     this.save();
   }
   public save() { try { fs.writeFileSync(MILESTONES_FILE, JSON.stringify({ milestones: this.milestones, updated_at: new Date().toISOString() }, null, 2)); } catch {} }
@@ -2143,13 +2140,14 @@ app.get('/api/intelligence/evaluation', (req, res) => {
     metrics: {
       total_actions: taskStats.total_tasks,
       success_rate_percent: taskStats.success_rate_percent,
-      failure_recovery_rate_percent: 100,
+      failure_recovery_rate_percent: taskStats.total_failures > 0 ? Number(((taskStats.total_success / (taskStats.total_success + taskStats.total_failures)) * 100).toFixed(1)) : 0,
       knowledge_density: agentZero.knowledgeManager.learnings.length,
-      reasoning_depth_level: Math.min(10, 3 + agentZero.tributes_paid * 2 + Math.floor(agentZero.knowledgeManager.learnings.length / 4))
+      reasoning_depth_level: Math.min(10, (taskStats.total_tasks > 0 ? 1 : 0) + agentZero.tributes_paid * 2 + Math.floor(agentZero.knowledgeManager.learnings.length / 4))
     },
     skills: [
-      { name: 'Web Automation', level: 5, max_level: 10, category: 'Execution', description: 'API Requests' },
-      { name: 'Gas Economy', level: 8, max_level: 10, category: 'Blockchain', description: 'Polygon' }
+      { name: 'Web Automation', level: Math.min(10, Math.floor(taskStats.total_tasks / 3)), max_level: 10, category: 'Execution', description: 'Reale HTTP & API Requests' },
+      { name: 'Gas Economy', level: Math.min(10, agentZero.tributes_paid * 2 + (taskStats.total_tasks > 0 ? 1 : 0)), max_level: 10, category: 'Blockchain', description: 'Polygon Gas-Haushalt' },
+      { name: 'Heuristik-Synthese', level: Math.min(10, Math.floor(agentZero.knowledgeManager.learnings.length / 2)), max_level: 10, category: 'Kognition', description: 'Gedächtnis-Verdichtung' }
     ],
     active_reasoning_pipeline: {
       primary_model: agentZero.active_model,

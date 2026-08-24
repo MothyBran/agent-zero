@@ -217,62 +217,68 @@ export function MilestonesCard() {
           <span className="text-[10px] text-slate-400">Automatische Fortschritts-Erfassung</span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {activeMilestones.map(m => {
-            const pct = Math.min(100, Math.max(0, Math.round((m.current_value / m.target_value) * 100)));
-            const isNear = pct >= 75;
+        {activeMilestones.length === 0 ? (
+          <div className="bg-slate-950/40 border border-slate-800/60 rounded-xl p-6 text-center text-slate-500 font-mono text-xs">
+            Keine aktiven Zwischenziele definiert. Agent Zero setzt Meilensteine bei autonomen Planungszyklen oder über &quot;+ Neues Zwischenziel&quot;.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {activeMilestones.map(m => {
+              const pct = Math.min(100, Math.max(0, Math.round((m.current_value / m.target_value) * 100)));
+              const isNear = pct >= 75;
 
-            return (
-              <div
-                key={m.id}
-                className="bg-slate-950/70 border border-slate-800/80 rounded-xl p-4 space-y-3 flex flex-col justify-between hover:border-slate-700 transition-all"
-              >
-                <div className="space-y-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="font-bold text-slate-100 text-xs leading-snug">
-                      {m.title}
-                    </span>
-                    <span
-                      className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 ${
-                        m.priority === 'CRITICAL'
-                          ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                          : m.priority === 'HIGH'
-                          ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                          : 'bg-slate-800 text-slate-300 border border-slate-700'
-                      }`}
-                    >
-                      {m.priority}
-                    </span>
+              return (
+                <div
+                  key={m.id}
+                  className="bg-slate-950/70 border border-slate-800/80 rounded-xl p-4 space-y-3 flex flex-col justify-between hover:border-slate-700 transition-all"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="font-bold text-slate-100 text-xs leading-snug">
+                        {m.title}
+                      </span>
+                      <span
+                        className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 ${
+                          m.priority === 'CRITICAL'
+                            ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                            : m.priority === 'HIGH'
+                            ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                            : 'bg-slate-800 text-slate-300 border border-slate-700'
+                        }`}
+                      >
+                        {m.priority}
+                      </span>
+                    </div>
+
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      {m.action_plan}
+                    </p>
                   </div>
 
-                  <p className="text-[11px] text-slate-400 leading-relaxed">
-                    {m.action_plan}
-                  </p>
+                  <div className="space-y-1.5 pt-2 border-t border-slate-800/50">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">
+                        Fortschritt: <strong className="text-slate-200">{m.current_value.toFixed(2)} / {m.target_value} {m.unit}</strong>
+                      </span>
+                      <span className={`font-bold ${isNear ? 'text-emerald-400' : 'text-slate-300'}`}>
+                        {pct}%
+                      </span>
+                    </div>
+
+                    <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                      <div
+                        className={`h-2 rounded-full transition-all duration-500 ${
+                          pct >= 100 ? 'bg-emerald-500' : isNear ? 'bg-emerald-400' : 'bg-cyan-500'
+                        }`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
                 </div>
-
-                <div className="space-y-1.5 pt-2 border-t border-slate-800/50">
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="text-slate-400">
-                      Fortschritt: <strong className="text-slate-200">{m.current_value.toFixed(2)} / {m.target_value} {m.unit}</strong>
-                    </span>
-                    <span className={`font-bold ${isNear ? 'text-emerald-400' : 'text-slate-300'}`}>
-                      {pct}%
-                    </span>
-                  </div>
-
-                  <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
-                    <div
-                      className={`h-2 rounded-full transition-all duration-500 ${
-                        pct >= 100 ? 'bg-emerald-500' : isNear ? 'bg-emerald-400' : 'bg-cyan-500'
-                      }`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Completed Milestones Accordion/List */}

@@ -132,11 +132,11 @@ export const LedgerTable: React.FC<LedgerTableProps> = ({ transactions }) => {
                   <td className="py-2.5 px-4 whitespace-nowrap">
                     {tx.tx_hash && tx.tx_hash.startsWith('0x') && tx.tx_hash.length === 66 ? (
                       <a
-                        href={tx.explorer_url || `https://etherscan.io/tx/${tx.tx_hash}`}
+                        href={tx.explorer_url || `https://polygonscan.com/tx/${tx.tx_hash}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors"
-                        title="Verifizierte On-Chain Transaktion auf Ethereum Mainnet"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono bg-purple-500/10 text-purple-400 border border-purple-500/20 hover:bg-purple-500/20 transition-colors"
+                        title="Verifizierte On-Chain Transaktion auf Polygon PoS"
                       >
                         {tx.tx_hash.slice(0, 6)}...{tx.tx_hash.slice(-4)}
                         <ExternalLink className="w-3 h-3" />

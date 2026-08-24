@@ -1,15 +1,3 @@
 {
-  "milestones": [
-    {
-      "id": "ms_first_income",
-      "title": "Erste reale On-Chain Einnahme generieren",
-      "category": "LIQUIDITY",
-      "target_value": 0.1,
-      "current_value": 0.0,
-      "unit": "USDC",
-      "is_completed": false,
-      "priority": "CRITICAL",
-      "action_plan": "Führe reale Web3- und API-Requests aus, um ersten Ertrag zu erzielen."
-    }
-  ]
+  "milestones": []
 }

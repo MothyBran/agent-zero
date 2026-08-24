@@ -477,47 +477,28 @@ export const GroqModelsCard: React.FC<GroqModelsCardProps> = ({ onModelTested })
       {/* TAB 3: GROQ ARCHITECTURE & KNOWLEDGE */}
       {activeTab === 'KNOWLEDGE' && (
         <div className="space-y-3">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {(knowledgeData?.knowledge_base || [
-              {
-                category: 'API_ARCHITECTURE',
-                title: 'Groq Cloud LPU Inference Engine',
-                summary: 'Hardwarebeschleunigte Inferenz auf maßgeschneiderten LPUs mit bis zu 1000 tps.',
-                details: 'Groq LPUs nutzen SRAM mit massiver Speicherbandbreite, wodurch Memory-Bottlenecks eliminiert und deterministische Reaktionszeiten erreicht werden.'
-              },
-              {
-                category: 'MODEL_HEURISTICS',
-                title: 'Deterministische Modell-Heuristik für Agent Zero',
-                summary: 'Code & Strategie -> Llama 3.3 70B; Reflexe -> Llama 3.1 8B; Deep Logic -> GPT-OSS 120B.',
-                details: 'Für Python-Generierung verwendet der Agent Llama 3.3 70B bei niedriger Temperatur (0.1-0.2). Bei Fehlern greift die Self-Healing Kaskade.'
-              },
-              {
-                category: 'RATE_LIMIT_GOVERNANCE',
-                title: 'Rate-Limit Überwachung & Token Guard',
-                summary: 'Aktive Überwachung von x-ratelimit-remaining-tokens.',
-                details: 'Vor jedem Aufruf prüft der TokenBudgetManager das TPM/RPM-Budget und schaltet bei Bedarf automatisch in den Kompressions- und Fallback-Modus.'
-              },
-              {
-                category: 'AGENTIC_INTEGRATIONS',
-                title: 'Framework- & Tool-Integrationen',
-                summary: 'Vercel AI SDK, LangGraph, CrewAI, AutoGen, BrowserBase, Firecrawl & MCP.',
-                details: 'Agent Zero kann Werkzeuge über das Model Context Protocol (MCP) ansteuern und JSON-Ausgaben strikt validieren.'
-              }
-            ]).map((kb: GroqKnowledgeItem, idx: number) => (
-              <div key={idx} className="bg-slate-950/60 border border-slate-800 rounded-lg p-3.5 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 font-bold">
-                    {kb.category}
-                  </span>
+          {(knowledgeData?.knowledge_base && knowledgeData.knowledge_base.length > 0) ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {knowledgeData.knowledge_base.map((kb: GroqKnowledgeItem, idx: number) => (
+                <div key={idx} className="bg-slate-950/60 border border-slate-800 rounded-lg p-3.5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 font-bold">
+                      {kb.category}
+                    </span>
+                  </div>
+                  <h3 className="text-xs font-bold font-mono text-slate-100">{kb.title}</h3>
+                  <p className="text-[11px] text-slate-300 font-sans leading-relaxed">{kb.summary}</p>
+                  <div className="text-[10px] font-mono text-slate-400 pt-2 border-t border-slate-800/80">
+                    {kb.details}
+                  </div>
                 </div>
-                <h3 className="text-xs font-bold font-mono text-slate-100">{kb.title}</h3>
-                <p className="text-[11px] text-slate-300 font-sans leading-relaxed">{kb.summary}</p>
-                <div className="text-[10px] font-mono text-slate-400 pt-2 border-t border-slate-800/80">
-                  {kb.details}
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="bg-slate-950/40 border border-slate-800/60 rounded-xl p-6 text-center text-slate-500 font-mono text-xs">
+              Keine spezifischen Groq-Wissenseinträge im Wissensspeicher geladen.
+            </div>
+          )}
 
           <div className="bg-slate-950/40 border border-slate-800/80 rounded-lg p-3 flex flex-wrap items-center justify-between gap-2 text-xs font-mono text-slate-400">
             <span>Dokumentation & Spezifikationen:</span>
