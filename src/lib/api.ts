@@ -12,12 +12,21 @@ export async function safeFetchJson<T>(
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
+  // Append timestamp query parameter to bust any browser or proxy cache on GET requests
+  const separator = url.includes('?') ? '&' : '?';
+  const noCacheUrl = (options?.method === 'POST' || options?.method === 'PUT' || options?.method === 'DELETE') 
+    ? url 
+    : `${url}${separator}_t=${Date.now()}`;
+
   try {
-    const res = await fetch(url, {
+    const res = await fetch(noCacheUrl, {
       ...options,
+      cache: 'no-store',
       signal: controller.signal,
       headers: {
         'Accept': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
         ...(options?.headers || {})
       }
     });

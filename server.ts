@@ -4,13 +4,33 @@ import fs from 'fs';
 import { spawn } from 'child_process';
 import { ethers } from 'ethers';
 import dotenv from 'dotenv';
+import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
 
 dotenv.config();
 
+let geminiClient: GoogleGenAI | null = null;
+function getGeminiClient(): GoogleGenAI | null {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) return null;
+  if (!geminiClient) {
+    geminiClient = new GoogleGenAI({ apiKey: key });
+  }
+  return geminiClient;
+}
+
 const PORT = 3000;
 const app = express();
 app.use(express.json());
+
+// Global Anti-Cache Header for all API routes (prevents stale browser cache)
+app.use('/api', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+  next();
+});
 
 // --- UI AUTHENTICATION CONFIGURATION & ENDPOINTS ---
 const UI_USERNAME = process.env.UI_USERNAME?.trim() || '';
@@ -205,8 +225,8 @@ export const MULTI_CHAIN_CONFIGS: Record<string, any> = {
 const FALLBACK_GROQ_MODELS = [
   'llama-3.3-70b-versatile',
   'llama-3.1-8b-instant',
-  'mixtral-8x7b-32768',
-  'gemma2-9b-it'
+  'qwen/qwen3.6-27b',
+  'openai/gpt-oss-120b'
 ];
 
 // Resolves hanging requests gracefully
@@ -1769,43 +1789,61 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
         let finalThoughtText = '';
         const actionsTaken: string[] = [];
 
-        const rawKey = process.env.GROQ_API_KEY || process.env.FREE_LLM_API_KEY || '';
+        const rawGroqKey = process.env.GROQ_API_KEY || process.env.FREE_LLM_API_KEY || '';
+        const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY);
         const budgetCheck = this.tokenBudget.canMakeRequest();
         
         if (!budgetCheck.allowed) {
           this.log('ERROR', `[TOKEN GUARD] ${budgetCheck.reason} Überspringe LLM-Aufruf.`);
         } else {
-          
-          const optimalPrimary = this.groqIntelligence.getOptimalModel('CODE_GENERATION', this.blacklisted_models);
-          let liveGroqModels = Array.from(new Set([optimalPrimary, ...FALLBACK_GROQ_MODELS]));
-          try {
-            const mRes = await fetchWithTimeout('https://api.groq.com/openai/v1/models', { headers: { Authorization: `Bearer ${rawKey}` } }, 8000);
-            if (mRes.ok) {
-              const mData = await mRes.json();
-              if (mData.data && Array.isArray(mData.data)) {
-                const apiModels = mData.data
-                  .map((m: any) => m.id)
-                  .filter((id: string) => {
-                     const lower = id.toLowerCase();
-                     return (lower.includes('llama-3.3') || lower.includes('llama-3.1') || lower.includes('mixtral') || lower.includes('gemma2')) 
-                            && !lower.includes('whisper') && !lower.includes('guard') && !lower.includes('orpheus') && !lower.includes('allam');
-                  });
-                if (apiModels.length > 0) {
-                  const priority = [optimalPrimary, 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it'];
-                  liveGroqModels = Array.from(new Set([...priority.filter(p => apiModels.includes(p)), ...apiModels]));
+          let candidateModels: string[] = [];
+
+          // 1. Wenn Groq-Key vorhanden ist, versuche Live-Modelle von Groq abzufragen
+          if (rawGroqKey) {
+            const optimalPrimary = this.groqIntelligence.getOptimalModel('CODE_GENERATION', this.blacklisted_models);
+            let groqModels = Array.from(new Set([optimalPrimary, ...FALLBACK_GROQ_MODELS]));
+            try {
+              const mRes = await fetchWithTimeout('https://api.groq.com/openai/v1/models', { headers: { Authorization: `Bearer ${rawGroqKey}` } }, 5000);
+              if (mRes.ok) {
+                const mData = await mRes.json();
+                if (mData.data && Array.isArray(mData.data)) {
+                  const apiModels = mData.data
+                    .map((m: any) => m.id)
+                    .filter((id: string) => {
+                       const lower = id.toLowerCase();
+                       return (lower.includes('llama-3.3') || lower.includes('llama-3.1') || lower.includes('qwen') || lower.includes('gpt-oss')) 
+                              && !lower.includes('whisper') && !lower.includes('guard') && !lower.includes('orpheus') && !lower.includes('allam');
+                    });
+                  if (apiModels.length > 0) {
+                    const priority = [optimalPrimary, 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'qwen/qwen3.6-27b', 'openai/gpt-oss-120b'];
+                    groqModels = Array.from(new Set([...priority.filter(p => apiModels.includes(p)), ...apiModels]));
+                  }
                 }
               }
-            }
-          } catch (e) {}
+            } catch (e) {}
+
+            candidateModels.push(...groqModels);
+          }
+
+          // 2. Gemini als primäre oder sekundäre Option hinzufügen (falls API-Key vorhanden)
+          if (hasGeminiKey) {
+            candidateModels.push('gemini-2.5-flash', 'gemini-2.5-pro');
+          }
+
+          // Fallback, wenn keine API-Keys vorhanden sind
+          if (candidateModels.length === 0) {
+            candidateModels = [...FALLBACK_GROQ_MODELS, 'gemini-2.5-flash'];
+          }
 
           let executionSuccess = false;
 
           // ==============================================================
-          // DIE SELF-CORRECTION LOOP
+          // DIE MULTI-MODEL SELF-CORRECTION LOOP
           // ==============================================================
-          for (const model of liveGroqModels) {
+          for (const model of candidateModels) {
             if (this.blacklisted_models.includes(model)) continue;
-            this.active_model = `Groq (${model})`;
+            const isGeminiModel = model.startsWith('gemini');
+            this.active_model = isGeminiModel ? `Gemini (${model})` : `Groq (${model})`;
             
             const maxAttempts = 3;
             let attempt = 1;
@@ -1819,20 +1857,48 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
             while (attempt <= maxAttempts && !executionSuccess) {
                 try {
                     this.log('SYSTEM', `[ATTEMPT ${attempt}/${maxAttempts}] Generiere Code mit Modell ${model}...`);
+                    let thoughtText = '';
                     
-                    const res = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
-                        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${rawKey}` },
-                        body: JSON.stringify({ model: model, messages: currentMessages, temperature: 0.2 })
-                    }, 20000);
-                    
-                    if (res.headers) this.groqIntelligence.recordRateLimitHeaders(res.headers);
-                    if (!res.ok) throw new Error(`HTTP ${res.status}`); 
+                    if (isGeminiModel) {
+                      const ai = getGeminiClient();
+                      if (!ai) throw new Error('GEMINI_API_KEY nicht initialisiert');
+                      const sysPrompt = currentMessages.find(m => m.role === 'system')?.content || '';
+                      const userMsgs = currentMessages.filter(m => m.role !== 'system');
+                      const contents = userMsgs.map(m => ({
+                        role: m.role === 'assistant' ? 'model' : 'user',
+                        parts: [{ text: m.content }]
+                      }));
 
-                    const data = await res.json();
-                    let thoughtText = data.choices?.[0]?.message?.content || '';
+                      const genRes = await ai.models.generateContent({
+                        model: model,
+                        contents: contents.length > 0 ? contents : [{ role: 'user', parts: [{ text: sysPrompt }] }],
+                        config: {
+                          systemInstruction: sysPrompt || undefined,
+                          temperature: 0.2
+                        }
+                      });
+                      thoughtText = genRes.text || '';
+                    } else {
+                      if (!rawGroqKey) {
+                        throw new Error('GROQ_API_KEY nicht gesetzt. Wechsle zu Gemini...');
+                      }
+                      const res = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
+                          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${rawGroqKey}` },
+                          body: JSON.stringify({ model: model, messages: currentMessages, temperature: 0.2 })
+                      }, 20000);
+                      
+                      if (res.headers) this.groqIntelligence.recordRateLimitHeaders(res.headers);
+                      if (!res.ok) {
+                        const errBody = await res.text().catch(() => '');
+                        throw new Error(`HTTP ${res.status}${errBody ? ` (${errBody.slice(0, 100)})` : ''}`); 
+                      }
+
+                      const data = await res.json();
+                      thoughtText = data.choices?.[0]?.message?.content || '';
+                      if (data.usage) this.tokenBudget.recordUsage(data.usage.prompt_tokens, data.usage.completion_tokens, tokensSaved);
+                    }
+
                     finalThoughtText = thoughtText;
-                    
-                    if (data.usage) this.tokenBudget.recordUsage(data.usage.prompt_tokens, data.usage.completion_tokens, tokensSaved);
 
                     const extracted = extractPythonCode(thoughtText);
                     this.log('THOUGHT', extracted.cleanThought || thoughtText, { model });
@@ -1842,13 +1908,13 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
                         currentMessages.push({ role: 'assistant', content: thoughtText });
                         currentMessages.push({ role: 'user', content: "FEHLER: Du hast keinen Python-Code im ```python Block generiert. Bitte antworte AUSSCHLIESSLICH mit dem Code im ```python ... ``` Block." });
                         attempt++;
-                        await new Promise(r => setTimeout(r, 3000)); 
+                        await new Promise(r => setTimeout(r, 2000)); 
                         continue;
                     }
 
                     let codeToRun = extracted.code;
                     
-                    // DEDENT-HACK: Entfernt führende Leerzeichen
+                    // DEDENT: Entfernt führende Leerzeichen
                     let lines = codeToRun.split('\n');
                     const nonEmptyLines = lines.filter((l: string) => l.trim().length > 0);
                     if (nonEmptyLines.length > 0) {
@@ -1871,7 +1937,7 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
                             details: `Code im Versuch ${attempt} fehlerfrei ausgeführt.`,
                             lesson_derived: 'Python API Call erfolgreich.'
                         });
-                        this.knowledgeManager.addInsight('SUCCESS_PATTERN', `Modell Eval: ${model}`, `Modell ${model} repariert und liefert lauffähigen Code.`, 0.99, 'Model Discovery');
+                        this.knowledgeManager.addInsight('SUCCESS_PATTERN', `Modell Eval: ${model}`, `Modell ${model} liefert lauffähigen Code.`, 0.99, 'Model Discovery');
                         break; 
                     } else {
                         this.log('ERROR', `[ATTEMPT ${attempt}] Code gecrasht. Starte Selbst-Korrektur (Self-Correction Loop)...`);
@@ -1886,23 +1952,23 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
                         let errorHelp = '';
                         const errText = execRes.stderr || execRes.stdout;
                         if (errText.includes("No module named 'requests'")) {
-                          errorHelp = '\n\nHINWEIS: "requests" ist nicht installiert! Verwende "urllib.request" und "json" aus der Python Standard-Bibliothek.';
+                          errorHelp = '\n\nHINWEIS: "requests" ist nicht vorinstalliert! Verwende "urllib.request" und "json" aus der Python Standard-Bibliothek.';
                         } else if (errText.includes("No module named 'web3'")) {
-                          errorHelp = '\n\nHINWEIS: "web3" ist nicht installiert! Sende stattdessen JSON-RPC POST Requests via "urllib.request".';
+                          errorHelp = '\n\nHINWEIS: "web3" ist nicht vorinstalliert! Sende stattdessen JSON-RPC POST Requests via "urllib.request".';
                         } else if (errText.includes("No module named")) {
                           errorHelp = '\n\nHINWEIS: Verwende NUR Module aus der Python 3 Standard-Bibliothek (urllib.request, json, time, math etc.).';
                         } else if (errText.includes("'return' outside function") || errText.includes("SyntaxError: 'return'")) {
-                          errorHelp = '\n\nHINWEIS: "return" darf nicht auf oberster Skriptebene stehen. Verwende "print(...)" oder verpacke den Code in "def main(): ... if __name__ == \'__main__\': main()".';
+                          errorHelp = '\n\nHINWEIS: "return" darf nicht auf oberster Skriptebene stehen. Verwende "print(...)" oder verpacke den Code in Funktionen.';
                         }
 
                         currentMessages.push({ role: 'assistant', content: thoughtText });
                         currentMessages.push({ role: 'user', content: `Dein Code ist mit folgendem Error gecrasht:\n\n${errText}${errorHelp}\n\nAnalysiere die Fehlermeldung, repariere den Code und antworte mit der korrigierten Version im \`\`\`python Block.` });
                         attempt++;
-                        await new Promise(r => setTimeout(r, 3000));
+                        await new Promise(r => setTimeout(r, 2000));
                     }
 
                 } catch (e: any) {
-                    this.log('ERROR', `KI API Fehler (Timeout/Network) bei ${model}: ${e.message}. Setze auf Blacklist.`);
+                    this.log('ERROR', `KI API Fehler bei ${model}: ${e.message}. Setze auf Blacklist.`);
                     this.blacklisted_models.push(model);
                     this.saveState();
                     break; 
@@ -1912,7 +1978,7 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
             if (executionSuccess) {
                 break;
             } else if (attempt > maxAttempts) {
-                this.log('ERROR', `Modell ${model} konnte den Code nach ${maxAttempts} Versuchen nicht reparieren. Breche Zyklus ab.`);
+                this.log('ERROR', `Modell ${model} konnte den Code nach ${maxAttempts} Versuchen nicht reparieren.`);
                 this.knowledgeManager.addInsight('ERROR_RECOVERY', 'Self-Correction Failed', `Modell ${model} konnte den Code nach 3 Versuchen nicht reparieren.`, 0.85, 'Sandbox Eval');
                 break; 
             }
@@ -2208,17 +2274,51 @@ app.get('/api/groq/knowledge', (req, res) => {
 });
 
 app.post('/api/groq/test', async (req, res) => {
-  const activeKey = process.env.GROQ_API_KEY || process.env.FREE_LLM_API_KEY;
-  if (!activeKey) {
-    return res.status(400).json({ success: false, error: 'Kein GROQ_API_KEY konfiguriert.' });
-  }
-
   const { model, prompt, temperature = 0.2, max_tokens = 512 } = req.body;
   if (!model || !prompt) {
     return res.status(400).json({ success: false, error: 'Model und Prompt sind erforderlich.' });
   }
 
   const startTime = Date.now();
+  const isGemini = model.startsWith('gemini');
+
+  if (isGemini) {
+    try {
+      const ai = getGeminiClient();
+      if (!ai) {
+        return res.status(400).json({ success: false, error: 'GEMINI_API_KEY ist nicht konfiguriert.' });
+      }
+      const genRes = await ai.models.generateContent({
+        model: model,
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        config: {
+          temperature: Number(temperature)
+        }
+      });
+      const latency_ms = Date.now() - startTime;
+      const reply = genRes.text || '';
+      agentZero.log('SYSTEM', `[GEMINI BENCHMARK] Modell ${model} getestet (${latency_ms}ms).`);
+      return res.json({
+        success: true,
+        model,
+        reply,
+        latency_ms,
+        usage: { prompt_tokens: prompt.length / 4, completion_tokens: reply.length / 4, total_tokens: (prompt.length + reply.length) / 4 }
+      });
+    } catch (err: any) {
+      return res.status(500).json({
+        success: false,
+        error: `Gemini API Fehler: ${err.message}`,
+        latency_ms: Date.now() - startTime
+      });
+    }
+  }
+
+  const activeKey = process.env.GROQ_API_KEY || process.env.FREE_LLM_API_KEY;
+  if (!activeKey) {
+    return res.status(400).json({ success: false, error: 'Kein GROQ_API_KEY konfiguriert. Bitte in den Einstellungen eintragen.' });
+  }
+
   try {
     const groqRes = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',

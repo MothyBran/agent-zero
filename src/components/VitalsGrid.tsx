@@ -433,23 +433,10 @@ export const VitalsGrid: React.FC<VitalsGridProps> = ({
             </button>
           ) : (
             <>
-              {onExecuteWork && (
-                <button
-                  id="execute-job-btn"
-                  onClick={handleManualWork}
-                  disabled={isWorking || isProcessingCycle}
-                  className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 text-xs font-mono font-semibold transition-all cursor-pointer disabled:opacity-50"
-                  title="Führt sofort eine reale Web- oder DeFi-Aufgabe aus"
-                >
-                  <Award className={`w-3.5 h-3.5 ${isWorking ? 'animate-spin' : ''}`} />
-                  <span>{isWorking ? 'Arbeitet...' : 'Bounty Ausführen (+USDC)'}</span>
-                </button>
-              )}
-
               <button
                 id="instant-cycle-btn"
                 onClick={onRunCycle}
-                disabled={isProcessingCycle || isWorking}
+                disabled={isProcessingCycle}
                 className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-mono font-bold shadow transition-all cursor-pointer"
               >
                 {isProcessingCycle ? (
