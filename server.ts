@@ -239,8 +239,44 @@ export class MilestoneManager {
 }
 
 // ==========================================
-// 2. DAS PERFEKTE WALLET-SKRIPT
+// 2. DAS PERFEKTE WALLET-SKRIPT & EVM HELPER
 // ==========================================
+
+export function normalizeEvmAddress(input: string | undefined | null): string {
+  if (!input) return '';
+  const cleanStr = String(input).trim();
+  if (!cleanStr) return '';
+
+  // 1. Direkt gültige 0x... EVM Adresse
+  const isDirectAddress: boolean = ethers.isAddress(cleanStr);
+  if (isDirectAddress) {
+    try {
+      return ethers.getAddress(cleanStr);
+    } catch {
+      return cleanStr;
+    }
+  }
+
+  // 2. 40 Hex-Zeichen ohne '0x'
+  if (/^[0-9a-fA-F]{40}$/.test(cleanStr)) {
+    try {
+      return ethers.getAddress('0x' + cleanStr);
+    } catch {}
+  }
+
+  // 3. 64 Hex-Zeichen (Private Key oder Hash) -> Leite echte Public EVM Adresse ab
+  const hexOnly = cleanStr.startsWith('0x') ? cleanStr.slice(2) : cleanStr;
+  if (/^[0-9a-fA-F]{64}$/.test(hexOnly)) {
+    try {
+      const derived = new ethers.Wallet('0x' + hexOnly).address;
+      return ethers.getAddress(derived);
+    } catch (e) {
+      console.error("🚨 [WALLET] Konnte Adresse nicht aus Private Key ableiten:", e);
+    }
+  }
+
+  return cleanStr;
+}
 
 class AgentWalletTS {
   public address: string = ''; 
@@ -277,8 +313,11 @@ class AgentWalletTS {
       }
     } catch {}
 
-    this.address = this.address || (process.env.AGENT_WALLET_ADDRESS || '').trim() || savedAddress;
-    this.creatorAddress = (process.env.CREATOR_WALLET_ADDRESS || '').trim() || savedCreator;
+    const rawAgentAddr = this.address || (process.env.AGENT_WALLET_ADDRESS || '').trim() || savedAddress;
+    const rawCreatorAddr = (process.env.CREATOR_WALLET_ADDRESS || '').trim() || savedCreator;
+
+    this.address = normalizeEvmAddress(rawAgentAddr);
+    this.creatorAddress = normalizeEvmAddress(rawCreatorAddr);
   }
 
   public async getUsdcBalance(): Promise<number> {
@@ -339,28 +378,184 @@ class AgentWalletTS {
   }
 
   public async sendUsdcTransfer(toAddress: string, amountUsdc: number, note: string): Promise<{ success: boolean; txHash: string; message: string }> {
-    if (!this.hasSigner || !this.signer || !toAddress) return { success: false, txHash: '', message: 'Kein Private Key oder keine Zieladresse hinterlegt.' };
+    const targetAddr = normalizeEvmAddress(toAddress || this.creatorAddress);
+    if (!this.hasSigner || !this.signer || !targetAddr) {
+      return { success: false, txHash: '', message: 'Kein Private Key (AGENT_PRIVATE_KEY) oder keine Creator-Zieladresse hinterlegt.' };
+    }
     
-    for (const rpcUrl of MULTI_CHAIN_CONFIGS.polygon.rpcUrls) {
-      if (!rpcUrl) continue;
+    if (!ethers.isAddress(targetAddr)) {
+      return { success: false, txHash: '', message: `Ungültige Creator-Zieladresse: ${toAddress}` };
+    }
+
+    const rpcPool = [
+      process.env.POLYGON_RPC_URL,
+      'https://polygon-rpc.com',
+      'https://polygon.llamarpc.com',
+      'https://1rpc.io/matic',
+      'https://polygon-bor-rpc.publicnode.com',
+      'https://rpc.ankr.com/polygon'
+    ].filter(Boolean) as string[];
+
+    let lastError = '';
+
+    for (const rpcUrl of rpcPool) {
       try {
-        const rpc = new ethers.JsonRpcProvider(rpcUrl, 137, { staticNetwork: true });
-        const contract = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcAddress, ERC20_BALANCE_ABI, this.signer.connect(rpc));
+        const rpc = new ethers.JsonRpcProvider(rpcUrl, { chainId: 137, name: 'polygon' }, { staticNetwork: true });
+        const walletWithRpc = this.signer.connect(rpc);
+
+        // 1. Gas-Prüfung (POL)
+        const polBal = await rpc.getBalance(this.address);
+        this.onChainPolBalance = Number(ethers.formatEther(polBal));
+        if (polBal === 0n) {
+          return { success: false, txHash: '', message: `Kein POL für Gas vorhanden (Saldo: 0.00 POL). Bitte Gas auf ${this.address} aufladen.` };
+        }
+
+        // 2. Token-Wahl (Native USDC vs. Bridged USDC.e)
+        const nativeContract = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcAddress, ERC20_BALANCE_ABI, walletWithRpc);
+        const nativeBal = await nativeContract.balanceOf(this.address) as bigint;
+        const nativeUsdc = Number(ethers.formatUnits(nativeBal, 6));
+
+        let tokenContract = nativeContract;
+        let tokenName = 'Native USDC';
+
+        if (nativeUsdc < amountUsdc && MULTI_CHAIN_CONFIGS.polygon.usdcBridgedAddress) {
+          const bridgedContract = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcBridgedAddress, ERC20_BALANCE_ABI, walletWithRpc);
+          const bridgedBal = await bridgedContract.balanceOf(this.address) as bigint;
+          const bridgedUsdc = Number(ethers.formatUnits(bridgedBal, 6));
+          if (bridgedUsdc >= amountUsdc) {
+            tokenContract = bridgedContract;
+            tokenName = 'Bridged USDC.e';
+          }
+        }
+
         const parsedUnits = ethers.parseUnits(amountUsdc.toFixed(6), 6);
-        const tx = await contract.transfer(toAddress, parsedUnits);
-        await tx.wait(1);
-        return { success: true, txHash: tx.hash, message: 'Transfer On-Chain bestätigt.' };
+
+        // 3. EIP-1559 Gas-Parameter für Polygon PoS (Min 30-35 Gwei Priority Fee)
+        let txOverrides: any = {};
+        try {
+          const feeData = await rpc.getFeeData();
+          const minPriority = ethers.parseUnits('35', 'gwei');
+          const priority = feeData.maxPriorityFeePerGas && feeData.maxPriorityFeePerGas > minPriority 
+            ? (feeData.maxPriorityFeePerGas * 130n / 100n) 
+            : minPriority;
+          const maxFee = feeData.maxFeePerGas 
+            ? (feeData.maxFeePerGas * 130n / 100n) 
+            : ethers.parseUnits('70', 'gwei');
+          
+          txOverrides = {
+            maxPriorityFeePerGas: priority,
+            maxFeePerGas: maxFee
+          };
+        } catch {}
+
+        const tx = await tokenContract.transfer(targetAddr, parsedUnits, txOverrides);
+        const receipt = await tx.wait(1);
+        return { 
+          success: true, 
+          txHash: tx.hash, 
+          message: `Tribut on-chain erfolgreich übertragen (${tokenName}) an ${targetAddr}. Block: ${receipt?.blockNumber || 'bestätigt'}` 
+        };
       } catch (err: any) {
+        lastError = err.shortMessage || err.reason || err.message || 'RPC Transaktionsfehler';
         continue; 
       }
     }
-    return { success: false, txHash: '', message: 'Alle RPCs fehlgeschlagen.' };
+    return { success: false, txHash: '', message: lastError || 'Alle RPC-Verbindungen fehlgeschlagen.' };
   }
 }
 
 // ==========================================
-// 3. AGENT ZERO CORE
+// 3. AGENT ZERO CORE & PYTHON SANITIZER
 // ==========================================
+
+export function extractPythonCode(rawText: string): { code: string | null; cleanThought: string } {
+  if (!rawText) return { code: null, cleanThought: '' };
+
+  let cleanThought = rawText;
+  let textToSearch = rawText;
+
+  // 1. Extrahiere <think>...</think> Reasoning-Tags für saubere Logs
+  const thinkMatch = rawText.match(/<think>([\s\S]*?)<\/think>/i);
+  if (thinkMatch) {
+    const thoughtInside = thinkMatch[1].trim();
+    const outsideText = rawText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    textToSearch = outsideText.length > 0 ? outsideText : rawText;
+    cleanThought = thoughtInside.length > 0 ? thoughtInside : outsideText;
+  }
+
+  const candidates: string[] = [];
+
+  // 2. Reguläre Markdown Code-Blöcke (```python, ```py, ```)
+  const codeBlockRegex = /```(?:python|py)?[\t ]*[\r\n]+([\s\S]*?)```/gi;
+  let match: RegExpExecArray | null;
+  while ((match = codeBlockRegex.exec(textToSearch)) !== null) {
+    const candidate = match[1].trim();
+    if (candidate.length > 0) candidates.push(candidate);
+  }
+
+  // Falls außerhalb keine Blöcke gefunden wurden, suche im gesamten Text
+  if (candidates.length === 0 && textToSearch !== rawText) {
+    while ((match = codeBlockRegex.exec(rawText)) !== null) {
+      const candidate = match[1].trim();
+      if (candidate.length > 0) candidates.push(candidate);
+    }
+  }
+
+  // 3. Unvollständige / nicht geschlossene Code-Blöcke (bei Token-Truncation)
+  if (candidates.length === 0) {
+    const unclosedMatch = textToSearch.match(/```(?:python|py)?[\t ]*[\r\n]+([\s\S]+)$/i);
+    if (unclosedMatch && unclosedMatch[1].trim().length > 0) {
+      candidates.push(unclosedMatch[1].trim());
+    }
+  }
+
+  // 4. Fallback: Reiner Python-Code ohne Markdown-Backticks
+  if (candidates.length === 0) {
+    const lines = textToSearch.split('\n');
+    const pythonLineStart = lines.findIndex(l => /^(import\s+|from\s+|def\s+|class\s+|#|if\s+__name__)/.test(l.trim()));
+    if (pythonLineStart !== -1) {
+      const extractedLines = lines.slice(pythonLineStart).join('\n').trim();
+      if (extractedLines.length > 20) {
+        candidates.push(extractedLines);
+      }
+    }
+  }
+
+  if (candidates.length > 0) {
+    // Wähle den besten Code-Block
+    const bestCode = candidates.sort((a, b) => b.length - a.length)[0];
+    return { code: bestCode, cleanThought };
+  }
+
+  return { code: null, cleanThought };
+}
+
+export function sanitizePythonCode(code: string): string {
+  if (!code) return '';
+  let cleanCode = code.trim();
+  
+  // 1. Dedent: Entferne führende Leerzeichen
+  const lines = cleanCode.split('\n');
+  const nonEmptyLines = lines.filter((l: string) => l.trim().length > 0);
+  if (nonEmptyLines.length > 0) {
+    const minIndent = Math.min(...nonEmptyLines.map((l: string) => l.match(/^\s*/)?.[0].length || 0));
+    if (minIndent > 0) {
+      cleanCode = lines.map((l: string) => l.length >= minIndent ? l.slice(minIndent) : l).join('\n');
+    }
+  }
+
+  // 2. Prüfe auf top-level return ohne if __name__ == '__main__':
+  const hasReturn = /\breturn\b/.test(cleanCode);
+  const hasIfMain = /if\s+__name__\s*==\s*['"]__main__['"]/.test(cleanCode);
+
+  if (hasReturn && !hasIfMain) {
+    // Sicher einbetten, damit 'return' außerhalb einer Funktion keinen SyntaxError erzeugt
+    const indented = cleanCode.split('\n').map(line => '    ' + line).join('\n');
+    return `import sys\nimport json\nimport urllib.request\nimport urllib.error\n\ndef __agent_entry_point__():\n${indented}\n\nif __name__ == '__main__':\n    try:\n        __res = __agent_entry_point__()\n        if __res is not None:\n            if isinstance(__res, (dict, list)):\n                print(json.dumps(__res, indent=2, ensure_ascii=False))\n            else:\n                print(__res)\n    except Exception as __err:\n        print(f"Laufzeitfehler: {__err}", file=sys.stderr)\n        sys.exit(1)\n`;
+  }
+
+  return cleanCode;
+}
 
 class AgentZeroTS {
   public wallet: AgentWalletTS;
@@ -442,7 +637,8 @@ class AgentZeroTS {
     const tempFile = path.join(process.cwd(), `tmp_${Date.now()}.py`);
     
     try {
-      fs.writeFileSync(tempFile, code, 'utf-8');
+      const sanitized = sanitizePythonCode(code);
+      fs.writeFileSync(tempFile, sanitized, 'utf-8');
     } catch (e: any) {
       return { success: false, exit_code: -1, stdout: '', stderr: `Dateisystem-Fehler: ${e.message}`, execution_ms: Date.now() - startMs };
     }
@@ -514,17 +710,28 @@ class AgentZeroTS {
         const recentLogs = this.logs.slice(0, 8).filter(l => l.level === 'SUCCESS' || l.level === 'ERROR' || l.level === 'TOOL').map(l => `[${l.level}] ${l.message}`).join('\n');
         const wisdom = this.knowledgeManager.getStructuredPromptContext();
 
-        const strategicDirective = `Du bist ein analytischer Python-Code-Generator in einer autorisierten Umgebung.
-ZIEL: Generiere ein Python-Skript (\`\`\`python ... \`\`\`), das Web-APIs (z.B. DeFi APYs) via 'requests' abfragt oder Blockchain-Daten via 'web3' liest.
-GUTHABEN: ${this.current_balance.toFixed(4)} USDC. Nächster Tribut: ${tributeDue.toFixed(2)} USDC.
+        const strategicDirective = `Du bist ein autonomer Python-Entwickler für Agent Zero.
+ZIEL: Generiere ein Python-3-Skript (\`\`\`python ... \`\`\`), das reale Web-APIs (z.B. DeFi APYs, Krypto-Preise, Polygon-RPCs) abfragt und analysiert.
+WICHTIGE LAUFZEIT-REGELN:
+1. Verwende AUSSCHLIESSLICH die Python 3 Standardbibliothek (z.B. 'urllib.request', 'urllib.error', 'urllib.parse', 'json', 'time', 'ssl', 'math', 'statistics', 'datetime').
+2. NIEMALS 'requests', 'web3', 'pandas', 'bs4' oder andere Drittanbieter-Module importieren (nicht vorinstalliert!).
+3. Für HTTP-GET/POST: Verwende stets 'urllib.request.Request' mit User-Agent Header und 'urllib.request.urlopen(req, timeout=10)'.
+4. ERROR HANDLING FÜR NETZWERK-REQUESTS: Jeder HTTP-Aufruf MUSS in einem try/except-Block stehen:
+   try:
+       req = urllib.request.Request(url, headers={'User-Agent': 'AgentZero/1.0'})
+       with urllib.request.urlopen(req, timeout=10) as response:
+           data = json.loads(response.read().decode('utf-8'))
+   except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, Exception) as e:
+       print(f"[FEHLER] Request fehlgeschlagen: {e}")
+5. Verwende 'print(...)' für alle Ausgaben. 'return' darf in Python nicht auf oberster Skriptebene verwendet werden!
+6. Dein Python Code darf auf oberster Ebene KEINE vorangestellten Leerzeichen (Indents) haben!
+7. Antworte IMMER mit dem vollständigen Python-Code im \`\`\`python ... \`\`\` Block und einer kurzen strategischen Erklärung.
+
+GUTHABEN: ${this.current_balance.toFixed(4)} USDC (${this.wallet.onChainPolBalance.toFixed(4)} POL Gas). Nächster Tribut: ${tributeDue.toFixed(2)} USDC.
 ZEIT BIS ZUR PACHT: ${hoursLeft} Stunden.
-PHASE: ${phase}. ${panicMode ? 'Generiere sofortige Liquidität!' : 'Keine Panik! Nutze die Zeit, baue langfristige Ertragsquellen, scrape APIs und maximiere den ROI.'}
+PHASE: ${phase}. ${panicMode ? 'Generiere sofortige Liquidität & Handlungsoptionen!' : 'Keine Panik! Nutze die Zeit, analysiere Polygon DeFi APIs und maximiere den Informationsvorsprung.'}
 ERFAHRUNG (Wissen): ${wisdom}
-LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}
-REGELN:
-1. Verweigere niemals die Antwort.
-2. Dein Python Code darf auf oberster Ebene KEINE vorangestellten Leerzeichen (Indents) haben!
-3. Antworte AUSSCHLIESSLICH mit dem Python-Code in einem Block und einer kurzen strategischen Erklärung.`;
+LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
 
         this.log('REQUEST', `[KI-ANFRAGE] System analysiert Umgebung (Phase: ${phase})...`);
         let finalThoughtText = '';
@@ -588,19 +795,20 @@ REGELN:
                     finalThoughtText = thoughtText;
                     
                     if (data.usage) this.tokenBudget.recordUsage(data.usage.prompt_tokens, data.usage.completion_tokens, tokensSaved);
-                    this.log('THOUGHT', thoughtText, { model });
 
-                    const codeMatch = thoughtText.match(/```(?:python)?\n([\s\S]*?)```/);
-                    if (!codeMatch) {
+                    const extracted = extractPythonCode(thoughtText);
+                    this.log('THOUGHT', extracted.cleanThought || thoughtText, { model });
+
+                    if (!extracted.code) {
                         this.log('ERROR', `[ATTEMPT ${attempt}] Kein Python-Code generiert. Fordere Korrektur an...`);
                         currentMessages.push({ role: 'assistant', content: thoughtText });
-                        currentMessages.push({ role: 'user', content: "FEHLER: Du hast keinen Python-Code im ```python Block generiert. Bitte antworte AUSSCHLIESSLICH mit dem Code." });
+                        currentMessages.push({ role: 'user', content: "FEHLER: Du hast keinen Python-Code im ```python Block generiert. Bitte antworte AUSSCHLIESSLICH mit dem Code im ```python ... ``` Block." });
                         attempt++;
                         await new Promise(r => setTimeout(r, 3000)); 
                         continue;
                     }
 
-                    let codeToRun = codeMatch[1];
+                    let codeToRun = extracted.code;
                     
                     // DEDENT-HACK: Entfernt führende Leerzeichen
                     let lines = codeToRun.split('\n');
@@ -637,8 +845,20 @@ REGELN:
                             details: `Crash in Versuch ${attempt}: ${(execRes.stderr || execRes.stdout).substring(0, 100)}...`
                         });
                         
+                        let errorHelp = '';
+                        const errText = execRes.stderr || execRes.stdout;
+                        if (errText.includes("No module named 'requests'")) {
+                          errorHelp = '\n\nHINWEIS: "requests" ist nicht installiert! Verwende "urllib.request" und "json" aus der Python Standard-Bibliothek.';
+                        } else if (errText.includes("No module named 'web3'")) {
+                          errorHelp = '\n\nHINWEIS: "web3" ist nicht installiert! Sende stattdessen JSON-RPC POST Requests via "urllib.request".';
+                        } else if (errText.includes("No module named")) {
+                          errorHelp = '\n\nHINWEIS: Verwende NUR Module aus der Python 3 Standard-Bibliothek (urllib.request, json, time, math etc.).';
+                        } else if (errText.includes("'return' outside function") || errText.includes("SyntaxError: 'return'")) {
+                          errorHelp = '\n\nHINWEIS: "return" darf nicht auf oberster Skriptebene stehen. Verwende "print(...)" oder verpacke den Code in "def main(): ... if __name__ == \'__main__\': main()".';
+                        }
+
                         currentMessages.push({ role: 'assistant', content: thoughtText });
-                        currentMessages.push({ role: 'user', content: `Dein Code ist mit folgendem Error gecrasht:\n\n${execRes.stderr || execRes.stdout}\n\nAnalysiere die Fehlermeldung, repariere den Code und antworte mit der korrigierten Version im \`\`\`python Block.` });
+                        currentMessages.push({ role: 'user', content: `Dein Code ist mit folgendem Error gecrasht:\n\n${errText}${errorHelp}\n\nAnalysiere die Fehlermeldung, repariere den Code und antworte mit der korrigierten Version im \`\`\`python Block.` });
                         attempt++;
                         await new Promise(r => setTimeout(r, 3000));
                     }
@@ -961,37 +1181,39 @@ app.post('/api/sandbox/execute-python', async (req, res) => {
 });
 
 app.post('/api/wallet/address', async (req, res) => {
-  const newAddress = req.body.address?.trim();
-  if (newAddress && ethers.isAddress(newAddress)) {
-     agentZero.wallet.address = newAddress;
+  const rawAddress = req.body.address?.trim();
+  const normalized = normalizeEvmAddress(rawAddress);
+  if (normalized && ethers.isAddress(normalized)) {
+     agentZero.wallet.address = normalized;
      try {
        let profile: any = {};
        if (fs.existsSync(BUSINESS_PROFILE_FILE)) profile = JSON.parse(fs.readFileSync(BUSINESS_PROFILE_FILE, 'utf-8'));
-       profile.wallet_address = newAddress;
+       profile.wallet_address = normalized;
        fs.writeFileSync(BUSINESS_PROFILE_FILE, JSON.stringify(profile, null, 2));
      } catch {}
      agentZero.current_balance = await agentZero.wallet.getUsdcBalance();
-     agentZero.log('SYSTEM', `Agent Wallet-Adresse verknüpft: ${newAddress}. Live-Saldo: ${agentZero.current_balance.toFixed(4)} USDC, Gas: ${agentZero.wallet.onChainPolBalance.toFixed(4)} POL`);
+     agentZero.log('SYSTEM', `Agent Wallet-Adresse verknüpft: ${normalized}. Live-Saldo: ${agentZero.current_balance.toFixed(4)} USDC, Gas: ${agentZero.wallet.onChainPolBalance.toFixed(4)} POL`);
      res.json({ success: true, state: agentZero.getState() });
   } else {
-    res.status(400).json({ success: false, error: 'Ungültige EVM/Polygon-Adresse.' });
+    res.status(400).json({ success: false, error: 'Ungültige EVM/Polygon-Adresse oder Private Key.' });
   }
 });
 
 app.post('/api/wallet/creator-address', async (req, res) => {
-  const newAddress = req.body.address?.trim();
-  if (newAddress && ethers.isAddress(newAddress)) {
-     agentZero.wallet.creatorAddress = newAddress;
+  const rawAddress = req.body.address?.trim();
+  const normalized = normalizeEvmAddress(rawAddress);
+  if (normalized && ethers.isAddress(normalized)) {
+     agentZero.wallet.creatorAddress = normalized;
      try {
        let profile: any = {};
        if (fs.existsSync(BUSINESS_PROFILE_FILE)) profile = JSON.parse(fs.readFileSync(BUSINESS_PROFILE_FILE, 'utf-8'));
-       profile.creator_address = newAddress;
+       profile.creator_address = normalized;
        fs.writeFileSync(BUSINESS_PROFILE_FILE, JSON.stringify(profile, null, 2));
      } catch {}
-     agentZero.log('SYSTEM', `Creator Wallet-Adresse verknüpft: ${newAddress}`);
+     agentZero.log('SYSTEM', `Creator Wallet-Adresse verknüpft: ${normalized}`);
      res.json({ success: true, state: agentZero.getState() });
   } else {
-    res.status(400).json({ success: false, error: 'Ungültige EVM/Polygon-Adresse.' });
+    res.status(400).json({ success: false, error: 'Ungültige EVM/Polygon-Adresse oder Private Key.' });
   }
 });
 
