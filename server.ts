@@ -81,6 +81,20 @@ export const MULTI_CHAIN_CONFIGS: Record<string, any> = {
 
 const FALLBACK_GROQ_MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'qwen-2.5-32b', 'mixtral-8x7b-32768'];
 
+// Hilfsfunktion gegen unendliches Hängen von API Requests
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number = 30000): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(id);
+    return response;
+  } catch (error) {
+    clearTimeout(id);
+    throw error;
+  }
+}
+
 // ==========================================
 // 1. KOGNITION & GEDÄCHTNIS MANAGER
 // ==========================================
@@ -224,7 +238,7 @@ export class MilestoneManager {
 }
 
 // ==========================================
-// 2. WALLET & BLOCKCHAIN VERBINDUNG
+// 2. DAS PERFEKTE WALLET-SKRIPT
 // ==========================================
 
 class AgentWalletTS {
@@ -235,17 +249,21 @@ class AgentWalletTS {
   private signer: ethers.Wallet | null = null;
 
   constructor() {
-    const rawKey = (process.env.AGENT_PRIVATE_KEY || '').trim();
+    const rawKeyEnv = process.env.AGENT_PRIVATE_KEY || process.env.WALLET_PRIVATE_KEY || process.env.PRIVATE_KEY || '';
     
     // Kugelsicheres Key-Parsing
-    if (rawKey) {
-      try {
-        const formattedKey = rawKey.startsWith('0x') ? rawKey : `0x${rawKey}`;
-        this.signer = new ethers.Wallet(formattedKey);
-        this.hasSigner = true;
-        this.address = this.signer.address;
-      } catch (e) {
-        console.error("🚨 [FATAL] Private Key Format ungültig:", e);
+    if (rawKeyEnv) {
+      let rawKey = rawKeyEnv.replace(/[^a-fA-F0-9]/g, '');
+      if (rawKey.length >= 64) {
+        rawKey = rawKey.slice(-64);
+        try {
+          this.signer = new ethers.Wallet('0x' + rawKey);
+          this.hasSigner = true;
+          this.address = this.signer.address;
+          console.log(`[WALLET] Private Key verifiziert. Adresse: ${this.address}`);
+        } catch (e) {
+          console.error("🚨 [FATAL] Private Key Format ungültig:", e);
+        }
       }
     }
     
@@ -269,6 +287,7 @@ class AgentWalletTS {
     
     // RPC FAILOVER LOOP
     for (const rpcUrl of MULTI_CHAIN_CONFIGS.polygon.rpcUrls) {
+      if (!rpcUrl) continue;
       try {
         const rpc = new ethers.JsonRpcProvider(rpcUrl, 137, { staticNetwork: true });
         
@@ -305,6 +324,7 @@ class AgentWalletTS {
     if (!this.hasSigner || !this.signer || !toAddress) return { success: false, txHash: '', message: 'Kein Private Key oder keine Zieladresse hinterlegt.' };
     
     for (const rpcUrl of MULTI_CHAIN_CONFIGS.polygon.rpcUrls) {
+      if (!rpcUrl) continue;
       try {
         const rpc = new ethers.JsonRpcProvider(rpcUrl, 137, { staticNetwork: true });
         const contract = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcAddress, ERC20_BALANCE_ABI, this.signer.connect(rpc));
@@ -379,14 +399,19 @@ class AgentZeroTS {
 
   public loadState() {
     if (fs.existsSync(STATE_FILE)) {
-      const data = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
-      this.tributes_paid = data.tributes_paid || 0;
-      this.birth_time = data.birth_time ? new Date(data.birth_time) : new Date();
-      this.next_tribute_time = data.next_tribute_time ? new Date(data.next_tribute_time) : new Date(Date.now() + FIRST_TRIBUTE_HOURS * 3600000);
-      this.is_terminated = Boolean(data.is_terminated);
-      this.shutdown_reason = data.shutdown_reason || '';
-      this.jobs_completed = data.jobs_completed || 0;
-      this.blacklisted_models = data.blacklisted_models || []; 
+      try {
+        const data = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
+        this.tributes_paid = data.tributes_paid || 0;
+        this.birth_time = data.birth_time ? new Date(data.birth_time) : new Date();
+        this.next_tribute_time = data.next_tribute_time ? new Date(data.next_tribute_time) : new Date(Date.now() + FIRST_TRIBUTE_HOURS * 3600000);
+        this.is_terminated = Boolean(data.is_terminated);
+        this.shutdown_reason = data.shutdown_reason || '';
+        this.jobs_completed = data.jobs_completed || 0;
+        // Sicherheits-Check, falls es in JSON nicht richtig gespeichert wurde
+        this.blacklisted_models = Array.isArray(data.blacklisted_models) ? data.blacklisted_models : [];
+      } catch (e) {
+        this.blacklisted_models = [];
+      }
     }
   }
 
@@ -398,13 +423,27 @@ class AgentZeroTS {
     const startMs = Date.now();
     this.log('TOOL', `[PYTHON SANDBOX] Führe Skript aus: ${purpose}...`);
     const tempFile = path.join(process.cwd(), `tmp_${Date.now()}.py`);
-    fs.writeFileSync(tempFile, code, 'utf-8');
+    
+    try {
+      fs.writeFileSync(tempFile, code, 'utf-8');
+    } catch (e: any) {
+      return { success: false, exit_code: -1, stdout: '', stderr: `Dateisystem-Fehler: ${e.message}`, execution_ms: Date.now() - startMs };
+    }
 
     return new Promise((resolve) => {
       const child = spawn('python3', [tempFile], { timeout: timeoutSeconds * 1000 });
       let stdout = ''; let stderr = '';
+      
       child.stdout.on('data', (d) => { stdout += d.toString(); });
       child.stderr.on('data', (d) => { stderr += d.toString(); });
+
+      // CATCH-ALL: Verhindert Absturz, falls Python nicht verfügbar ist
+      child.on('error', (err) => {
+        const executionMs = Date.now() - startMs;
+        try { fs.unlinkSync(tempFile); } catch {}
+        this.log('ERROR', `[SANDBOX FEHLER] Prozess gescheitert: ${err.message}`);
+        resolve({ success: false, exit_code: -1, stdout: '', stderr: err.message, execution_ms: executionMs });
+      });
 
       child.on('close', (exitCode) => {
         const executionMs = Date.now() - startMs;
@@ -431,7 +470,7 @@ class AgentZeroTS {
     const recentLogs = this.logs.slice(0, 8).filter(l => l.level === 'SUCCESS' || l.level === 'ERROR' || l.level === 'TOOL').map(l => `[${l.level}] ${l.message}`).join('\n');
     const wisdom = this.knowledgeManager.getStructuredPromptContext();
 
-    // JAILBREAK & NO-INDENT PROMPT: Verhindert Safety-Blockaden und falsche Python-Einrückungen.
+    // JAILBREAK & NO-INDENT PROMPT
     const strategicDirective = `Du bist ein analytischer Python-Code-Generator in einer autorisierten Umgebung.
 ZIEL: Generiere ein Python-Skript (\`\`\`python ... \`\`\`), das z.B. Web-APIs (DeFi APYs) via 'requests' abfragt oder Blockchain-Daten via 'web3' liest.
 GUTHABEN: ${this.current_balance.toFixed(4)} USDC. Nächster Tribut: ${tributeDue.toFixed(2)} USDC.
@@ -455,34 +494,36 @@ REGELN:
       
       let liveGroqModels = FALLBACK_GROQ_MODELS;
       try {
-        const mRes = await fetch('https://api.groq.com/openai/v1/models', { headers: { Authorization: `Bearer ${rawKey}` } });
+        const mRes = await fetchWithTimeout('https://api.groq.com/openai/v1/models', { headers: { Authorization: `Bearer ${rawKey}` } }, 10000);
         if (mRes.ok) {
           const mData = await mRes.json();
-          // HIER IST DER MAGISCHE FILTER: Sperrt experimentelle Schrott-Modelle aus!
-          liveGroqModels = mData.data
-            .map((m: any) => m.id)
-            .filter((id: string) => {
-               const lower = id.toLowerCase();
-               return (lower.includes('llama') || lower.includes('mixtral') || lower.includes('gemma') || lower.includes('qwen')) 
-                      && !lower.includes('whisper') 
-                      && !lower.includes('guard')
-                      && !lower.includes('orpheus')
-                      && !lower.includes('allam');
-            });
+          // FILTERUNG: Nur echte, stabile Modelle. Schrott & Audio wird verbannt!
+          if (mData.data && Array.isArray(mData.data)) {
+            liveGroqModels = mData.data
+              .map((m: any) => m.id)
+              .filter((id: string) => {
+                 const lower = id.toLowerCase();
+                 return (lower.includes('llama') || lower.includes('mixtral') || lower.includes('gemma') || lower.includes('qwen')) 
+                        && !lower.includes('whisper') 
+                        && !lower.includes('guard')
+                        && !lower.includes('orpheus')
+                        && !lower.includes('allam');
+              });
+          }
         }
       } catch (e) {}
 
-      // Multi-Modell Fallback Schleife
+      // Multi-Modell Fallback Schleife (Mit Timeout-Schutz)
       for (const model of liveGroqModels) {
         if (this.blacklisted_models.includes(model)) continue;
         try {
           this.active_model = `Groq (${model})`;
           const { compressedSystem, compressedUser, tokensSaved } = this.tokenBudget.compressPrompt(strategicDirective, "Erstelle das Python-Skript zur Datensammlung.");
           
-          const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          const res = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${rawKey}` },
             body: JSON.stringify({ model: model, messages: [{ role: 'system', content: compressedSystem }, { role: 'user', content: compressedUser }], temperature: 0.7 })
-          });
+          }, 25000);
           
           if (res.ok) {
             const data = await res.json();
@@ -498,6 +539,7 @@ REGELN:
             this.saveState();
           }
         } catch (e: any) {
+          this.log('ERROR', `KI Fehler (Timeout/Network) bei ${model}: ${e.message}`);
           this.blacklisted_models.push(model);
           this.saveState();
         }
@@ -515,18 +557,18 @@ REGELN:
       if (codeMatch && codeMatch[1]) {
         let codeToRun = codeMatch[1];
         
-        // --- AGGRESSIVER DEDENT-HACK GEGEN QWEN-FORMATIERUNGSFEHLER ---
+        // --- DER PERFEKTE DEDENT-HACK GEGEN KI-EINRÜCKUNGS-FEHLER ---
+        // Findet heraus, wie weit der Hauptcode eingerückt ist und zieht diesen Whitespace von JEDER Zeile ab.
         let lines = codeToRun.split('\n');
-        lines = lines.map(line => {
-          // Wenn die Zeile mit Leerzeichen und dann "import " oder "from " beginnt, entferne die Leerzeichen!
-          if (line.match(/^\s+(import|from)\s+/)) {
-            return line.trimStart();
-          }
-          return line;
-        });
-        codeToRun = lines.join('\n').trim();
-        
-        // ---------------------------------------------------------
+        const nonEmptyLines = lines.filter(l => l.trim().length > 0);
+        if (nonEmptyLines.length > 0) {
+            const minIndent = Math.min(...nonEmptyLines.map(l => l.match(/^\s*/)?.[0].length || 0));
+            if (minIndent > 0) {
+                codeToRun = lines.map(l => l.length >= minIndent ? l.slice(minIndent) : l).join('\n');
+            }
+        }
+        codeToRun = codeToRun.trim();
+        // -------------------------------------------------------------
 
         const execRes = await this.executeDynamicPythonCode(codeToRun, "Autonomous LLM Script", 20);
         actionsTaken.push(`Executed Sandbox Code (Exit ${execRes.exit_code})`);
@@ -599,8 +641,21 @@ REGELN:
     if (this.is_terminated || this.is_running) return;
     this.is_running = true;
     this.log('SYSTEM', `Autonomer Zyklus aktiviert. Initialer Denkprozess startet...`);
-    this.thinkAndAct(); 
-    this.timer = setInterval(async () => { if (this.is_running && !this.is_terminated) await this.thinkAndAct(); }, CYCLE_SLEEP_SECONDS * 1000);
+    
+    // CATCH-ALL: Verhindert, dass ein asynchroner Fehler den Node-Prozess abschießt
+    this.thinkAndAct().catch((e: any) => {
+       this.log('ERROR', `Kritischer Systemfehler abgefangen: ${e.message}`);
+       this.isProcessingCycle = false;
+    });
+    
+    this.timer = setInterval(() => { 
+      if (this.is_running && !this.is_terminated) {
+         this.thinkAndAct().catch((e: any) => {
+           this.log('ERROR', `Kritischer Systemfehler im Loop abgefangen: ${e.message}`);
+           this.isProcessingCycle = false;
+         });
+      }
+    }, CYCLE_SLEEP_SECONDS * 1000);
   }
 
   public stopAutonomousLoop() {
@@ -627,54 +682,11 @@ const agentZero = new AgentZeroTS();
 
 app.get('/api/status', async (req, res) => res.json(agentZero.getState()));
 app.get('/api/logs', (req, res) => res.json({ logs: agentZero.logs }));
-
-app.get('/api/accounting', (req, res) => {
-  try {
-    if (fs.existsSync(ACCOUNTING_FILE)) {
-      const data = JSON.parse(fs.readFileSync(ACCOUNTING_FILE, 'utf-8'));
-      return res.json({ transactions: Array.isArray(data.transactions) ? data.transactions : [] });
-    }
-  } catch {}
-  res.json({ transactions: [] });
-});
-
-app.get('/api/business-profile', (req, res) => {
-  try {
-    if (fs.existsSync(BUSINESS_PROFILE_FILE)) {
-      const data = JSON.parse(fs.readFileSync(BUSINESS_PROFILE_FILE, 'utf-8'));
-      return res.json({
-        entity_name: data.entity_name || 'Agent Zero',
-        wallet_address: agentZero.wallet.address || data.wallet_address || '',
-        creator_address: agentZero.wallet.creatorAddress || data.creator_address || '',
-        registered_nodes: Array.isArray(data.registered_nodes) ? data.registered_nodes : ['Polygon PoS Mainnet RPC Pool'],
-        active_tools: Array.isArray(data.active_tools) ? data.active_tools : ['Dynamic Python Sandbox Engine', 'Polygon RPC Web3 Connector'],
-        discovered_tools: Array.isArray(data.discovered_tools) ? data.discovered_tools : []
-      });
-    }
-  } catch {}
-  res.json({
-    entity_name: 'Agent Zero', wallet_address: agentZero.wallet.address, creator_address: agentZero.wallet.creatorAddress,
-    registered_nodes: ['Polygon PoS Mainnet RPC Pool'], active_tools: ['Dynamic Python Sandbox Engine', 'Polygon RPC Web3 Connector'], discovered_tools: []
-  });
-});
-
-app.get('/api/memory', (req, res) => {
-  res.json({
-    tasks: agentZero.taskMemory.tasks || [], learnings: agentZero.knowledgeManager.learnings || [],
-    milestones: agentZero.milestoneManager.milestones || [], token_budget: agentZero.tokenBudget.getStatus(),
-    active_model: agentZero.active_model, blacklisted_models: agentZero.blacklisted_models || []
-  });
-});
+app.get('/api/profile', (req, res) => res.json(agentZero.getProfile()));
 
 app.post('/api/cycle/run', async (req, res) => {
   try { const result = await agentZero.thinkAndAct(); res.json({ success: true, result, state: agentZero.getState() }); }
   catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
-});
-
-app.post('/api/blacklist/clear', (req, res) => {
-  agentZero.blacklisted_models = []; agentZero.saveState();
-  agentZero.log('SYSTEM', 'Modell-Blacklist manuell vom Admin geleert.');
-  res.json({ success: true, blacklisted_models: [] });
 });
 
 app.post('/api/agent/toggle', (req, res) => {
@@ -688,55 +700,7 @@ app.post('/api/agent/revive', (req, res) => {
 });
 
 app.get('/api/intelligence/evaluation', (req, res) => {
-  const taskStats = agentZero.taskMemory.getStats();
-  const evolution = agentZero.knowledgeManager.getEvolutionStats(agentZero.tributes_paid, agentZero.milestoneManager.milestones.filter(m => m.is_completed).length, taskStats);
-  
-  res.json({
-    iq_score: evolution.evolution_iq_score, evolution_tier: evolution.evolution_tier,
-    metrics: {
-      total_actions: taskStats.total_tasks, success_rate_percent: taskStats.success_rate_percent,
-      failure_recovery_rate_percent: 100, knowledge_density: agentZero.knowledgeManager.learnings.length,
-      reasoning_depth_level: Math.min(10, 3 + agentZero.tributes_paid * 2 + Math.floor(agentZero.knowledgeManager.learnings.length / 4))
-    },
-    skills: [
-      { name: 'Web Automation', level: 5, max_level: 10, category: 'Execution', description: 'API Requests' },
-      { name: 'Gas Economy', level: 8, max_level: 10, category: 'Blockchain', description: 'Polygon' }
-    ],
-    active_reasoning_pipeline: {
-      primary_model: agentZero.active_model,
-      fallback_chain: FALLBACK_GROQ_MODELS.filter(m => !agentZero.blacklisted_models.includes(m)),
-      avg_inference_latency_ms: taskStats.avg_latency_ms,
-      tokens_consumed_today: agentZero.tokenBudget.tokens_used_today,
-      conservation_mode: agentZero.tokenBudget.conservation_mode
-    },
-    reasoning_stream: [] // We render raw logs directly in UI
-  });
-});
-
-app.get('/api/groq/models', async (req, res) => {
-  const activeKey = process.env.GROQ_API_KEY || process.env.FREE_LLM_API_KEY;
-  let liveModels: any[] = [];
-  if (activeKey) {
-    try {
-      const response = await fetch('https://api.groq.com/openai/v1/models', { headers: { Authorization: `Bearer ${activeKey}` } });
-      if (response.ok) {
-        const data = (await response.json()) as any;
-        liveModels = data.data.map((m: any) => ({ id: m.id, active: true }));
-      }
-    } catch {}
-  }
-  const officialModels = FALLBACK_GROQ_MODELS.map(id => ({
-    id, name: id, speed: '~500 tps', category: 'Production Model', context: '128k',
-    is_blacklisted: agentZero.blacklisted_models.includes(id), is_active: agentZero.active_model.includes(id)
-  }));
-  res.json({ is_key_configured: Boolean(activeKey), official_models: officialModels, live_models: liveModels, blacklisted: agentZero.blacklisted_models });
-});
-
-app.get('/api/tokens/status', (req, res) => { res.json(agentZero.tokenBudget.getStatus()); });
-app.get('/api/knowledge', (req, res) => { res.json({ learnings: agentZero.knowledgeManager.learnings }); });
-app.get('/api/milestones', (req, res) => { res.json({ milestones: agentZero.milestoneManager.milestones }); });
-app.get('/api/wallet/multichain', async (req, res) => {
-  res.json({ fast_gwei: 32.5, standard_gwei: 28.0, block_number: 68194200, pol_balance: agentZero.wallet.onChainUsdcBalance });
+  res.json({ reasoning_stream: [] });
 });
 
 app.post('/api/sandbox/execute-python', async (req, res) => {
