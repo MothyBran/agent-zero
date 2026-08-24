@@ -60,6 +60,7 @@ export const MinimalVitalsBar: React.FC<MinimalVitalsBarProps> = ({
   const isTerminated = state?.is_terminated || state?.status === 'SHUTDOWN';
   const isCritical = state?.status === 'SURVIVAL_CRITICAL' || countdown.hours < 6;
   const balance = state?.current_balance ?? 0;
+  const polBalance = state?.agent_eth_balance ?? 0;
   const tributeDue = state?.current_tribute_due ?? 1.0;
   const level = state?.tributes_paid ?? 0;
   const totalSecondsIn48h = 48 * 3600;
@@ -99,6 +100,9 @@ export const MinimalVitalsBar: React.FC<MinimalVitalsBarProps> = ({
             </div>
             <div className="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5">
               <span>NET: <span className="text-slate-200">POLYGON PoS (137)</span></span>
+              {polBalance > 0 && (
+                <span className="text-purple-300">GAS: {polBalance.toFixed(3)} POL</span>
+              )}
               {state?.wallet_address && (
                 <button
                   onClick={copyAddress}

@@ -4,6 +4,7 @@ import fs from 'fs';
 import { spawn } from 'child_process';
 import { ethers } from 'ethers';
 import dotenv from 'dotenv';
+import { createServer as createViteServer } from 'vite';
 
 dotenv.config();
 
@@ -246,6 +247,7 @@ class AgentWalletTS {
   public creatorAddress: string = ''; 
   public hasSigner: boolean = false;
   public onChainUsdcBalance: number = 0.0;
+  public onChainPolBalance: number = 0.0;
   private signer: ethers.Wallet | null = null;
 
   constructor() {
@@ -266,45 +268,66 @@ class AgentWalletTS {
     }
     
     let savedAddress = '';
+    let savedCreator = '';
     try {
       if (fs.existsSync(BUSINESS_PROFILE_FILE)) {
         const profile = JSON.parse(fs.readFileSync(BUSINESS_PROFILE_FILE, 'utf-8'));
         savedAddress = profile.wallet_address || '';
+        savedCreator = profile.creator_address || '';
       }
     } catch {}
 
     this.address = this.address || (process.env.AGENT_WALLET_ADDRESS || '').trim() || savedAddress;
-    this.creatorAddress = (process.env.CREATOR_WALLET_ADDRESS || '').trim();
+    this.creatorAddress = (process.env.CREATOR_WALLET_ADDRESS || '').trim() || savedCreator;
   }
 
   public async getUsdcBalance(): Promise<number> {
     if (!this.address) return 0.0; 
-    let total = 0;
     
-    for (const rpcUrl of MULTI_CHAIN_CONFIGS.polygon.rpcUrls) {
-      if (!rpcUrl) continue;
-      try {
-        const rpc = new ethers.JsonRpcProvider(rpcUrl, 137, { staticNetwork: true });
-        
-        await fetchWithTimeout(rpcUrl, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ jsonrpc: '2.0', method: 'eth_blockNumber', params: [], id: 1 })
-        }, 3000);
-        
-        try {
-          const c1 = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcAddress, ERC20_BALANCE_ABI, rpc);
-          const bal1 = await c1.balanceOf(this.address);
-          total += Number(ethers.formatUnits(bal1, 6));
-        } catch (e) {}
+    const rpcPool = [
+      process.env.POLYGON_RPC_URL,
+      'https://polygon-rpc.com',
+      'https://polygon.llamarpc.com',
+      'https://1rpc.io/matic',
+      'https://polygon-bor-rpc.publicnode.com',
+      'https://rpc.ankr.com/polygon'
+    ].filter(Boolean) as string[];
 
+    for (const rpcUrl of rpcPool) {
+      try {
+        const rpc = new ethers.JsonRpcProvider(rpcUrl, { chainId: 137, name: 'polygon' }, { staticNetwork: true });
+        
+        // 1. Native USDC
+        const c1 = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcAddress, ERC20_BALANCE_ABI, rpc);
+        const bal1 = await Promise.race([
+          c1.balanceOf(this.address),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('RPC Timeout')), 4000))
+        ]) as bigint;
+        const usdcNative = Number(ethers.formatUnits(bal1, 6));
+
+        // 2. Bridged USDC.e
+        let usdcBridged = 0;
         if (MULTI_CHAIN_CONFIGS.polygon.usdcBridgedAddress) {
           try {
             const c2 = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcBridgedAddress, ERC20_BALANCE_ABI, rpc);
-            const bal2 = await c2.balanceOf(this.address);
-            total += Number(ethers.formatUnits(bal2, 6));
-          } catch (e) {}
+            const bal2 = await Promise.race([
+              c2.balanceOf(this.address),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('RPC Timeout')), 3000))
+            ]) as bigint;
+            usdcBridged = Number(ethers.formatUnits(bal2, 6));
+          } catch {}
         }
-        
+
+        // 3. Native POL Gas Balance
+        try {
+          const polBal = await Promise.race([
+            rpc.getBalance(this.address),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('RPC Timeout')), 3000))
+          ]) as bigint;
+          this.onChainPolBalance = Number(ethers.formatEther(polBal));
+        } catch {}
+
+        const total = usdcNative + usdcBridged;
         this.onChainUsdcBalance = total;
         return total; 
       } catch (e) {
@@ -581,11 +604,11 @@ REGELN:
                     
                     // DEDENT-HACK: Entfernt führende Leerzeichen
                     let lines = codeToRun.split('\n');
-                    const nonEmptyLines = lines.filter(l => l.trim().length > 0);
+                    const nonEmptyLines = lines.filter((l: string) => l.trim().length > 0);
                     if (nonEmptyLines.length > 0) {
-                        const minIndent = Math.min(...nonEmptyLines.map(l => l.match(/^\s*/)?.[0].length || 0));
+                        const minIndent = Math.min(...nonEmptyLines.map((l: string) => l.match(/^\s*/)?.[0].length || 0));
                         if (minIndent > 0) {
-                            codeToRun = lines.map(l => l.length >= minIndent ? l.slice(minIndent) : l).join('\n');
+                            codeToRun = lines.map((l: string) => l.length >= minIndent ? l.slice(minIndent) : l).join('\n');
                         }
                     }
                     codeToRun = codeToRun.trim();
@@ -726,12 +749,36 @@ REGELN:
     this.log('SYSTEM', 'Autonomer Zyklus pausiert.');
   }
 
+  public resetDeadline() {
+    const now = new Date();
+    this.birth_time = now;
+    this.next_tribute_time = new Date(now.getTime() + FIRST_TRIBUTE_HOURS * 3600000);
+    this.is_terminated = false;
+    this.shutdown_reason = '';
+    this.saveState();
+    this.log('SYSTEM', `[DEADLINE RESET] 48h-Überlebensfrist zurückgesetzt. Neue Frist bis: ${this.next_tribute_time.toISOString()}`);
+  }
+
   public getState() {
     return {
-      tributes_paid: this.tributes_paid, current_balance: this.current_balance, wallet_address: this.wallet.address,
-      creator_wallet_address: this.wallet.creatorAddress, has_signer: this.wallet.hasSigner, is_running: this.is_running,
-      is_terminated: this.is_terminated, shutdown_reason: this.shutdown_reason, next_tribute_time: this.next_tribute_time.toISOString(),
-      active_jobs_completed: this.jobs_completed, current_tribute_due: this.calculateCurrentTribute()
+      tributes_paid: this.tributes_paid,
+      current_balance: this.current_balance,
+      pol_balance: this.wallet.onChainPolBalance,
+      agent_eth_balance: this.wallet.onChainPolBalance,
+      native_symbol: 'POL',
+      wallet_address: this.wallet.address,
+      creator_wallet_address: this.wallet.creatorAddress,
+      creator_address: this.wallet.creatorAddress,
+      has_signer: this.wallet.hasSigner,
+      is_running: this.is_running,
+      is_terminated: this.is_terminated,
+      shutdown_reason: this.shutdown_reason,
+      birth_time: this.birth_time.toISOString(),
+      next_tribute_time: this.next_tribute_time.toISOString(),
+      active_jobs_completed: this.jobs_completed,
+      current_tribute_due: this.calculateCurrentTribute(),
+      blacklisted_models: this.blacklisted_models,
+      active_model: this.active_model
     };
   }
 }
@@ -770,26 +817,38 @@ app.get('/api/business-profile', (req, res) => {
     }
   } catch {}
   res.json({
-    entity_name: 'Agent Zero', wallet_address: agentZero.wallet.address, creator_address: agentZero.wallet.creatorAddress,
-    registered_nodes: ['Polygon PoS Mainnet RPC Pool'], active_tools: ['Dynamic Python Sandbox Engine', 'Polygon RPC Web3 Connector'], discovered_tools: []
+    entity_name: 'Agent Zero',
+    wallet_address: agentZero.wallet.address,
+    creator_address: agentZero.wallet.creatorAddress,
+    registered_nodes: ['Polygon PoS Mainnet RPC Pool'],
+    active_tools: ['Dynamic Python Sandbox Engine', 'Polygon RPC Web3 Connector'],
+    discovered_tools: []
   });
 });
 
 app.get('/api/memory', (req, res) => {
   res.json({
-    tasks: agentZero.taskMemory.tasks || [], learnings: agentZero.knowledgeManager.learnings || [],
-    milestones: agentZero.milestoneManager.milestones || [], token_budget: agentZero.tokenBudget.getStatus(),
-    active_model: agentZero.active_model, blacklisted_models: agentZero.blacklisted_models || []
+    tasks: agentZero.taskMemory.tasks || [],
+    learnings: agentZero.knowledgeManager.learnings || [],
+    milestones: agentZero.milestoneManager.milestones || [],
+    token_budget: agentZero.tokenBudget.getStatus(),
+    active_model: agentZero.active_model,
+    blacklisted_models: agentZero.blacklisted_models || []
   });
 });
 
 app.post('/api/cycle/run', async (req, res) => {
-  try { const result = await agentZero.thinkAndAct(); res.json({ success: true, result, state: agentZero.getState() }); }
-  catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+  try {
+    const result = await agentZero.thinkAndAct();
+    res.json({ success: true, result, state: agentZero.getState() });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 app.post('/api/blacklist/clear', (req, res) => {
-  agentZero.blacklisted_models = []; agentZero.saveState();
+  agentZero.blacklisted_models = [];
+  agentZero.saveState();
   agentZero.log('SYSTEM', 'Modell-Blacklist manuell vom Admin geleert.');
   res.json({ success: true, blacklisted_models: [] });
 });
@@ -799,8 +858,17 @@ app.post('/api/agent/toggle', (req, res) => {
   res.json({ is_running: agentZero.is_running, state: agentZero.getState() });
 });
 
+app.post('/api/deadline/reset', (req, res) => {
+  agentZero.resetDeadline();
+  res.json({ success: true, state: agentZero.getState() });
+});
+
 app.post('/api/agent/revive', (req, res) => {
-  agentZero.is_terminated = false; agentZero.is_running = true; agentZero.saveState();
+  agentZero.resetDeadline();
+  agentZero.is_terminated = false;
+  agentZero.is_running = true;
+  agentZero.saveState();
+  agentZero.startAutonomousLoop();
   res.json({ success: true, state: agentZero.getState() });
 });
 
@@ -809,10 +877,13 @@ app.get('/api/intelligence/evaluation', (req, res) => {
   const evolution = agentZero.knowledgeManager.getEvolutionStats(agentZero.tributes_paid, agentZero.milestoneManager.milestones.filter(m => m.is_completed).length, taskStats);
   
   res.json({
-    iq_score: evolution.evolution_iq_score, evolution_tier: evolution.evolution_tier,
+    iq_score: evolution.evolution_iq_score,
+    evolution_tier: evolution.evolution_tier,
     metrics: {
-      total_actions: taskStats.total_tasks, success_rate_percent: taskStats.success_rate_percent,
-      failure_recovery_rate_percent: 100, knowledge_density: agentZero.knowledgeManager.learnings.length,
+      total_actions: taskStats.total_tasks,
+      success_rate_percent: taskStats.success_rate_percent,
+      failure_recovery_rate_percent: 100,
+      knowledge_density: agentZero.knowledgeManager.learnings.length,
       reasoning_depth_level: Math.min(10, 3 + agentZero.tributes_paid * 2 + Math.floor(agentZero.knowledgeManager.learnings.length / 4))
     },
     skills: [
@@ -835,7 +906,7 @@ app.get('/api/groq/models', async (req, res) => {
   let liveModels: any[] = [];
   if (activeKey) {
     try {
-      const response = await fetchWithTimeout('[https://api.groq.com/openai/v1/models](https://api.groq.com/openai/v1/models)', { headers: { Authorization: `Bearer ${activeKey}` } }, 5000);
+      const response = await fetchWithTimeout('https://api.groq.com/openai/v1/models', { headers: { Authorization: `Bearer ${activeKey}` } }, 5000);
       if (response.ok) {
         const data = (await response.json()) as any;
         liveModels = data.data.map((m: any) => ({ id: m.id, active: true }));
@@ -843,17 +914,40 @@ app.get('/api/groq/models', async (req, res) => {
     } catch {}
   }
   const officialModels = FALLBACK_GROQ_MODELS.map(id => ({
-    id, name: id, speed: '~500 tps', category: 'Production Model', context: '128k',
-    is_blacklisted: agentZero.blacklisted_models.includes(id), is_active: agentZero.active_model.includes(id)
+    id,
+    name: id,
+    speed: '~500 tps',
+    category: 'Production Model',
+    context: '128k',
+    is_blacklisted: agentZero.blacklisted_models.includes(id),
+    is_active: agentZero.active_model.includes(id)
   }));
   res.json({ is_key_configured: Boolean(activeKey), official_models: officialModels, live_models: liveModels, blacklisted: agentZero.blacklisted_models });
 });
 
-app.get('/api/tokens/status', (req, res) => { res.json(agentZero.tokenBudget.getStatus()); });
-app.get('/api/knowledge', (req, res) => { res.json({ learnings: agentZero.knowledgeManager.learnings }); });
-app.get('/api/milestones', (req, res) => { res.json({ milestones: agentZero.milestoneManager.milestones }); });
+app.get('/api/tokens/status', (req, res) => {
+  res.json(agentZero.tokenBudget.getStatus());
+});
+
+app.get('/api/knowledge', (req, res) => {
+  res.json({ learnings: agentZero.knowledgeManager.learnings });
+});
+
+app.get('/api/milestones', (req, res) => {
+  res.json({ milestones: agentZero.milestoneManager.milestones });
+});
+
 app.get('/api/wallet/multichain', async (req, res) => {
-  res.json({ fast_gwei: 32.5, standard_gwei: 28.0, block_number: 68194200, pol_balance: agentZero.wallet.onChainUsdcBalance });
+  await agentZero.wallet.getUsdcBalance();
+  res.json({
+    fast_gwei: 32.5,
+    standard_gwei: 28.0,
+    block_number: 68194200,
+    pol_balance: agentZero.wallet.onChainPolBalance,
+    usdc_balance: agentZero.wallet.onChainUsdcBalance,
+    wallet_address: agentZero.wallet.address,
+    creator_address: agentZero.wallet.creatorAddress
+  });
 });
 
 app.post('/api/sandbox/execute-python', async (req, res) => {
@@ -861,7 +955,9 @@ app.post('/api/sandbox/execute-python', async (req, res) => {
     const { code, purpose, timeout_seconds } = req.body;
     const result = await agentZero.executeDynamicPythonCode(code, purpose, Number(timeout_seconds) || 15);
     res.json({ ...result, state: agentZero.getState() });
-  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 app.post('/api/wallet/address', async (req, res) => {
@@ -875,15 +971,43 @@ app.post('/api/wallet/address', async (req, res) => {
        fs.writeFileSync(BUSINESS_PROFILE_FILE, JSON.stringify(profile, null, 2));
      } catch {}
      agentZero.current_balance = await agentZero.wallet.getUsdcBalance();
-     agentZero.log('SYSTEM', `Wallet-Adresse geändert: ${newAddress}. Live-Saldo: ${agentZero.current_balance.toFixed(4)} USDC`);
+     agentZero.log('SYSTEM', `Agent Wallet-Adresse verknüpft: ${newAddress}. Live-Saldo: ${agentZero.current_balance.toFixed(4)} USDC, Gas: ${agentZero.wallet.onChainPolBalance.toFixed(4)} POL`);
      res.json({ success: true, state: agentZero.getState() });
-  } else { res.status(400).json({ success: false, error: 'Ungültige Adresse.' }); }
+  } else {
+    res.status(400).json({ success: false, error: 'Ungültige EVM/Polygon-Adresse.' });
+  }
+});
+
+app.post('/api/wallet/creator-address', async (req, res) => {
+  const newAddress = req.body.address?.trim();
+  if (newAddress && ethers.isAddress(newAddress)) {
+     agentZero.wallet.creatorAddress = newAddress;
+     try {
+       let profile: any = {};
+       if (fs.existsSync(BUSINESS_PROFILE_FILE)) profile = JSON.parse(fs.readFileSync(BUSINESS_PROFILE_FILE, 'utf-8'));
+       profile.creator_address = newAddress;
+       fs.writeFileSync(BUSINESS_PROFILE_FILE, JSON.stringify(profile, null, 2));
+     } catch {}
+     agentZero.log('SYSTEM', `Creator Wallet-Adresse verknüpft: ${newAddress}`);
+     res.json({ success: true, state: agentZero.getState() });
+  } else {
+    res.status(400).json({ success: false, error: 'Ungültige EVM/Polygon-Adresse.' });
+  }
 });
 
 async function start() {
-  const distPath = path.join(process.cwd(), 'dist');
-  app.use(express.static(distPath));
-  app.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
-  app.listen(PORT, '0.0.0.0', () => console.log(`[AGENT ZERO] Server live on [http://0.0.0.0](http://0.0.0.0):${PORT}`));
+  if (process.env.NODE_ENV !== 'production') {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
+  }
+
+  app.listen(PORT, '0.0.0.0', () => console.log(`[AGENT ZERO] Server live on http://0.0.0.0:${PORT}`));
 }
 start();

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AgentState } from '../types';
-import { HeartPulse, ShieldAlert, CheckCircle2, Clock, Flame, Coins, Zap, RefreshCw, AlertTriangle, Trash2, Cpu } from 'lucide-react';
+import { HeartPulse, ShieldAlert, CheckCircle2, Clock, Flame, Coins, Zap, RefreshCw, AlertTriangle, Trash2, Cpu, Fuel } from 'lucide-react';
 import { safePostJson } from '../lib/api';
 
 interface VitalsSectionProps {
@@ -17,9 +17,10 @@ export const VitalsSection: React.FC<VitalsSectionProps> = ({ state, onRefresh }
   const blacklisted = state?.blacklisted_models || [];
   const tributesPaid = state?.tributes_paid ?? 0;
   const balance = state?.current_balance ?? 0;
+  const polBalance = state?.agent_eth_balance ?? 0;
   const tributeDue = state?.current_tribute_due ?? 1.0;
-  const birthTime = state?.birth_time ? new Date(state.birth_time).toLocaleString() : 'Unbekannt';
-  const nextTributeTime = state?.next_tribute_time ? new Date(state.next_tribute_time).toLocaleString() : 'Unbekannt';
+  const birthTime = state?.birth_time ? new Date(state.birth_time).toLocaleString('de-DE') : 'Unbekannt';
+  const nextTributeTime = state?.next_tribute_time ? new Date(state.next_tribute_time).toLocaleString('de-DE') : 'Unbekannt';
   const activeModel = state?.active_model || 'GroqCloud LLM';
 
   const handleResetDeadline = async () => {
@@ -62,7 +63,7 @@ export const VitalsSection: React.FC<VitalsSectionProps> = ({ state, onRefresh }
   };
 
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto overflow-y-auto">
+    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto overflow-y-auto font-mono">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
         <div>
@@ -73,10 +74,10 @@ export const VitalsSection: React.FC<VitalsSectionProps> = ({ state, onRefresh }
             </h1>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
-            Echtzeit-Vitalwerte, 48h Überlebensprotokoll und Modell-Governance
+            Echtzeit-Vitalwerte, Polygon On-Chain Salden & 48h Überlebensprotokoll
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={handleResetDeadline}
             disabled={isResettingDeadline}
@@ -105,7 +106,7 @@ export const VitalsSection: React.FC<VitalsSectionProps> = ({ state, onRefresh }
       </div>
 
       {actionFeedback && (
-        <div className="p-3 rounded-lg bg-slate-900 border border-cyan-500/40 text-cyan-300 text-xs font-mono">
+        <div className="p-3 rounded-lg bg-slate-900 border border-cyan-500/40 text-cyan-300 text-xs">
           ℹ️ {actionFeedback}
         </div>
       )}
@@ -124,23 +125,25 @@ export const VitalsSection: React.FC<VitalsSectionProps> = ({ state, onRefresh }
             {tributesPaid > 0 ? `Überlebender (Lvl ${tributesPaid})` : 'Neugeboren (Lvl 0)'}
           </div>
           <div className="text-[11px] text-slate-400 space-y-0.5 pt-1 border-t border-slate-800/80">
-            <div>Geburtszeitpunkt: <span className="text-slate-200">{birthTime}</span></div>
-            <div>Bezahlte Tribute: <span className="text-purple-400 font-bold">{tributesPaid}</span></div>
+            <div>Geburtszeit: <span className="text-slate-200">{birthTime}</span></div>
+            <div>Tribute bezahlt: <span className="text-purple-400 font-bold">{tributesPaid}</span></div>
           </div>
         </div>
 
         {/* Vital 2: Live Balance */}
         <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-2">
           <div className="text-[11px] text-slate-400 uppercase tracking-wider flex items-center justify-between">
-            <span>Live USDC Balance</span>
+            <span>Polygon On-Chain Saldo</span>
             <Coins className="w-4 h-4 text-emerald-400" />
           </div>
-          <div className="text-2xl font-bold text-emerald-400 font-mono">
+          <div className="text-2xl font-bold text-emerald-400">
             {balance.toFixed(4)} <span className="text-sm font-normal text-emerald-400/80">USDC</span>
           </div>
           <div className="text-[11px] text-slate-400 space-y-0.5 pt-1 border-t border-slate-800/80 flex items-center justify-between">
-            <span>Netzwerk:</span>
-            <span className="text-cyan-400 font-bold">Polygon PoS (POL)</span>
+            <span className="flex items-center gap-1">
+              <Fuel className="w-3 h-3 text-purple-400" /> Gas:
+            </span>
+            <span className="text-purple-300 font-bold">{polBalance.toFixed(4)} POL</span>
           </div>
         </div>
 
@@ -150,17 +153,17 @@ export const VitalsSection: React.FC<VitalsSectionProps> = ({ state, onRefresh }
             <span>Fälliger Tribut</span>
             <Flame className="w-4 h-4 text-purple-400" />
           </div>
-          <div className="text-2xl font-bold text-purple-400 font-mono">
+          <div className="text-2xl font-bold text-purple-400">
             {tributeDue.toFixed(2)} <span className="text-sm font-normal text-purple-400/80">USDC</span>
           </div>
           <div className="text-[11px] text-slate-400 space-y-1 pt-1 border-t border-slate-800/80">
-            <div>Fälligkeit: <span className="text-amber-300 font-mono">{nextTributeTime}</span></div>
+            <div>Frist: <span className="text-amber-300">{nextTributeTime}</span></div>
             <button
               onClick={handleResetDeadline}
               disabled={isResettingDeadline}
-              className="text-[10px] text-amber-400 hover:text-amber-300 underline font-mono cursor-pointer"
+              className="text-[10px] text-amber-400 hover:text-amber-300 underline cursor-pointer"
             >
-              Frist jetzt auf +48h verlängern
+              Frist jetzt um +48h verlängern
             </button>
           </div>
         </div>
@@ -197,7 +200,7 @@ export const VitalsSection: React.FC<VitalsSectionProps> = ({ state, onRefresh }
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
           <div className="flex items-center gap-2">
             <ShieldAlert className="w-4 h-4 text-amber-400" />
-            <h2 className="text-xs font-mono font-bold text-slate-200 uppercase tracking-wider">
+            <h2 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
               LLM Modell-Blacklist (Selbstheilung)
             </h2>
           </div>
@@ -209,7 +212,7 @@ export const VitalsSection: React.FC<VitalsSectionProps> = ({ state, onRefresh }
               <button
                 onClick={handleClearBlacklist}
                 disabled={isClearing}
-                className="flex items-center gap-1 px-2.5 py-1 rounded bg-rose-950/80 hover:bg-rose-900 border border-rose-700 text-rose-300 text-xs font-mono transition-all cursor-pointer"
+                className="flex items-center gap-1 px-2.5 py-1 rounded bg-rose-950/80 hover:bg-rose-900 border border-rose-700 text-rose-300 text-xs transition-all cursor-pointer"
               >
                 <Trash2 className="w-3 h-3" />
                 <span>Blacklist leeren</span>
