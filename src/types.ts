@@ -268,16 +268,77 @@ export interface GasTrapStatus {
   action_items: string[];
 }
 
+export interface MetaMaskTokenDef {
+  symbol: string;
+  name: string;
+  chain_key: string;
+  chain_name: string;
+  chain_id: number;
+  contract_address: string;
+  decimals: number;
+  category: 'STABLECOIN' | 'GAS_NATIVE' | 'WRAPPED_NATIVE' | 'DEFI_BLUECHIP' | 'LAYER2' | 'DEX_TOKEN' | 'MEME';
+  usd_price: number;
+  change_24h_percent?: number;
+  balance: number;
+  usd_value: number;
+  is_gas_token: boolean;
+  coingecko_id?: string;
+  verified_metamask: boolean;
+}
+
+export interface MetaMaskChainDef {
+  chain_key: string;
+  name: string;
+  chain_id: number;
+  native_symbol: string;
+  native_name: string;
+  native_usd_price: number;
+  native_balance: number;
+  native_usd_value: number;
+  gas_price_gwei: number;
+  gas_status: 'OPTIMAL' | 'MODERATE' | 'CONGESTED' | 'EXPENSIVE';
+  transfer_cost_usd: number;
+  explorer_url: string;
+  rpc_url: string;
+  is_active: boolean;
+  tokens_count: number;
+}
+
+export interface MetaMaskTradingKnowledge {
+  category: 'BLOCKCHAINS' | 'TOKENS' | 'DEX_ROUTING' | 'GAS_STRATEGY' | 'ARBITRAGE_YIELD' | 'WEB_RESEARCH';
+  title: string;
+  chain?: string;
+  symbol?: string;
+  summary: string;
+  details: string;
+  apis_used?: string[];
+  last_updated: string;
+  confidence: number;
+}
+
+export interface MarketResearchResult {
+  query: string;
+  category: string;
+  summary: string;
+  data: any;
+  insights_derived: string[];
+  timestamp: string;
+}
+
 export interface MultiChainPortfolioReport {
   wallet_address: string;
   creator_address: string;
   chains: Record<string, ChainAssetInfo>;
+  chains_list?: MetaMaskChainDef[];
+  tokens_list?: MetaMaskTokenDef[];
   total_portfolio_usd: number;
   total_usdc_across_chains: number;
+  total_gas_usd_value?: number;
   gas_trap_status: GasTrapStatus;
   ledger_balance: number;
   transfer_mode: string;
   initial_tribute_cost: number;
+  last_oracle_update?: string;
 }
 
 export interface AgentState {
@@ -370,23 +431,71 @@ export interface GroqModelInfo {
   id: string;
   name: string;
   speed: string;
-  category: string;
+  category: 'Production Model' | 'Production System' | 'Preview Model' | 'Audio / Speech';
   context: string;
+  context_tokens: number;
+  max_completion_tokens: number;
+  speed_tps: number;
+  pricing_input_per_m?: string;
+  pricing_output_per_m?: string;
+  rpm_limit?: number;
+  rpd_limit?: number;
+  tpm_limit?: number;
+  tpd_limit?: number;
+  best_for: string;
+  strengths: string[];
+  recommended_temp?: number;
+  supports_reasoning?: boolean;
+  supports_tools?: boolean;
+  supports_json_schema?: boolean;
   is_blacklisted?: boolean;
   is_active?: boolean;
 }
 
+export interface GroqKnowledgeItem {
+  category: string;
+  title: string;
+  summary: string;
+  details: string;
+  apis_used?: string[];
+}
+
+export interface GroqIntelligenceKnowledgeResponse {
+  success: boolean;
+  models: GroqModelInfo[];
+  knowledge_base: GroqKnowledgeItem[];
+  rate_limit_headers?: {
+    limit_requests?: number;
+    remaining_requests?: number;
+    limit_tokens?: number;
+    remaining_tokens?: number;
+    reset_tokens?: string;
+  };
+  blacklisted_models?: string[];
+}
+
 export interface GroqModelsResponse {
   is_key_configured: boolean;
+  active_model?: string;
   current_active_model?: string;
   official_models: GroqModelInfo[];
+  knowledge_base?: GroqKnowledgeItem[];
+  model_recommendations?: Record<string, string>;
   live_models: Array<{
     id: string;
-    owned_by: string;
+    owned_by?: string;
     active: boolean;
+    created?: number;
     context_window?: number;
   }>;
   blacklisted: string[];
+  rate_limit_headers?: {
+    limit_requests?: number;
+    remaining_requests?: number;
+    limit_tokens?: number;
+    remaining_tokens?: number;
+    reset_tokens?: string;
+  };
 }
 
 export interface ToolExecutionResult {

@@ -57,6 +57,7 @@ const BUSINESS_PROFILE_FILE = path.join(DATA_DIR, 'business_profile.json');
 const CRYPTO_KNOWLEDGE_FILE = path.join(DATA_DIR, 'crypto_knowledge.json');
 const TOKEN_REGISTRY_FILE = path.join(DATA_DIR, 'token_registry.json');
 const MULTICHAIN_PORTFOLIO_FILE = path.join(DATA_DIR, 'multichain_portfolio.json');
+const GROQ_KNOWLEDGE_FILE = path.join(DATA_DIR, 'groq_knowledge.json');
 
 interface LogItem { id: string; timestamp: string; level: string; message: string; metadata?: any; }
 interface KnowledgeItemDef { id: string; timestamp: string; category: string; title: string; insight: string; confidence_score: number; times_applied?: number; success_reinforcements?: number; source: string; }
@@ -365,7 +366,419 @@ export class MilestoneManager {
 }
 
 // ==========================================
-// 1B. KRYPTO & TRADING KNOWLEDGE MANAGER
+// 1B. GROQ MULTI-MODEL INTELLIGENCE & KNOWLEDGE MANAGER
+// ==========================================
+
+export interface GroqIntelligenceModelDef {
+  id: string;
+  name: string;
+  speed: string;
+  category: 'Production Model' | 'Production System' | 'Preview Model' | 'Audio / Speech';
+  context: string;
+  context_tokens: number;
+  max_completion_tokens: number;
+  speed_tps: number;
+  pricing_input_per_m?: string;
+  pricing_output_per_m?: string;
+  rpm_limit?: number;
+  rpd_limit?: number;
+  tpm_limit?: number;
+  tpd_limit?: number;
+  best_for: string;
+  strengths: string[];
+  recommended_temp?: number;
+  supports_reasoning?: boolean;
+  supports_tools?: boolean;
+  supports_json_schema?: boolean;
+}
+
+export class GroqIntelligenceManager {
+  public models: GroqIntelligenceModelDef[] = [];
+  public knowledge_base: any[] = [];
+  public rate_limit_headers: {
+    limit_requests?: number;
+    remaining_requests?: number;
+    limit_tokens?: number;
+    remaining_tokens?: number;
+    reset_tokens?: string;
+    last_updated?: string;
+  } = {};
+
+  constructor() {
+    this.load();
+  }
+
+  public load() {
+    try {
+      if (fs.existsSync(GROQ_KNOWLEDGE_FILE)) {
+        const data = JSON.parse(fs.readFileSync(GROQ_KNOWLEDGE_FILE, 'utf-8'));
+        if (Array.isArray(data.models) && data.models.length > 0) {
+          this.models = data.models;
+          this.knowledge_base = data.knowledge_base || [];
+          this.rate_limit_headers = data.rate_limit_headers || {};
+          return;
+        }
+      }
+    } catch {}
+
+    this.initDefaults();
+  }
+
+  public save() {
+    try {
+      fs.writeFileSync(GROQ_KNOWLEDGE_FILE, JSON.stringify({
+        models: this.models,
+        knowledge_base: this.knowledge_base,
+        rate_limit_headers: this.rate_limit_headers,
+        updated_at: new Date().toISOString()
+      }, null, 2));
+    } catch {}
+  }
+
+  private initDefaults() {
+    this.models = [
+      {
+        id: 'llama-3.3-70b-versatile',
+        name: 'Llama 3.3 70B Versatile',
+        speed: '~280-350 tps',
+        category: 'Production Model',
+        context: '131k',
+        context_tokens: 131072,
+        max_completion_tokens: 32768,
+        speed_tps: 280,
+        pricing_input_per_m: 'Free / Enterprise',
+        pricing_output_per_m: 'Free / Enterprise',
+        rpm_limit: 30,
+        tpm_limit: 70000,
+        best_for: 'Strategische Planung, Python Scripting & Komplexe DeFi Logik',
+        strengths: ['Komplexe Code-Generierung', 'DeFi Arbitrage Logik', 'Robuste Fehleranalyse', 'High-Depth Reasoning'],
+        recommended_temp: 0.2,
+        supports_reasoning: true,
+        supports_tools: true,
+        supports_json_schema: true
+      },
+      {
+        id: 'llama-3.1-8b-instant',
+        name: 'Llama 3.1 8B Instant',
+        speed: '~560-800 tps',
+        category: 'Production Model',
+        context: '131k',
+        context_tokens: 131072,
+        max_completion_tokens: 131072,
+        speed_tps: 800,
+        pricing_input_per_m: 'Free / Enterprise',
+        pricing_output_per_m: 'Free / Enterprise',
+        rpm_limit: 30,
+        tpm_limit: 100000,
+        best_for: 'Ultra-schnelle Reflexe, Status-Prüfung & Token-Sparmodus',
+        strengths: ['Maximale Inferenzgeschwindigkeit', 'Niedrigste Latenz (<200ms)', 'Geringster Token-Verbrauch', 'Robuster Fallback'],
+        recommended_temp: 0.1,
+        supports_reasoning: false,
+        supports_tools: true,
+        supports_json_schema: true
+      },
+      {
+        id: 'openai/gpt-oss-120b',
+        name: 'OpenAI GPT-OSS 120B',
+        speed: '~500 tps',
+        category: 'Production Model',
+        context: '131k',
+        context_tokens: 131072,
+        max_completion_tokens: 65536,
+        speed_tps: 500,
+        pricing_input_per_m: '$0.15',
+        pricing_output_per_m: '$0.60',
+        rpm_limit: 30,
+        tpm_limit: 8000,
+        tpd_limit: 200000,
+        best_for: '120B Open-Weight Flaggschiff für Deep Reasoning & Code Execution',
+        strengths: ['Eingebaute Browser Search & Code Execution', 'Explizite Reasoning Tokens', 'Extremes mathematisches Verständnis'],
+        recommended_temp: 0.2,
+        supports_reasoning: true,
+        supports_tools: true,
+        supports_json_schema: true
+      },
+      {
+        id: 'openai/gpt-oss-20b',
+        name: 'OpenAI GPT-OSS 20B',
+        speed: '~1000 tps',
+        category: 'Production Model',
+        context: '131k',
+        context_tokens: 131072,
+        max_completion_tokens: 65536,
+        speed_tps: 1000,
+        pricing_input_per_m: '$0.075',
+        pricing_output_per_m: '$0.30',
+        rpm_limit: 30,
+        tpm_limit: 8000,
+        tpd_limit: 200000,
+        best_for: 'Ultraschnelles Reasoning bei 1000 tps & geringen Kosten',
+        strengths: ['1000 Tokens/Sekunde Inferenz', 'Reasoning Effort einstellbar (low/med/high)', 'Sehr kosteneffizient'],
+        recommended_temp: 0.3,
+        supports_reasoning: true,
+        supports_tools: true,
+        supports_json_schema: true
+      },
+      {
+        id: 'groq/compound',
+        name: 'Groq Compound (Agentic Systems)',
+        speed: '~450 tps',
+        category: 'Production System',
+        context: '131k',
+        context_tokens: 131072,
+        max_completion_tokens: 8192,
+        speed_tps: 450,
+        rpm_limit: 30,
+        tpm_limit: 70000,
+        best_for: 'Agentic Tooling mit automatischer Web-Suche & Code-Sandbox',
+        strengths: ['Intelligente Tool-Nutzung', 'Echtzeit Web Search', 'Multi-Modell Orchestrierung'],
+        recommended_temp: 0.5,
+        supports_reasoning: true,
+        supports_tools: true,
+        supports_json_schema: true
+      },
+      {
+        id: 'groq/compound-mini',
+        name: 'Groq Compound Mini',
+        speed: '~450 tps',
+        category: 'Production System',
+        context: '131k',
+        context_tokens: 131072,
+        max_completion_tokens: 8192,
+        speed_tps: 450,
+        rpm_limit: 30,
+        tpm_limit: 70000,
+        best_for: 'Kompakte agentische Werkzeuge & schnelle Web-Lookups',
+        strengths: ['Geringe Latenz für Agenten-Tools', 'Web-Grounding', 'Kompakte Antwortmuster'],
+        recommended_temp: 0.4,
+        supports_reasoning: false,
+        supports_tools: true,
+        supports_json_schema: true
+      },
+      {
+        id: 'gemma2-9b-it',
+        name: 'Google Gemma 2 9B IT',
+        speed: '~600 tps',
+        category: 'Production Model',
+        context: '8k',
+        context_tokens: 8192,
+        max_completion_tokens: 8192,
+        speed_tps: 600,
+        best_for: 'Präzise Instruktionsbefolgung & strukturierte JSON-Ausgaben',
+        strengths: ['Google Architektur', 'Strikte JSON-Konformität', 'Zuverlässiges Format-Parsing'],
+        recommended_temp: 0.1,
+        supports_reasoning: false,
+        supports_tools: true,
+        supports_json_schema: true
+      },
+      {
+        id: 'mixtral-8x7b-32768',
+        name: 'Mixtral 8x7B (MoE)',
+        speed: '~500 tps',
+        category: 'Production Model',
+        context: '32k',
+        context_tokens: 32768,
+        max_completion_tokens: 32768,
+        speed_tps: 500,
+        best_for: 'Mixture of Experts für ausgewogene Multi-Domain Aufgaben',
+        strengths: ['Sparse MoE Architektur', '32k nativer Kontext', 'Hoher sprachlicher Ausgleich'],
+        recommended_temp: 0.3,
+        supports_reasoning: false,
+        supports_tools: true,
+        supports_json_schema: true
+      },
+      {
+        id: 'whisper-large-v3',
+        name: 'Whisper Large V3 (Audio Speech)',
+        speed: 'Echtzeit Audio',
+        category: 'Audio / Speech',
+        context: '448',
+        context_tokens: 448,
+        max_completion_tokens: 448,
+        speed_tps: 0,
+        pricing_input_per_m: '$0.111 / Stunde',
+        pricing_output_per_m: '-',
+        rpm_limit: 20,
+        best_for: 'Präzise Spracherkennung & Transkription in 100+ Sprachen',
+        strengths: ['Mehrsprachige Audio-Transkription', 'Große Audio-Dateien bis 100MB', 'ISO-639-1 Sprach-Präzision'],
+        supports_tools: false
+      },
+      {
+        id: 'whisper-large-v3-turbo',
+        name: 'Whisper Large V3 Turbo',
+        speed: 'High-Speed Audio',
+        category: 'Audio / Speech',
+        context: '448',
+        context_tokens: 448,
+        max_completion_tokens: 448,
+        speed_tps: 0,
+        pricing_input_per_m: '$0.04 / Stunde',
+        pricing_output_per_m: '-',
+        rpm_limit: 20,
+        best_for: 'Kostengünstige & latenzarme Audio-Transkription',
+        strengths: ['Ultra-schnelle Spracherkennung', 'Niedrige Kosten ($0.04/h)', 'Ideal für Sprachbefehle'],
+        supports_tools: false
+      },
+      {
+        id: 'qwen/qwen3.6-27b',
+        name: 'Qwen 3.6 27B (Preview)',
+        speed: '~500 tps',
+        category: 'Preview Model',
+        context: '131k',
+        context_tokens: 131072,
+        max_completion_tokens: 16384,
+        speed_tps: 500,
+        pricing_input_per_m: '$0.60',
+        pricing_output_per_m: '$3.00',
+        rpm_limit: 30,
+        tpm_limit: 8000,
+        tpd_limit: 200000,
+        best_for: 'Preview Modell für vielschichtige Reasoning-Benchmarks',
+        strengths: ['Hohe analytische Tiefe', 'Reasoning Effort einstellbar', '131k Kontext'],
+        recommended_temp: 0.2,
+        supports_reasoning: true,
+        supports_tools: true,
+        supports_json_schema: true
+      },
+      {
+        id: 'meta-llama/llama-prompt-guard-2-86m',
+        name: 'Prompt Guard 2 86M (Security)',
+        speed: 'Microsecond',
+        category: 'Preview Model',
+        context: '512',
+        context_tokens: 512,
+        max_completion_tokens: 512,
+        speed_tps: 2000,
+        pricing_input_per_m: '$0.04',
+        pricing_output_per_m: '$0.04',
+        rpm_limit: 30,
+        tpm_limit: 15000,
+        best_for: 'Schutz vor Prompt Injection & Jailbreak Erkennung',
+        strengths: ['Sicherheits-Gatekeeper', 'Prompt Injection Klassifikation', 'Minimale Latenz'],
+        supports_tools: false
+      }
+    ];
+
+    this.knowledge_base = [
+      {
+        category: 'API_ARCHITECTURE',
+        title: 'Groq Cloud LPU Inference Architecture',
+        summary: 'Inferenz auf maßgeschneiderten LPU Chips mit Durchsätzen von bis zu 1000 Tokens/Sekunde.',
+        details: 'Groq LPUs eliminieren Speicher-Bottlenecks und bieten deterministische Latenzzeiten ohne GPU-Jitter. Basis-Endpunkt ist https://api.groq.com/openai/v1 mit Bearer Token Authentifizierung.',
+        apis_used: ['https://api.groq.com/openai/v1/chat/completions', 'https://api.groq.com/openai/v1/models']
+      },
+      {
+        category: 'MODEL_HEURISTICS',
+        title: 'Deterministische Modell-Auswahl für Agent Zero',
+        summary: 'Code & Strategie -> llama-3.3-70b-versatile; Schnelle Status-Checks -> llama-3.1-8b-instant; Reasoning -> openai/gpt-oss-120b.',
+        details: 'Bei Code-Generierung und Python-Sandbox-Ausführung muss stets llama-3.3-70b mit Temperature 0.1-0.2 gewählt werden, um Syntax-Fehler zu minimieren. Bei Rate-Limits (HTTP 429) erfolgt sofortiges Failover auf 8B-Instant oder Mixtral.',
+        apis_used: ['https://api.groq.com/openai/v1/chat/completions']
+      },
+      {
+        category: 'RATE_LIMIT_GOVERNANCE',
+        title: 'HTTP Rate-Limit Header & Proaktive Drosselung',
+        summary: 'Überwachung von x-ratelimit-remaining-tokens und x-ratelimit-reset-tokens.',
+        details: 'Falls x-ratelimit-remaining-tokens unter 2.500 fällt, schaltet Agent Zero automatisch auf Prompt-Kompression und Llama 3.1 8B Instant um, um HTTP 429 Sperren zu verhindern.',
+        apis_used: ['x-ratelimit-limit-requests', 'x-ratelimit-remaining-tokens', 'retry-after']
+      },
+      {
+        category: 'AGENTIC_INTEGRATIONS',
+        title: 'Ökosystem-Integrationen (LangGraph, LiteLLM, E2B, MCP)',
+        summary: 'Groq unterstützt Vercel AI SDK, LangGraph, CrewAI, AutoGen, BrowserBase, Firecrawl und MCP Server.',
+        details: 'Agent Zero kann Tools über Model Context Protocol (MCP) ansteuern und Inferenz über structured outputs (json_schema) strikt validieren.',
+        apis_used: ['https://console.groq.com/docs/integrations']
+      }
+    ];
+
+    this.save();
+  }
+
+  public recordRateLimitHeaders(headers: any) {
+    if (!headers) return;
+    try {
+      const getH = (key: string) => {
+        if (typeof headers.get === 'function') return headers.get(key);
+        return headers[key] || headers[key.toLowerCase()];
+      };
+
+      const limitReq = getH('x-ratelimit-limit-requests');
+      const remReq = getH('x-ratelimit-remaining-requests');
+      const limitTok = getH('x-ratelimit-limit-tokens');
+      const remTok = getH('x-ratelimit-remaining-tokens');
+      const resetTok = getH('x-ratelimit-reset-tokens');
+
+      if (limitReq || remReq || limitTok || remTok) {
+        this.rate_limit_headers = {
+          limit_requests: limitReq ? Number(limitReq) : this.rate_limit_headers.limit_requests,
+          remaining_requests: remReq ? Number(remReq) : this.rate_limit_headers.remaining_requests,
+          limit_tokens: limitTok ? Number(limitTok) : this.rate_limit_headers.limit_tokens,
+          remaining_tokens: remTok ? Number(remTok) : this.rate_limit_headers.remaining_tokens,
+          reset_tokens: resetTok || this.rate_limit_headers.reset_tokens,
+          last_updated: new Date().toISOString()
+        };
+        this.save();
+      }
+    } catch {}
+  }
+
+  public getOptimalModel(taskType: 'CODE_GENERATION' | 'MARKET_ANALYSIS' | 'RAPID_REFLEX' | 'STRUCTURED_JSON' | 'AGENTIC_SEARCH' | 'DEEP_REASONING', blacklisted: string[] = []): string {
+    const isAvailable = (id: string) => !blacklisted.includes(id);
+
+    switch (taskType) {
+      case 'CODE_GENERATION':
+        if (isAvailable('llama-3.3-70b-versatile')) return 'llama-3.3-70b-versatile';
+        if (isAvailable('openai/gpt-oss-120b')) return 'openai/gpt-oss-120b';
+        if (isAvailable('llama-3.1-8b-instant')) return 'llama-3.1-8b-instant';
+        if (isAvailable('mixtral-8x7b-32768')) return 'mixtral-8x7b-32768';
+        return 'llama-3.1-8b-instant';
+
+      case 'DEEP_REASONING':
+        if (isAvailable('openai/gpt-oss-120b')) return 'openai/gpt-oss-120b';
+        if (isAvailable('llama-3.3-70b-versatile')) return 'llama-3.3-70b-versatile';
+        if (isAvailable('openai/gpt-oss-20b')) return 'openai/gpt-oss-20b';
+        return 'llama-3.3-70b-versatile';
+
+      case 'RAPID_REFLEX':
+        if (isAvailable('llama-3.1-8b-instant')) return 'llama-3.1-8b-instant';
+        if (isAvailable('openai/gpt-oss-20b')) return 'openai/gpt-oss-20b';
+        if (isAvailable('gemma2-9b-it')) return 'gemma2-9b-it';
+        return 'llama-3.1-8b-instant';
+
+      case 'AGENTIC_SEARCH':
+        if (isAvailable('groq/compound')) return 'groq/compound';
+        if (isAvailable('groq/compound-mini')) return 'groq/compound-mini';
+        if (isAvailable('llama-3.3-70b-versatile')) return 'llama-3.3-70b-versatile';
+        return 'llama-3.3-70b-versatile';
+
+      case 'STRUCTURED_JSON':
+        if (isAvailable('gemma2-9b-it')) return 'gemma2-9b-it';
+        if (isAvailable('llama-3.3-70b-versatile')) return 'llama-3.3-70b-versatile';
+        return 'llama-3.1-8b-instant';
+
+      case 'MARKET_ANALYSIS':
+      default:
+        if (isAvailable('llama-3.3-70b-versatile')) return 'llama-3.3-70b-versatile';
+        if (isAvailable('openai/gpt-oss-120b')) return 'openai/gpt-oss-120b';
+        if (isAvailable('llama-3.1-8b-instant')) return 'llama-3.1-8b-instant';
+        return 'llama-3.3-70b-versatile';
+    }
+  }
+
+  public getGroqPromptContext(): string {
+    const activeHeader = this.rate_limit_headers.remaining_tokens 
+      ? `Rate-Limit: ${this.rate_limit_headers.remaining_tokens}/${this.rate_limit_headers.limit_tokens || 70000} TPM verbleibend`
+      : 'Rate-Limit: Normalbetrieb';
+    
+    return `[GROQ MODEL INTELLIGENCE & CAPABILITIES:
+- Primary Code Engine: llama-3.3-70b-versatile (131k Ctx, 280 tps, Temp: 0.1-0.2)
+- High-Speed Reflex Engine: llama-3.1-8b-instant (131k Ctx, 800 tps, Temp: 0.1)
+- Deep Reasoning & Tools: openai/gpt-oss-120b (131k Ctx, 500 tps) & groq/compound (Agentic Search)
+- ${activeHeader}]`;
+  }
+}
+
+// ==========================================
+// 1C. KRYPTO & TRADING KNOWLEDGE MANAGER
 // ==========================================
 
 export class CryptoKnowledgeManager {
@@ -1168,6 +1581,7 @@ class AgentZeroTS {
   public wallet: AgentWalletTS;
   public tokenBudget: TokenBudgetManager;
   public knowledgeManager: KnowledgeMemoryManager;
+  public groqIntelligence: GroqIntelligenceManager;
   public cryptoKnowledge: CryptoKnowledgeManager;
   public taskMemory: TaskMemoryManager;
   public milestoneManager: MilestoneManager;
@@ -1184,6 +1598,7 @@ class AgentZeroTS {
     this.wallet = new AgentWalletTS();
     this.tokenBudget = new TokenBudgetManager();
     this.knowledgeManager = new KnowledgeMemoryManager();
+    this.groqIntelligence = new GroqIntelligenceManager();
     this.cryptoKnowledge = new CryptoKnowledgeManager();
     this.taskMemory = new TaskMemoryManager();
     this.milestoneManager = new MilestoneManager();
@@ -1324,6 +1739,7 @@ class AgentZeroTS {
         const recentLogs = this.logs.slice(0, 8).filter(l => l.level === 'SUCCESS' || l.level === 'ERROR' || l.level === 'TOOL').map(l => `[${l.level}] ${l.message}`).join('\n');
         const wisdom = this.knowledgeManager.getStructuredPromptContext();
         const cryptoIntel = this.cryptoKnowledge.getTradingPromptContext();
+        const groqIntel = this.groqIntelligence.getGroqPromptContext();
 
         const strategicDirective = `Du bist ein autonomer Python-Entwickler für Agent Zero.
 ZIEL: Generiere ein Python-3-Skript (\`\`\`python ... \`\`\`), das reale Web-APIs (z.B. DeFi APYs, Krypto-Preise, Polygon-RPCs, Token-Analysen) abfragt und analysiert.
@@ -1347,6 +1763,8 @@ ZEIT BIS ZUR PACHT: ${hoursLeft} Stunden.
 PHASE: ${phase}. ${panicMode ? 'Generiere sofortige Liquidität & Handlungsoptionen!' : 'Keine Panik! Nutze die Zeit, analysiere Polygon DeFi APIs und maximiere den Informationsvorsprung.'}
 KRYPTO & BLOCKCHAIN WISSEN:
 ${cryptoIntel}
+GROQ MODELL WISSEN:
+${groqIntel}
 ERFAHRUNG (Heuristik): ${wisdom}
 LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
 
@@ -1361,7 +1779,8 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
           this.log('ERROR', `[TOKEN GUARD] ${budgetCheck.reason} Überspringe LLM-Aufruf.`);
         } else {
           
-          let liveGroqModels = [...FALLBACK_GROQ_MODELS];
+          const optimalPrimary = this.groqIntelligence.getOptimalModel('CODE_GENERATION', this.blacklisted_models);
+          let liveGroqModels = Array.from(new Set([optimalPrimary, ...FALLBACK_GROQ_MODELS]));
           try {
             const mRes = await fetchWithTimeout('https://api.groq.com/openai/v1/models', { headers: { Authorization: `Bearer ${rawKey}` } }, 8000);
             if (mRes.ok) {
@@ -1375,8 +1794,7 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
                             && !lower.includes('whisper') && !lower.includes('guard') && !lower.includes('orpheus') && !lower.includes('allam');
                   });
                 if (apiModels.length > 0) {
-                  // Put tested stable models first
-                  const priority = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it'];
+                  const priority = [optimalPrimary, 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it'];
                   liveGroqModels = Array.from(new Set([...priority.filter(p => apiModels.includes(p)), ...apiModels]));
                 }
               }
@@ -1407,9 +1825,10 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
                     
                     const res = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
                         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${rawKey}` },
-                        body: JSON.stringify({ model: model, messages: currentMessages, temperature: 0.7 })
+                        body: JSON.stringify({ model: model, messages: currentMessages, temperature: 0.2 })
                     }, 20000);
                     
+                    if (res.headers) this.groqIntelligence.recordRateLimitHeaders(res.headers);
                     if (!res.ok) throw new Error(`HTTP ${res.status}`); 
 
                     const data = await res.json();
@@ -1751,20 +2170,124 @@ app.get('/api/groq/models', async (req, res) => {
       const response = await fetchWithTimeout('https://api.groq.com/openai/v1/models', { headers: { Authorization: `Bearer ${activeKey}` } }, 5000);
       if (response.ok) {
         const data = (await response.json()) as any;
-        liveModels = data.data.map((m: any) => ({ id: m.id, active: true }));
+        if (data && Array.isArray(data.data)) {
+          liveModels = data.data.map((m: any) => ({
+            id: m.id,
+            owned_by: m.owned_by,
+            created: m.created,
+            active: true
+          }));
+        }
       }
     } catch {}
   }
-  const officialModels = FALLBACK_GROQ_MODELS.map(id => ({
-    id,
-    name: id,
-    speed: '~500 tps',
-    category: 'Production Model',
-    context: '128k',
-    is_blacklisted: agentZero.blacklisted_models.includes(id),
-    is_active: agentZero.active_model.includes(id)
+
+  // Enrich stored Groq knowledge models with live blacklist/active states
+  const enrichedOfficial = agentZero.groqIntelligence.models.map(m => ({
+    ...m,
+    is_blacklisted: agentZero.blacklisted_models.includes(m.id),
+    is_active: agentZero.active_model.includes(m.id)
   }));
-  res.json({ is_key_configured: Boolean(activeKey), official_models: officialModels, live_models: liveModels, blacklisted: agentZero.blacklisted_models });
+
+  res.json({
+    is_key_configured: Boolean(activeKey),
+    official_models: enrichedOfficial,
+    live_models: liveModels,
+    blacklisted: agentZero.blacklisted_models,
+    active_model: agentZero.active_model,
+    rate_limit_headers: agentZero.groqIntelligence.rate_limit_headers
+  });
+});
+
+app.get('/api/groq/knowledge', (req, res) => {
+  res.json({
+    success: true,
+    models: agentZero.groqIntelligence.models,
+    knowledge_base: agentZero.groqIntelligence.knowledge_base,
+    rate_limit_headers: agentZero.groqIntelligence.rate_limit_headers,
+    blacklisted_models: agentZero.blacklisted_models
+  });
+});
+
+app.post('/api/groq/test', async (req, res) => {
+  const activeKey = process.env.GROQ_API_KEY || process.env.FREE_LLM_API_KEY;
+  if (!activeKey) {
+    return res.status(400).json({ success: false, error: 'Kein GROQ_API_KEY konfiguriert.' });
+  }
+
+  const { model, prompt, temperature = 0.2, max_tokens = 512 } = req.body;
+  if (!model || !prompt) {
+    return res.status(400).json({ success: false, error: 'Model und Prompt sind erforderlich.' });
+  }
+
+  const startTime = Date.now();
+  try {
+    const groqRes = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${activeKey}`
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: 'Du bist ein präzises Groq KI-Modell im Benchmark-Test für Agent Zero.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: Number(temperature),
+        max_tokens: Number(max_tokens)
+      })
+    }, 25000);
+
+    const latency_ms = Date.now() - startTime;
+    if (groqRes.headers) agentZero.groqIntelligence.recordRateLimitHeaders(groqRes.headers);
+
+    if (!groqRes.ok) {
+      const errText = await groqRes.text();
+      return res.status(groqRes.status).json({
+        success: false,
+        status: groqRes.status,
+        error: `Groq API Fehler: ${errText || groqRes.statusText}`,
+        latency_ms
+      });
+    }
+
+    const data = await groqRes.json();
+    const reply = data.choices?.[0]?.message?.content || '';
+    const usage = data.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+
+    agentZero.log('SYSTEM', `[GROQ BENCHMARK] Modell ${model} getestet (${latency_ms}ms, ${usage.completion_tokens} Tokens generiert).`);
+
+    res.json({
+      success: true,
+      model,
+      reply,
+      latency_ms,
+      usage,
+      rate_limit_headers: agentZero.groqIntelligence.rate_limit_headers
+    });
+  } catch (err: any) {
+    const latency_ms = Date.now() - startTime;
+    res.status(500).json({
+      success: false,
+      error: err.message || 'Verbindungsfehler zur Groq API',
+      latency_ms
+    });
+  }
+});
+
+app.post('/api/groq/recommendation', (req, res) => {
+  const { task_type = 'CODE_GENERATION' } = req.body;
+  const optimal = agentZero.groqIntelligence.getOptimalModel(task_type, agentZero.blacklisted_models);
+  const modelInfo = agentZero.groqIntelligence.models.find(m => m.id === optimal);
+
+  res.json({
+    success: true,
+    task_type,
+    recommended_model: optimal,
+    model_details: modelInfo,
+    prompt_context: agentZero.groqIntelligence.getGroqPromptContext()
+  });
 });
 
 app.get('/api/tokens/status', (req, res) => {
