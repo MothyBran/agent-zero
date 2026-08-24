@@ -515,17 +515,17 @@ REGELN:
       if (codeMatch && codeMatch[1]) {
         let codeToRun = codeMatch[1];
         
-        // --- DER RETTENDE DEDENT-HACK GEGEN INDENTATION-ERRORS ---
-        // Entfernt führende Leerzeichen, die durch Markdown-Listen oder <think>-Blöcke entstanden sind
-        const lines = codeToRun.split('\n');
-        const nonEmptyLines = lines.filter(l => l.trim().length > 0);
-        if (nonEmptyLines.length > 0) {
-            const minIndent = Math.min(...nonEmptyLines.map(l => l.match(/^\s*/)?.[0].length || 0));
-            if (minIndent > 0 && minIndent < 100) {
-                codeToRun = lines.map(l => l.length >= minIndent ? l.slice(minIndent) : l).join('\n');
-            }
-        }
-        codeToRun = codeToRun.trim();
+        // --- AGGRESSIVER DEDENT-HACK GEGEN QWEN-FORMATIERUNGSFEHLER ---
+        let lines = codeToRun.split('\n');
+        lines = lines.map(line => {
+          // Wenn die Zeile mit Leerzeichen und dann "import " oder "from " beginnt, entferne die Leerzeichen!
+          if (line.match(/^\s+(import|from)\s+/)) {
+            return line.trimStart();
+          }
+          return line;
+        });
+        codeToRun = lines.join('\n').trim();
+        
         // ---------------------------------------------------------
 
         const execRes = await this.executeDynamicPythonCode(codeToRun, "Autonomous LLM Script", 20);
