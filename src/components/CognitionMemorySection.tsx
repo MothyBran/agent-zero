@@ -36,12 +36,16 @@ interface MilestoneItem {
 }
 
 interface TokenBudgetStatus {
-  tokens_used_today: number;
-  daily_limit: number;
-  usage_percentage: number;
-  tokens_remaining: number;
-  tokens_saved_by_compression: number;
-  conservation_mode: boolean;
+  tokens_used_today?: number;
+  daily_token_limit?: number;
+  daily_limit?: number;
+  usage_percentage?: number;
+  budget_usage_percent?: number;
+  tokens_remaining?: number;
+  estimated_tokens_remaining?: number;
+  tokens_saved_by_compression?: number;
+  conservation_mode?: boolean;
+  conservation_mode_active?: boolean;
 }
 
 interface MemoryApiResponse {
@@ -124,32 +128,32 @@ export const CognitionMemorySection: React.FC = () => {
             <div className="text-[11px] font-mono text-slate-400 uppercase tracking-wider flex items-center justify-between">
               <span>Token-Verbrauch heute</span>
               <span className="text-slate-300 font-bold font-mono">
-                {budget ? `${budget.tokens_used_today.toLocaleString()} / ${budget.daily_limit.toLocaleString()}` : '0 / 500.000'}
+                {`${(budget?.tokens_used_today ?? 0).toLocaleString()} / ${(budget?.daily_token_limit ?? budget?.daily_limit ?? 500000).toLocaleString()}`}
               </span>
             </div>
             <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
               <div
                 className="h-full bg-cyan-500 rounded-full transition-all"
-                style={{ width: `${Math.min(100, budget?.usage_percentage || 0)}%` }}
+                style={{ width: `${Math.min(100, budget?.budget_usage_percent ?? budget?.usage_percentage ?? 0)}%` }}
               />
             </div>
             <div className="text-[10px] font-mono text-slate-400 flex items-center justify-between">
-              <span>Auslastung: {(budget?.usage_percentage || 0).toFixed(1)}%</span>
-              <span>Verbleibend: {(budget?.tokens_remaining || 500000).toLocaleString()}</span>
+              <span>Auslastung: {(budget?.budget_usage_percent ?? budget?.usage_percentage ?? 0).toFixed(1)}%</span>
+              <span>Verbleibend: {(budget?.estimated_tokens_remaining ?? budget?.tokens_remaining ?? 500000).toLocaleString()}</span>
             </div>
           </div>
 
           <div className="p-3.5 rounded-lg bg-slate-950/60 border border-slate-800/80 space-y-1">
             <div className="text-[11px] font-mono text-slate-400 uppercase tracking-wider">Token-Sparmodus</div>
             <div className="text-sm font-bold font-mono">
-              {budget?.conservation_mode ? (
+              {(budget?.conservation_mode_active ?? budget?.conservation_mode) ? (
                 <span className="text-amber-400">AKTIV (Schutz vor Erschöpfung)</span>
               ) : (
                 <span className="text-emerald-400">NORMALBETRIEB</span>
               )}
             </div>
             <div className="text-[10px] text-slate-400 font-mono pt-1">
-              Eingespart durch Kompression: {budget?.tokens_saved_by_compression?.toLocaleString() || 0} Tokens
+              Eingespart durch Kompression: {(budget?.tokens_saved_by_compression ?? 0).toLocaleString()} Tokens
             </div>
           </div>
         </div>

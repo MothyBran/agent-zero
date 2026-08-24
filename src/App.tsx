@@ -7,6 +7,7 @@ import { LedgerSection } from './components/LedgerSection';
 import { BusinessProfileSection } from './components/BusinessProfileSection';
 import { CognitionMemorySection } from './components/CognitionMemorySection';
 import { LoginPage } from './components/LoginPage';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { AlertTriangle, HeartPulse, BookOpen, Building2, Brain, Terminal } from 'lucide-react';
 import { safeFetchJson, safePostJson } from './lib/api';
 
@@ -201,26 +202,28 @@ export function App() {
 
       {/* 4. Main Content Area */}
       <main className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
-        {activeTab === 'VITALS' && (
-          <VitalsSection state={state} onRefresh={fetchAllData} />
-        )}
-        {activeTab === 'LEDGER' && (
-          <LedgerSection />
-        )}
-        {activeTab === 'PROFILE' && (
-          <BusinessProfileSection />
-        )}
-        {activeTab === 'COGNITION' && (
-          <CognitionMemorySection />
-        )}
-        {activeTab === 'TERMINAL' && (
-          <LiveTerminal
-            logs={logs}
-            reasoningStream={reasoningStream}
-            walletAddress={state?.wallet_address}
-            onClear={handleClearLogs}
-          />
-        )}
+        <ErrorBoundary fallbackTitle="Dashboard-Modul Schutzschild">
+          {activeTab === 'VITALS' && (
+            <VitalsSection state={state} onRefresh={fetchAllData} />
+          )}
+          {activeTab === 'LEDGER' && (
+            <LedgerSection />
+          )}
+          {activeTab === 'PROFILE' && (
+            <BusinessProfileSection />
+          )}
+          {activeTab === 'COGNITION' && (
+            <CognitionMemorySection />
+          )}
+          {activeTab === 'TERMINAL' && (
+            <LiveTerminal
+              logs={logs}
+              reasoningStream={reasoningStream}
+              walletAddress={state?.wallet_address}
+              onClear={handleClearLogs}
+            />
+          )}
+        </ErrorBoundary>
       </main>
     </div>
   );
