@@ -28,19 +28,19 @@ async function initDB() {
 }
 initDB().catch(console.error);
 
-async function readData(file, key, defaultValue) {
+async function readData(file: string, key: string, defaultValue: any) {
   if (dbPool) {
     try {
       const res = await dbPool.query('SELECT value FROM kv_store WHERE key = $1', [key]);
       if (res.rows.length > 0) return res.rows[0].value;
     } catch {}
-    return defaultValue;
+    return defaultValue; // Never fallback to file if DB is active
   }
   try { if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf-8')); } catch {}
   return defaultValue;
 }
 
-async function writeData(file, key, value) {
+async function writeData(file: string, key: string, value: any) {
   if (dbPool) {
     try {
       await dbPool.query('INSERT INTO kv_store (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value', [key, JSON.stringify(value)]);
@@ -1773,7 +1773,7 @@ class AgentZeroTS {
     }
 
     return new Promise((resolve) => {
-      const child = spawn('python3', [tempFile], { env: process.env });
+      const child = spawn('python3', [tempFile], { env: process.env, shell: true });
       let stdout = ''; let stderr = '';
       let isDone = false;
       
@@ -2203,14 +2203,9 @@ const agentZero = new AgentZeroTS();
 app.get('/api/status', async (req, res) => res.json(agentZero.getState()));
 app.get('/api/logs', (req, res) => res.json({ logs: agentZero.logs }));
 
-app.get('/api/accounting', (req, res) => {
-  try {
-    if (fs.existsSync(ACCOUNTING_FILE)) {
-      const data = JSON.parse(fs.readFileSync(ACCOUNTING_FILE, 'utf-8'));
-      return res.json({ transactions: Array.isArray(data.transactions) ? data.transactions : [] });
-    }
-  } catch {}
-  res.json({ transactions: [] });
+app.get('/api/accounting', async (req, res) => {
+  const data = await readData(ACCOUNTING_FILE, 'accounting', { transactions: [] });
+  res.json({ transactions: Array.isArray(data.transactions) ? data.transactions : [] });
 });
 
 app.get('/api/business-profile', (req, res) => {
