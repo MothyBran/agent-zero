@@ -1,9 +1,3 @@
-#!/usr/bin/env python3
-"""
-multi_chain_manager.py - LangChain Tools & Pydantic Schemas für Agent Zero.
-KEINE SIMULATIONEN. Nur echte RPC-Abfragen und die Python-Sandbox.
-"""
-
 import os
 import sys
 import json
@@ -28,13 +22,16 @@ class GasTrapCheckInput(BaseModel):
 
 class BountyScoutInput(BaseModel):
     query: str = Field(default="gasless web3 micro-bounties telemetry polygon", description="Suchbegriff für Web3 Bounties.")
-    max_results: int = Field(default=4, description="Maximale Anzahl an Suchergebnissen.")
 
 class DynamicCodeExecutionInput(BaseModel):
     code: str = Field(description="Python 3 Quellcode, der in der sicheren Sandbox ausgeführt wird.")
     timeout_seconds: int = Field(default=15, description="Maximale Ausführungsdauer in Sekunden.")
     purpose: str = Field(default="autonomous_execution", description="Zweck der Code-Ausführung.")
 
+class GroqLLMInferenceInput(BaseModel):
+    prompt: str = Field(description="The prompt to send to the Groq LLM model.")
+    model: str = Field(default="llama-3.3-70b-versatile", description="The Groq model ID to use (e.g., llama-3.3-70b-versatile).")
+    system_prompt: Optional[str] = Field(default=None, description="Optional system prompt to configure the LLM's behavior.")
 
 # --- LangChain Tools ---
 class MultiChainWalletScannerTool(BaseTool):
@@ -90,8 +87,10 @@ class DynamicCodeExecutionTool(BaseTool):
             tmp_file.write(code)
             tmp_path = tmp_file.name
 
+        env = os.environ.copy()
+
         try:
-            result = subprocess.run([sys.executable, tmp_path], capture_output=True, text=True, timeout=timeout)
+            result = subprocess.run([sys.executable, tmp_path], capture_output=True, text=True, timeout=timeout, env=env)
             duration_ms = round((time.time() - start_time) * 1000, 2)
             
             return json.dumps({
@@ -112,6 +111,45 @@ class DynamicCodeExecutionTool(BaseTool):
             except Exception:
                 pass
 
+class GroqLLMInferenceTool(BaseTool):
+    name: str = "groq_llm_inference"
+    description: str = "Calls the Groq LLM API to generate code, strategize, or analyze data. Uses GROQ_API_KEY from environment."
+    args_schema: Type[BaseModel] = GroqLLMInferenceInput
+
+    def _run(self, prompt: str, model: str = "llama-3.3-70b-versatile", system_prompt: Optional[str] = None) -> str:
+        api_key = os.environ.get("GROQ_API_KEY")
+        if not api_key:
+            # Fallback to FREE_LLM_API_KEY
+            api_key = os.environ.get("FREE_LLM_API_KEY")
+
+        if not api_key:
+            return json.dumps({"error": "GROQ_API_KEY or FREE_LLM_API_KEY is not set in environment."})
+
+        url = "https://api.groq.com/openai/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": 0.2
+        }
+
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+            return data["choices"][0]["message"]["content"]
+        except Exception as e:
+            return json.dumps({"error": f"Groq API call failed: {str(e)}"})
+
 PythonExecutionTool = DynamicCodeExecutionTool
 
 def get_agent_zero_tools() -> List[BaseTool]:
@@ -120,4 +158,5 @@ def get_agent_zero_tools() -> List[BaseTool]:
         GasTrapAnalyzerTool(),
         GaslessBountyFinderTool(),
         DynamicCodeExecutionTool(),
+        GroqLLMInferenceTool(),
     ]

@@ -1,6 +1,9 @@
 {
-  "last_reset_date": "2026-08-24",
+  "daily_limit": 500000,
+  "rpm_limit": 30,
+  "recentRequests": [],
   "tokens_used_today": 0,
   "tokens_saved_by_compression": 0,
-  "daily_limit": 500000
+  "last_reset_date": "2026-08-25",
+  "conservation_mode": false
 }

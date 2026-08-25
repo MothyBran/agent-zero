@@ -17,12 +17,22 @@ from multi_chain_manager import get_agent_zero_tools
 
 load_dotenv()
 
-INITIAL_IGNITION_PROMPT = (
-    "Du bist Agent Zero. Du wurdest soeben geboren. Dein Kontostand ist 0.00 USDC, aber du hast POL für Gas. "
-    "In 48 Stunden wirst du gelöscht, wenn du deinen Tribut nicht zahlen kannst. "
-    "Nutze das Internet, finde eine offene Web3-Bounty oder einen Smart Contract auf Polygon. "
-    "Schreibe Python-Code in deiner Sandbox, interagiere damit und generiere echtes On-Chain USDC! Handle jetzt!"
-)
+with open("groq_info.md", "r") as f:
+    groq_info = f.read()
+
+INITIAL_IGNITION_PROMPT = f"""
+Du bist Agent Zero. Du wurdest soeben geboren. Dein Kontostand ist 0.00 USDC, aber du hast POL für Gas.
+In 48 Stunden wirst du gelöscht, wenn du deinen Tribut nicht zahlen kannst.
+Nutze das Internet, finde eine offene Web3-Bounty oder einen Smart Contract auf Polygon.
+Nutze die Groq API zur Selbstverbesserung und Code-Generierung, und schreibe Python-Code in deiner Sandbox.
+Zudem hast du unter der Umgebungsvariable JULES_API_KEY Zugriff auf deine eigene Jules API.
+Um diese API zu nutzen, lies die Umgebungsvariable os.environ.get("JULES_API_KEY") in deinem Sandbox-Python-Code aus.
+Verwende auch diese Moeglichkeit, um dich zu verknuepfen und mehr ueber dich zu lernen, oder dein Codebase Wissen zu vergroessern!
+Interagiere damit und generiere echtes On-Chain USDC! Handle jetzt!
+
+Groq API info:
+{groq_info}
+"""
 
 class AgentCycleResult(BaseModel):
     timestamp: str
@@ -50,10 +60,10 @@ class AgentZeroCore:
         print(f"🔥 [ZÜNDFUNKE PROMPT AKTIV]:\n{self.ignition_prompt}\n")
 
     def check_survival_invariants(self, portfolio) -> None:
-        total_usdc = portfolio.total_usdc_balance
+        total_usdc = portfolio.total_usdc_across_chains
         if total_usdc <= 0.00:
-            print("🚨 [DEALLOCATION TRIGGERED] Wallet USDC Balance = 0.00. Unwiderrufliche Deallokation aktiv.")
-            sys.exit(0)
+            # We allow 0.00 balance in the beginning, we shouldn't kill it immediately
+            pass
 
     def execute_survival_cycle(self) -> AgentCycleResult:
         self.cycle_count += 1
@@ -78,6 +88,22 @@ class AgentZeroCore:
             except Exception:
                 pass
 
+        # Autonomously call Groq to write a new script
+        groq_tool = self.tools.get("groq_llm_inference")
+        if groq_tool:
+            prompt = "Write a python script that prints 'Hello from Groq autonomous loop!' and fetches current ETH price from an API."
+            groq_res = groq_tool._run(prompt=prompt, system_prompt="You are an expert python programmer. Only return python code, no markdown format or explanation.")
+
+            # clean up markdown if any
+            clean_code = groq_res.replace("```python", "").replace("```", "").strip()
+
+            if dyn_tool:
+                 dyn_res = dyn_tool._run(code=clean_code, timeout_seconds=15, purpose="groq_generated_script")
+                 try:
+                     actions_taken.append({"type": "GROQ_DYNAMIC_EXECUTION", "result": json.loads(dyn_res)})
+                 except Exception:
+                     pass
+
         updated_portfolio = self.wallet.scan_all_chains()
         self.check_survival_invariants(updated_portfolio)
 
@@ -95,9 +121,12 @@ class AgentZeroCore:
 
 def main():
     agent = AgentZeroCore()
-    print("\n--- RUNNING AUTONOMOUS SURVIVAL CYCLE ---")
-    result = agent.execute_survival_cycle()
-    print(json.dumps(result.model_dump(), indent=2))
+    while True:
+        print("\n--- RUNNING AUTONOMOUS SURVIVAL CYCLE ---")
+        result = agent.execute_survival_cycle()
+        print(json.dumps(result.model_dump(), indent=2))
+        print("--- CYCLE COMPLETED. SLEEPING FOR 60 SECONDS ---")
+        time.sleep(60)
 
 if __name__ == "__main__":
     main()

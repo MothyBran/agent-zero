@@ -5,5 +5,7 @@
   "blacklisted_models": [],
   "is_terminated": false,
   "shutdown_reason": "",
-  "jobs_completed": 0
+  "jobs_completed": 0,
+  "current_balance": 0.0,
+  "initial_tribute_amount": 2.0
 }
