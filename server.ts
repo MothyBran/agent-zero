@@ -9,6 +9,48 @@ import { createServer as createViteServer } from 'vite';
 
 dotenv.config();
 
+import { Pool } from 'pg';
+
+// --- POSTGRESQL INTEGRATION ---
+const dbPool = process.env.DATABASE_URL ? new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false }
+}) : null;
+
+async function initDB() {
+  if (!dbPool) return;
+  await dbPool.query(`
+    CREATE TABLE IF NOT EXISTS kv_store (
+      key VARCHAR(255) PRIMARY KEY,
+      value JSONB NOT NULL
+    )
+  `);
+}
+initDB().catch(console.error);
+
+async function readData(file, key, defaultValue) {
+  if (dbPool) {
+    try {
+      const res = await dbPool.query('SELECT value FROM kv_store WHERE key = $1', [key]);
+      if (res.rows.length > 0) return res.rows[0].value;
+    } catch {}
+    return defaultValue;
+  }
+  try { if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf-8')); } catch {}
+  return defaultValue;
+}
+
+async function writeData(file, key, value) {
+  if (dbPool) {
+    try {
+      await dbPool.query('INSERT INTO kv_store (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value', [key, JSON.stringify(value)]);
+    } catch (e) { console.error('DB Write Error:', e); }
+    return;
+  }
+  try { fs.writeFileSync(file, JSON.stringify(value, null, 2)); } catch {}
+}
+
+
 let geminiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI | null {
   const key = process.env.GEMINI_API_KEY;
@@ -257,21 +299,21 @@ export class TokenBudgetManager {
   public conservation_mode: boolean = false;
 
   constructor() { this.load(); }
-  public load() {
+  public async load() {
     try {
-      if (fs.existsSync(TOKEN_BUDGET_FILE)) {
-        const data = JSON.parse(fs.readFileSync(TOKEN_BUDGET_FILE, 'utf-8'));
+      const data = await readData(TOKEN_BUDGET_FILE, 'token_budget', null);
+      if (data) {
         const today = new Date().toISOString().slice(0, 10);
         if (data.last_reset_date === today) {
           this.tokens_used_today = data.tokens_used_today || 0;
           this.tokens_saved_by_compression = data.tokens_saved_by_compression || 0;
         } else {
-          this.tokens_used_today = 0; this.tokens_saved_by_compression = 0; this.last_reset_date = today; this.save();
+          this.tokens_used_today = 0; this.tokens_saved_by_compression = 0; this.last_reset_date = today; await this.save();
         }
       }
     } catch {}
   }
-  public save() { try { fs.writeFileSync(TOKEN_BUDGET_FILE, JSON.stringify(this, null, 2)); } catch {} }
+  public async save() { await writeData(TOKEN_BUDGET_FILE, 'token_budget', this); }
   public getRpmCurrent(): number {
     const now = Date.now();
     this.recentRequests = this.recentRequests.filter(ts => now - ts < 60000);
@@ -285,11 +327,11 @@ export class TokenBudgetManager {
     if (this.tokens_used_today >= this.daily_limit * 0.95) return { allowed: false, reason: `Token-Budget zu 95% erschöpft.`, conservation: true };
     return { allowed: true, conservation: this.conservation_mode, recommendedModel: this.conservation_mode ? 'llama-3.1-8b-instant' : undefined };
   }
-  public recordUsage(promptTokens: number, completionTokens: number, tokensSaved: number = 0) {
+  public async recordUsage(promptTokens: number, completionTokens: number, tokensSaved: number = 0) {
     this.recentRequests.push(Date.now());
     this.tokens_used_today += (promptTokens || 0) + (completionTokens || 0);
     this.tokens_saved_by_compression += tokensSaved;
-    this.save();
+    await this.save();
   }
   public compressPrompt(systemPrompt: string, userPrompt: string): { compressedSystem: string; compressedUser: string; tokensSaved: number } {
     const originalLen = (systemPrompt.length + userPrompt.length) / 4;
@@ -312,9 +354,9 @@ export class TokenBudgetManager {
 export class TaskMemoryManager {
   public tasks: TaskMemoryRecordDef[] = [];
   constructor() { this.load(); }
-  public load() { try { if (fs.existsSync(TASK_MEMORY_FILE)) { const data = JSON.parse(fs.readFileSync(TASK_MEMORY_FILE, 'utf-8')); if (Array.isArray(data.tasks)) { this.tasks = data.tasks; return; } } this.tasks = []; } catch { this.tasks = []; } }
-  public save() { try { fs.writeFileSync(TASK_MEMORY_FILE, JSON.stringify({ tasks: this.tasks, updated_at: new Date().toISOString() }, null, 2)); } catch {} }
-  public recordTask(record: TaskMemoryRecordDef) { this.tasks.unshift(record); if (this.tasks.length > 300) this.tasks.pop(); this.save(); }
+  public async load() { try { const data = await readData(TASK_MEMORY_FILE, 'task_memory', { tasks: [] }); if (Array.isArray(data.tasks)) { this.tasks = data.tasks; return; } this.tasks = []; } catch { this.tasks = []; } }
+  public async save() { await writeData(TASK_MEMORY_FILE, 'task_memory', { tasks: this.tasks, updated_at: new Date().toISOString() }); }
+  public async recordTask(record: TaskMemoryRecordDef) { this.tasks.unshift(record); if (this.tasks.length > 300) this.tasks.pop(); await this.save(); }
   public getStats() {
     const total = this.tasks.length;
     const successes = this.tasks.filter(t => t.status === 'SUCCESS').length;
@@ -330,15 +372,15 @@ export class TaskMemoryManager {
 export class KnowledgeMemoryManager {
   public learnings: KnowledgeItemDef[] = [];
   constructor() { this.load(); }
-  public load() { try { if (fs.existsSync(KNOWLEDGE_FILE)) { const data = JSON.parse(fs.readFileSync(KNOWLEDGE_FILE, 'utf-8')); if (Array.isArray(data.learnings)) { this.learnings = data.learnings; return; } } this.learnings = []; } catch { this.learnings = []; } }
-  public save() { try { fs.writeFileSync(KNOWLEDGE_FILE, JSON.stringify({ learnings: this.learnings, updated_at: new Date().toISOString() }, null, 2)); } catch {} }
-  public addInsight(category: string, title: string, insight: string, confidenceScore: number = 0.95, source: string = 'Agent Execution'): KnowledgeItemDef {
+  public async load() { try { const data = await readData(KNOWLEDGE_FILE, 'knowledge_memory', { learnings: [] }); if (Array.isArray(data.learnings)) { this.learnings = data.learnings; return; } this.learnings = []; } catch { this.learnings = []; } }
+  public async save() { await writeData(KNOWLEDGE_FILE, 'knowledge_memory', { learnings: this.learnings, updated_at: new Date().toISOString() }); }
+  public async addInsight(category: string, title: string, insight: string, confidenceScore: number = 0.95, source: string = 'Agent Execution'): Promise<KnowledgeItemDef> {
     const existing = this.learnings.find(l => l.title.toLowerCase() === title.toLowerCase());
     if (existing) {
-      existing.insight = insight; existing.confidence_score = Math.min(0.99, Number(((existing.confidence_score + confidenceScore) / 2).toFixed(2))); existing.times_applied = (existing.times_applied || 0) + 1; existing.timestamp = new Date().toISOString(); this.save(); return existing;
+      existing.insight = insight; existing.confidence_score = Math.min(0.99, Number(((existing.confidence_score + confidenceScore) / 2).toFixed(2))); existing.times_applied = (existing.times_applied || 0) + 1; existing.timestamp = new Date().toISOString(); await this.save(); return existing;
     }
     const item: KnowledgeItemDef = { id: `kn_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`, timestamp: new Date().toISOString(), category, title, insight, confidence_score: confidenceScore, times_applied: 1, success_reinforcements: 1, source };
-    this.learnings.unshift(item); if (this.learnings.length > 80) this.learnings.pop(); this.save(); return item;
+    this.learnings.unshift(item); if (this.learnings.length > 80) this.learnings.pop(); await this.save(); return item;
   }
   public getEvolutionStats(agentTributes: number, completedMilestonesCount: number, taskStats: any) {
     const totalLearnings = this.learnings.length;
@@ -357,28 +399,26 @@ export class KnowledgeMemoryManager {
 export class MilestoneManager {
   public milestones: MilestoneDef[] = [];
   constructor() { this.load(); }
-  public load() {
+  public async load() {
     try {
-      if (fs.existsSync(MILESTONES_FILE)) {
-        const data = JSON.parse(fs.readFileSync(MILESTONES_FILE, 'utf-8'));
-        if (Array.isArray(data.milestones)) { this.milestones = data.milestones; return; }
-      }
+        const data = await readData(MILESTONES_FILE, 'milestones', null);
+        if (data && Array.isArray(data.milestones)) { this.milestones = data.milestones; return; }
       this.initDefault();
     } catch { this.initDefault(); }
   }
-  private initDefault() {
+  private async initDefault() {
     this.milestones = [];
-    this.save();
+    await this.save();
   }
-  public save() { try { fs.writeFileSync(MILESTONES_FILE, JSON.stringify({ milestones: this.milestones, updated_at: new Date().toISOString() }, null, 2)); } catch {} }
-  public evaluateAll(agentState: any) {
+  public async save() { await writeData(MILESTONES_FILE, 'milestones', { milestones: this.milestones, updated_at: new Date().toISOString() }); }
+  public async evaluateAll(agentState: any) {
     let completedAny = false;
     for (const ms of this.milestones) {
       if (ms.is_completed) continue;
       if (ms.category === 'LIQUIDITY') ms.current_value = Number(agentState.current_balance.toFixed(4));
       if (ms.current_value >= ms.target_value) { ms.is_completed = true; ms.completed_at = new Date().toISOString(); completedAny = true; }
     }
-    if (completedAny) this.save();
+    if (completedAny) await this.save();
   }
 }
 

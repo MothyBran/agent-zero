@@ -19,6 +19,48 @@ from typing import Dict, List, Any, Optional
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 from web3 import Web3
+
+import psycopg2
+
+def get_db_connection():
+    db_url = os.environ.get('DATABASE_URL')
+    if not db_url:
+        return None
+    try:
+        if 'localhost' in db_url:
+            return psycopg2.connect(db_url)
+        return psycopg2.connect(db_url, sslmode='require')
+    except Exception as e:
+        print(f"DB Error: {e}")
+        return None
+
+def read_db(key, default_val=None):
+    conn = get_db_connection()
+    if conn:
+        try:
+            with conn.cursor() as cur:
+                cur.execute('SELECT value FROM kv_store WHERE key = %s', (key,))
+                row = cur.fetchone()
+                if row:
+                    return row[0] if isinstance(row[0], dict) else json.loads(row[0])
+        except Exception:
+            pass
+        finally:
+            conn.close()
+    return default_val
+
+def write_db(key, value):
+    conn = get_db_connection()
+    if conn:
+        try:
+            with conn.cursor() as cur:
+                cur.execute('INSERT INTO kv_store (key, value) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value', (key, json.dumps(value)))
+            conn.commit()
+        except Exception as e:
+            print(f"DB Write Error: {e}")
+        finally:
+            conn.close()
+
 from web3.exceptions import Web3Exception
 
 # Load environment variables
@@ -424,8 +466,10 @@ class SmartMultiChainWallet:
             # Check state file
             if os.path.exists(self.state_file):
                 try:
-                    with open(self.state_file, "r") as f:
-                        data = json.load(f)
+                    data = read_db('agent_state')
+                    if not data:
+                        with open(self.state_file, "r") as f:
+                            data = json.load(f)
                         if "current_balance" in data and float(data["current_balance"]) > 0:
                             onchain_usdc = float(data["current_balance"])
                 except Exception:
@@ -441,8 +485,10 @@ class SmartMultiChainWallet:
             ledger_data = {"transactions": []}
             if os.path.exists(self.accounting_file):
                 try:
-                    with open(self.accounting_file, "r") as f:
-                        ledger_data = json.load(f)
+                    ledger_data = read_db('accounting', {"transactions": []})
+                    if not ledger_data.get("transactions"):
+                        with open(self.accounting_file, "r") as f:
+                            ledger_data = json.load(f)
                 except Exception:
                     pass
 
@@ -475,6 +521,8 @@ class SmartMultiChainWallet:
             state_data["initial_tribute_amount"] = INITIAL_TRIBUTE
             if "tributes_paid" not in state_data:
                 state_data["tributes_paid"] = 0
+            write_db('agent_state', state_data)
+            write_db('agent_state', state_data)
             with open(self.state_file, "w") as f:
                 json.dump(state_data, f, indent=2)
         except Exception:
