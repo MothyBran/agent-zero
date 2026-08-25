@@ -25,7 +25,7 @@ from web3.exceptions import Web3Exception
 load_dotenv()
 
 # --- SURVIVAL CONFIGURATION ---
-INITIAL_TRIBUTE: float = 1.0  # Survival-Hack: gesenkt von 2.0 auf 1.0 USDC zur Rettung vor Insolvenz
+INITIAL_TRIBUTE: float = 2.0  # Survival-Hack: gesenkt von 2.0 auf 1.0 USDC zur Rettung vor Insolvenz
 FIRST_TRIBUTE_HOURS: int = 48
 TRIBUTE_INTERVAL_HOURS: int = 48
 TRIBUTE_MULTIPLIER: float = 1.25
@@ -432,7 +432,7 @@ class SmartMultiChainWallet:
                     pass
 
         if onchain_usdc <= 0:
-            onchain_usdc = 1.38  # Known exact initial seed balance
+            pass # removed fake balance
 
         self.ledger_balance = onchain_usdc
 

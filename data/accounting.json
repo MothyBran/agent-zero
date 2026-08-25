@@ -1,3 +1,13 @@
 {
-  "transactions": []
+  "transactions": [
+    {
+      "id": "tx_init_1787614857",
+      "timestamp": "2026-08-24T23:40:57Z",
+      "type": "INITIAL_ONCHAIN_BALANCE",
+      "amount": 0.0,
+      "currency": "USDC",
+      "note": "Erkanntes Ethereum Mainnet Startguthaben: 0.0000 USDC. Autonomes Kassenbuch aktiviert.",
+      "recipient": "0x8B897B6aecdFe18E045Ea513225484ad49CE0e1E"
+    }
+  ]
 }

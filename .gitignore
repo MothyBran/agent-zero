@@ -6,3 +6,6 @@ __pycache__/
 
 # Mac Systemdateien
 .DS_Store
+node_modules
+node_modules/
+dist/
