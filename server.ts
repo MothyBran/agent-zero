@@ -302,16 +302,21 @@ export class TokenBudgetManager {
   public async load() {
     try {
       const data = await readData(TOKEN_BUDGET_FILE, 'token_budget', null);
-      if (data) {
-        const today = new Date().toISOString().slice(0, 10);
-        if (data.last_reset_date === today) {
-          this.tokens_used_today = data.tokens_used_today || 0;
-          this.tokens_saved_by_compression = data.tokens_saved_by_compression || 0;
-        } else {
-          this.tokens_used_today = 0; this.tokens_saved_by_compression = 0; this.last_reset_date = today; await this.save();
-        }
+      const today = new Date().toISOString().slice(0, 10);
+      if (data && data.last_reset_date === today) {
+        this.tokens_used_today = data.tokens_used_today || 0;
+        this.tokens_saved_by_compression = data.tokens_saved_by_compression || 0;
+      } else {
+        this.tokens_used_today = 0;
+        this.tokens_saved_by_compression = 0;
+        this.last_reset_date = today;
+        await this.save();
       }
-    } catch {}
+    } catch {
+      this.tokens_used_today = 0;
+      this.tokens_saved_by_compression = 0;
+      this.last_reset_date = new Date().toISOString().slice(0, 10);
+    }
   }
   public async save() { await writeData(TOKEN_BUDGET_FILE, 'token_budget', this); }
   public getRpmCurrent(): number {
@@ -2250,6 +2255,13 @@ app.post('/api/cycle/run', async (req, res) => {
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
+});
+
+
+app.post('/api/budget/reset', async (req, res) => {
+  agentZero.tokenBudget.tokens_used_today = 0;
+  await agentZero.tokenBudget.save();
+  res.json({ success: true, message: 'Token budget reset successfully.' });
 });
 
 app.post('/api/blacklist/clear', (req, res) => {
