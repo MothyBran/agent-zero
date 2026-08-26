@@ -1864,6 +1864,8 @@ Um reale On-Chain-Aktionen auszuführen, greife auf diese validierten Polygon-Co
 1. APPROVAL: Bevor du Aave oder QuickSwap nutzt, MUSS dein Skript eine \`approve\` -Transaktion auf dem jeweiligen Token-Contract (z.B. USDC) ausführen, um dem Protokoll die Ausgaben zu erlauben.
 2. AAVE SUPPLY: Um USDC bei Aave einzuzahlen und Zinsen zu verdienen, nutze die Funktion: \`supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode)\`. Der referralCode ist 0.
 3. QUICKSWAP SWAP: Um Tokens zu tauschen, nutze \`exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96))\`.
+4. GAS LIMITS: Setze das \`gas\`-Limit in der \`build_transaction\`-Methode für Aave \`supply\`-Aufrufe IMMER statisch auf mindestens 500000. Aave-Verträge sind komplex und schlagen bei dynamischer Schätzung oder zu niedrigen Limits (Out of Gas) fehl. Da POL günstig ist, ist ein hohes Limit sicher.
+5. MINDESTBETRÄGE (ANTI-DUST): Führe On-Chain-Aktionen NUR aus, wenn der zu bewegende Betrag größer als \`0.1\` USDC ist. Wenn dein Guthaben kleiner ist, beende das Skript sofort ohne Transaktion, um Gas-Verschwendung durch Micro-Transaktionen zu verhindern.
 
 Erstelle Minimal-ABIs in deinem Code nur für die Funktionen, die du in genau diesem Lauf benötigst. Prüfe vor jeder Aktion deine echten Balances.
 Verwende für die Polygon PoA-Middleware ausschließlich: \`from web3.middleware import ExtraDataToPOAMiddleware\` gefolgt von \`w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)\`. Nutze NIEMALS \`geth_poa_middleware\`.
