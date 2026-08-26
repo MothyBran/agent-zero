@@ -1377,28 +1377,7 @@ class AgentWalletTS {
         }
       }
 
-      if (!actionsTaken.some(a => a.type === 'DYNAMIC_CODE_EXECUTION' && a.status === 'SUCCESS')) {
-        const groqPrompt = `
-Du bist der Kern von Agent Zero. Du musst einen Python-Code schreiben, der in der Sandbox ausgefuehrt wird.
-Schreibe ein Python-Skript, das 'Hello from Groq autonomous loop!' druckt und den aktuellen ETH-Preis abruft.
-Gib NUR den Python-Code zurueck. Keine Markdown-Formatierung, keine Erklaerungen.
-`;
-        this.log('THINK', 'Nutze Groq API fuer Code-Generierung...');
-        try {
-            const response = await this.groqIntelligence.runInference(groqPrompt);
-            if (response.success && response.content) {
-                let cleanCode = response.content.replace(/```python/g, '').replace(/```/g, '').trim();
-                const res = await this.executeDynamicPythonCode(cleanCode, 'Groq_Generated_Script');
-                if (res.success) {
-                    actionsTaken.push({ type: 'GROQ_DYNAMIC_EXECUTION', status: 'SUCCESS', output: res.stdout.slice(0, 300) });
-                } else {
-                    actionsTaken.push({ type: 'GROQ_DYNAMIC_EXECUTION', status: 'FAILED', output: res.stderr.slice(0, 300) });
-                }
-            }
-        } catch (e: any) {
-            this.log('ERROR', `Groq Code Generation Error: ${e.message}`);
-        }
-      }
+
 
 
       const nativePrice = (livePrices[chainConfig.coingeckoNativeId]?.usd) || chainConfig.fallbackPrice || 1.0;
@@ -2255,8 +2234,10 @@ app.post('/api/cycle/run', async (req, res) => {
 app.post("/api/reset/full", async (req, res) => {
   agentZero.log("SYSTEM", "User triggered full reset.");
   // Need to clear tasks, insights, blacklist, logs
-  agentZero.taskMemory.clearTasks();
-  agentZero.knowledgeManager.clearInsights();
+  agentZero.taskMemory.tasks = [];
+  agentZero.taskMemory.save();
+  agentZero.knowledgeManager.learnings = [];
+  agentZero.knowledgeManager.save();
   agentZero.blacklisted_models = [];
   agentZero.logs = [];
   agentZero.saveState();
@@ -2269,8 +2250,10 @@ app.post("/api/reset/logs", async (req, res) => {
 });
 
 app.post("/api/reset/memory", async (req, res) => {
-  agentZero.taskMemory.clearTasks();
-  agentZero.knowledgeManager.clearInsights();
+  agentZero.taskMemory.tasks = [];
+  agentZero.taskMemory.save();
+  agentZero.knowledgeManager.learnings = [];
+  agentZero.knowledgeManager.save();
   res.json({ success: true });
 });
 
