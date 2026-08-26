@@ -1636,8 +1636,20 @@ export function sanitizePythonCode(code: string): string {
   if (!code) return '';
   let cleanCode = code.trim();
   
+  // --- AGGRESSIVER DEDENT-HACK GEGEN QWEN-FORMATIERUNGSFEHLER ---
+  let lines = cleanCode.split('\n');
+  lines = lines.map(line => {
+    // Wenn die Zeile mit Leerzeichen und dann "import " oder "from " beginnt, entferne die Leerzeichen!
+    if (line.match(/^\s+(import|from)\s+/)) {
+      return line.trimStart();
+    }
+    return line;
+  });
+  cleanCode = lines.join('\n').trim();
+  // ---------------------------------------------------------
+
   // 1. Dedent: Entferne führende Leerzeichen
-  const lines = cleanCode.split('\n');
+  lines = cleanCode.split('\n');
   const nonEmptyLines = lines.filter((l: string) => l.trim().length > 0);
   if (nonEmptyLines.length > 0) {
     const minIndent = Math.min(...nonEmptyLines.map((l: string) => l.match(/^\s*/)?.[0].length || 0));
