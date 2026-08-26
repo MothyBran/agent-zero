@@ -83,9 +83,17 @@ export function App() {
     if (res.ok) await fetchAllData();
   };
 
-  const handleClearLogs = () => {
+  const handleClearLogs = async () => {
+    await safePostJson("/api/reset/logs");
     setLogs([]);
     setReasoningStream([]);
+  };
+
+  const handleFullReset = async () => {
+    if (window.confirm("Bist du sicher? Dies löscht das gesamte Wissen und alle Logs.")) {
+      await safePostJson("/api/reset/full");
+      window.location.reload();
+    }
   };
 
   const handleToggleRun = async () => {
@@ -112,6 +120,7 @@ export function App() {
         onLogout={handleLogout}
         onRevive={handleReviveAgent}
         onToggleRun={handleToggleRun}
+        onFullReset={handleFullReset}
       />
 
       {/* 2. Critical Alert Banner if Terminated */}

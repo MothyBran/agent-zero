@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { AgentState, MetaMaskTradingKnowledge, MetaMaskTokenDef } from '../types';
 import { 
   HeartPulse, ShieldAlert, CheckCircle2, Clock, Flame, Coins, Zap, RefreshCw, 
-  AlertTriangle, Trash2, Cpu, Fuel, Globe, Search, Layers, TrendingUp, ExternalLink, RotateCcw,
+  AlertTriangle, Trash2, Cpu, Fuel, Globe, Search, Layers, TrendingUp, ExternalLink,
   BookOpen, Compass, ArrowUpRight
 } from 'lucide-react';
 import { safePostJson, safeFetchJson } from '../lib/api';
@@ -64,18 +64,6 @@ export const VitalsSection: React.FC<VitalsSectionProps> = ({ state, onRefresh }
       setActionFeedback('Fehler beim Zurücksetzen der Deadline: ' + (res.error || 'Serverfehler'));
       setTimeout(() => setActionFeedback(null), 4000);
     }
-  };
-
-  const [isResettingCrypto, setIsResettingCrypto] = useState(false);
-  const handleResetCrypto = async () => {
-    setIsResettingCrypto(true);
-    const res = await safePostJson<{ success: boolean }>('/api/crypto/reset');
-    setIsResettingCrypto(false);
-    if (res.ok) {
-      setActionFeedback('Krypto-Wissen (Insights) erfolgreich gelöscht.');
-      loadCryptoData();
-    }
-    setTimeout(() => setActionFeedback(null), 3000);
   };
 
   const handleClearBlacklist = async () => {
@@ -395,19 +383,9 @@ export const VitalsSection: React.FC<VitalsSectionProps> = ({ state, onRefresh }
               Autonome Krypto- & DEX-Marktforschung (Erweitertes Wissen)
             </h2>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-slate-400">
-              Wissens-Module: <strong className="text-purple-400">{cryptoKnowledge.length}</strong>
-            </span>
-            <button
-              onClick={handleResetCrypto}
-              disabled={isResettingCrypto}
-              className="flex items-center gap-1 px-2 py-1 rounded bg-slate-800 hover:bg-rose-950/40 border border-slate-700 hover:border-rose-800 text-slate-400 hover:text-rose-300 transition-colors"
-            >
-              {isResettingCrypto ? <RefreshCw className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
-              <span className="text-[10px]">Reset</span>
-            </button>
-          </div>
+          <span className="text-xs text-slate-400">
+            Wissens-Module: <strong className="text-purple-400">{cryptoKnowledge.length}</strong>
+          </span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

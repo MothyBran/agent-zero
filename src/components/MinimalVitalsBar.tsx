@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AgentState } from '../types';
-import { safePostJson } from '../lib/api';
-import { Copy, Check, Clock, LogOut, RefreshCw, AlertTriangle, Coins, Flame, Power, RotateCcw } from 'lucide-react';
+import { Copy, Check, Clock, LogOut, RefreshCw, AlertTriangle, Coins, Flame, Power } from 'lucide-react';
 
 interface MinimalVitalsBarProps {
   state: AgentState | null;
@@ -9,7 +8,9 @@ interface MinimalVitalsBarProps {
   isLoading?: boolean;
   onLogout?: () => void;
   onRevive?: () => void;
-  onToggleRun?: () => void; // NEU: Prop für den Button
+  onToggleRun,
+  onFullReset?: () => void;
+  onFullReset?: () => void; // NEU: Prop für den Button
 }
 
 export const MinimalVitalsBar: React.FC<MinimalVitalsBarProps> = ({
@@ -18,11 +19,10 @@ export const MinimalVitalsBar: React.FC<MinimalVitalsBarProps> = ({
   isLoading,
   onLogout,
   onRevive,
-  onToggleRun
+  onToggleRun,
+  onFullReset
 }) => {
   const [copied, setCopied] = useState(false);
-  const [showResetModal, setShowResetModal] = useState(false);
-  const [isResetting, setIsResetting] = useState(false);
   const [countdown, setCountdown] = useState<{ hours: number; minutes: number; seconds: number; formatted: string }>({
     hours: 48, minutes: 0, seconds: 0, formatted: '48:00:00'
   });
@@ -51,16 +51,6 @@ export const MinimalVitalsBar: React.FC<MinimalVitalsBarProps> = ({
     const timer = setInterval(updateCountdown, 1000);
     return () => clearInterval(timer);
   }, [state?.next_tribute_time]);
-
-  const handleConfirmReset = async () => {
-    setIsResetting(true);
-    const res = await safePostJson('/api/factory-reset');
-    if (res.ok) {
-      if (onRefresh) await onRefresh();
-      setShowResetModal(false);
-    }
-    setIsResetting(false);
-  };
 
   const copyAddress = () => {
     if (state?.wallet_address) {
@@ -216,14 +206,15 @@ export const MinimalVitalsBar: React.FC<MinimalVitalsBarProps> = ({
           </button>
         )}
 
-        <button
-          onClick={() => setShowResetModal(true)}
-          title="Factory Reset (Alle Daten löschen)"
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-slate-900 hover:bg-rose-950/40 hover:border-rose-800 border border-slate-800 text-[11px] text-slate-400 hover:text-rose-300 transition-colors cursor-pointer"
-        >
-          <RotateCcw className="w-3 h-3" />
-          <span className="hidden sm:inline">RESET ALL</span>
-        </button>
+        {onFullReset && (
+          <button
+            onClick={onFullReset}
+            title="System vollständig zurücksetzen"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-rose-900/50 hover:bg-rose-800 border border-rose-500/50 text-[11px] text-rose-200 transition-colors cursor-pointer mr-2"
+          >
+            <span>FULL RESET</span>
+          </button>
+        )}
 
         {onLogout && (
           <button
@@ -236,47 +227,6 @@ export const MinimalVitalsBar: React.FC<MinimalVitalsBarProps> = ({
           </button>
         )}
       </div>
-      {/* Confirmation Modal for Reset auf Null */}
-      {showResetModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-rose-800/70 rounded-xl max-w-md w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-center gap-3 text-rose-400">
-              <div className="p-2.5 bg-rose-500/10 rounded-lg border border-rose-500/20">
-                <AlertTriangle className="w-6 h-6 text-rose-400" />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-slate-100">Vollständiger Neustart (Reset auf 0)</h3>
-                <p className="text-xs text-rose-300">Tabula Rasa: Wissen, Aufgaben & Meilensteine löschen</p>
-              </div>
-            </div>
-
-            <p className="text-sm text-slate-300 leading-relaxed">
-              Möchtest du Agent Zero und sein gesamtes gesammeltes Wissen, alle Meilensteine, erledigten Jobs und Notizen auf Anfang zurücksetzen?
-              Agent Zero startet danach aus dem Nichts und baut sein Wissen durch autonome Zyklen schrittweise neu auf.
-            </p>
-
-            <div className="flex justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowResetModal(false)}
-                disabled={isResetting}
-                className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition-colors cursor-pointer"
-              >
-                Abbrechen
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmReset}
-                disabled={isResetting}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-medium transition-colors shadow-lg shadow-rose-950 disabled:opacity-50 cursor-pointer"
-              >
-                {isResetting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
-                <span>{isResetting ? 'Wird zurückgesetzt...' : 'Ja, komplett auf 0 setzen'}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </header>
   );
 };
