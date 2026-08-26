@@ -326,7 +326,7 @@ export class TokenBudgetManager {
 
 
 
-    if (this.tokens_used_today >= this.daily_limit * 0.95) return { allowed: false, reason: `Token-Budget zu 95% erschöpft.`, conservation: true };
+
     return { allowed: true, conservation: this.conservation_mode, recommendedModel: this.conservation_mode ? 'llama-3.1-8b-instant' : undefined };
   }
 
