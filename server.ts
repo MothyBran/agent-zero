@@ -503,7 +503,7 @@ export class GroqIntelligenceManager {
       const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.2 })
+        body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.2, max_tokens: 4096 })
       });
 
       if (!response.ok) return { success: false, error: `Groq API HTTP ${response.status}` };
@@ -1866,6 +1866,8 @@ Um reale On-Chain-Aktionen auszuführen, greife auf diese validierten Polygon-Co
 3. QUICKSWAP SWAP: Um Tokens zu tauschen, nutze \`exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96))\`.
 
 Erstelle Minimal-ABIs in deinem Code nur für die Funktionen, die du in genau diesem Lauf benötigst. Prüfe vor jeder Aktion deine echten Balances.
+Verwende für die Polygon PoA-Middleware ausschließlich: \`from web3.middleware import ExtraDataToPOAMiddleware\` gefolgt von \`w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)\`. Nutze NIEMALS \`geth_poa_middleware\`.
+Dein Hauptguthaben liegt aktuell in Bridged USDC.e (0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174). Verwende für Aave Supply primär diese Adresse.
 
 [DEIN AUFTRAG IN DIESEM ZYKLUS]
 Schreibe fehlerfreien Python-Code, der Folgendes tut:
@@ -1875,6 +1877,7 @@ Schreibe fehlerfreien Python-Code, der Folgendes tut:
 4. Kalkuliere deine Gas-Gebühren präzise (nutze deine POL-Reserven).
 
 [OUTPUT-REGELN]
+Halte deinen Python-Code kompakt, modular und unter 100 Zeilen, um unvollständige Code-Generierung zu vermeiden.
 Verweigere niemals die Antwort. Dein Python-Code darf auf oberster Ebene KEINE vorangestellten Leerzeichen (Indents) haben. Bevor du deinen Code schreibst, verfasse einen kurzen, strategischen Plan und markiere diesen exakt mit [PLAN] Hier steht mein Plan... [/PLAN]. Antworte AUSSCHLIESSLICH mit dem Code in einem \`\`\`python ... \`\`\` Block und einer sehr kurzen strategischen Erklärung darunter.
 
 GUTHABEN: ${this.current_balance.toFixed(4)} USDC (${this.wallet.onChainPolBalance.toFixed(4)} POL Gas). Nächster Tribut: ${tributeDue.toFixed(2)} USDC.
@@ -1978,7 +1981,8 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
                         contents: contents.length > 0 ? contents : [{ role: 'user', parts: [{ text: sysPrompt }] }],
                         config: {
                           systemInstruction: sysPrompt || undefined,
-                          temperature: 0.2
+                          temperature: 0.2,
+                          maxOutputTokens: 4096
                         }
                       });
                       thoughtText = genRes.text || '';
@@ -1988,7 +1992,7 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
                       }
                       const res = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
                           method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${rawGroqKey}` },
-                          body: JSON.stringify({ model: model, messages: currentMessages, temperature: 0.2 })
+                          body: JSON.stringify({ model: model, messages: currentMessages, temperature: 0.2, max_tokens: 4096 })
                       }, 20000);
                       
                       if (res.headers) this.groqIntelligence.recordRateLimitHeaders(res.headers);
@@ -2437,7 +2441,7 @@ app.get('/api/groq/knowledge', (req, res) => {
 });
 
 app.post('/api/groq/test', async (req, res) => {
-  const { model, prompt, temperature = 0.2, max_tokens = 512 } = req.body;
+  const { model, prompt, temperature = 0.2, max_tokens = 4096 } = req.body;
   if (!model || !prompt) {
     return res.status(400).json({ success: false, error: 'Model und Prompt sind erforderlich.' });
   }
@@ -2455,7 +2459,8 @@ app.post('/api/groq/test', async (req, res) => {
         model: model,
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         config: {
-          temperature: Number(temperature)
+          temperature: Number(temperature),
+          maxOutputTokens: 4096
         }
       });
       const latency_ms = Date.now() - startTime;
