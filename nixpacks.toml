@@ -1,6 +1,4 @@
-[providers]
-node = true
-python = true
+providers = ["node", "python"]
 
 [phases.setup]
 nixPkgs = ["nodejs_22", "npm-10_x", "python3"]
@@ -13,4 +11,3 @@ cmds = ["npm run build"]
 
 [start]
 cmd = "npm start"
-
