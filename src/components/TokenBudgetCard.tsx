@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Zap, ShieldCheck, AlertCircle, RefreshCw, Sparkles, Gauge, Cpu } from 'lucide-react';
+import { Zap, ShieldCheck, AlertCircle, RefreshCw, Sparkles, Gauge, Cpu, RotateCcw } from 'lucide-react';
 import { TokenBudgetStatus } from '../types';
 import { safeFetchJson, safePostJson } from '../lib/api';
 
@@ -73,9 +73,9 @@ export function TokenBudgetCard() {
           onClick={handleReset}
           disabled={isResetting}
           title="Tageszähler manuell zurücksetzen"
-          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs font-mono transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-rose-950/40 border border-slate-700 hover:border-rose-800 text-slate-400 hover:text-rose-300 text-xs font-mono transition-all cursor-pointer disabled:opacity-50"
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${isResetting ? 'animate-spin' : ''}`} />
+          {isResetting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
           <span className="hidden sm:inline">Quota Reset</span>
         </button>
       </div>

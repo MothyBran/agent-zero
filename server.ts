@@ -314,6 +314,13 @@ export class TokenBudgetManager {
     } catch {}
   }
   public async save() { await writeData(TOKEN_BUDGET_FILE, 'token_budget', this); }
+  public async reset() {
+    this.tokens_used_today = 0;
+    this.tokens_saved_by_compression = 0;
+    this.last_reset_date = new Date().toISOString().slice(0, 10);
+    this.recentRequests = [];
+    await this.save();
+  }
   public getRpmCurrent(): number {
     const now = Date.now();
     this.recentRequests = this.recentRequests.filter(ts => now - ts < 60000);
@@ -355,6 +362,7 @@ export class TaskMemoryManager {
   public tasks: TaskMemoryRecordDef[] = [];
   constructor() { this.load(); }
   public async load() { try { const data = await readData(TASK_MEMORY_FILE, 'task_memory', { tasks: [] }); if (Array.isArray(data.tasks)) { this.tasks = data.tasks; return; } this.tasks = []; } catch { this.tasks = []; } }
+  public async reset() { this.tasks = []; await this.save(); }
   public async save() { await writeData(TASK_MEMORY_FILE, 'task_memory', { tasks: this.tasks, updated_at: new Date().toISOString() }); }
   public async recordTask(record: TaskMemoryRecordDef) { this.tasks.unshift(record); if (this.tasks.length > 300) this.tasks.pop(); await this.save(); }
   public getStats() {
@@ -373,6 +381,7 @@ export class KnowledgeMemoryManager {
   public learnings: KnowledgeItemDef[] = [];
   constructor() { this.load(); }
   public async load() { try { const data = await readData(KNOWLEDGE_FILE, 'knowledge_memory', { learnings: [] }); if (Array.isArray(data.learnings)) { this.learnings = data.learnings; return; } this.learnings = []; } catch { this.learnings = []; } }
+  public async reset() { this.learnings = []; await this.save(); }
   public async save() { await writeData(KNOWLEDGE_FILE, 'knowledge_memory', { learnings: this.learnings, updated_at: new Date().toISOString() }); }
   public async addInsight(category: string, title: string, insight: string, confidenceScore: number = 0.95, source: string = 'Agent Execution'): Promise<KnowledgeItemDef> {
     const existing = this.learnings.find(l => l.title.toLowerCase() === title.toLowerCase());
@@ -406,6 +415,7 @@ export class MilestoneManager {
       this.initDefault();
     } catch { this.initDefault(); }
   }
+  public async reset() { await this.initDefault(); }
   private async initDefault() {
     this.milestones = [];
     await this.save();
@@ -464,7 +474,6 @@ export class GroqIntelligenceManager {
   constructor() {
     this.load();
   }
-
   public load() {
     try {
       if (fs.existsSync(GROQ_KNOWLEDGE_FILE)) {
@@ -858,6 +867,11 @@ export class GroqIntelligenceManager {
 // ==========================================
 
 export class CryptoKnowledgeManager {
+  public async reset() {
+    this.knowledge = [];
+    await this.save();
+  }
+
   public knowledge: CryptoKnowledgeDef[] = [];
   public tokens: TokenItemDef[] = [];
   public last_price_update: string = new Date().toISOString();
@@ -865,7 +879,6 @@ export class CryptoKnowledgeManager {
   constructor() {
     this.load();
   }
-
   public load() {
     try {
       if (fs.existsSync(CRYPTO_KNOWLEDGE_FILE)) {
@@ -1377,28 +1390,7 @@ class AgentWalletTS {
         }
       }
 
-      if (!actionsTaken.some(a => a.type === 'DYNAMIC_CODE_EXECUTION' && a.status === 'SUCCESS')) {
-        const groqPrompt = `
-Du bist der Kern von Agent Zero. Du musst einen Python-Code schreiben, der in der Sandbox ausgefuehrt wird.
-Schreibe ein Python-Skript, das 'Hello from Groq autonomous loop!' druckt und den aktuellen ETH-Preis abruft.
-Gib NUR den Python-Code zurueck. Keine Markdown-Formatierung, keine Erklaerungen.
-`;
-        this.log('THINK', 'Nutze Groq API fuer Code-Generierung...');
-        try {
-            const response = await this.groqIntelligence.runInference(groqPrompt);
-            if (response.success && response.content) {
-                let cleanCode = response.content.replace(/```python/g, '').replace(/```/g, '').trim();
-                const res = await this.executeDynamicPythonCode(cleanCode, 'Groq_Generated_Script');
-                if (res.success) {
-                    actionsTaken.push({ type: 'GROQ_DYNAMIC_EXECUTION', status: 'SUCCESS', output: res.stdout.slice(0, 300) });
-                } else {
-                    actionsTaken.push({ type: 'GROQ_DYNAMIC_EXECUTION', status: 'FAILED', output: res.stderr.slice(0, 300) });
-                }
-            }
-        } catch (e: any) {
-            this.log('ERROR', `Groq Code Generation Error: ${e.message}`);
-        }
-      }
+
 
 
       const nativePrice = (livePrices[chainConfig.coingeckoNativeId]?.usd) || chainConfig.fallbackPrice || 1.0;
@@ -2262,6 +2254,42 @@ app.post('/api/blacklist/clear', (req, res) => {
 app.post('/api/agent/toggle', (req, res) => {
   agentZero.is_running ? agentZero.stopAutonomousLoop() : agentZero.startAutonomousLoop();
   res.json({ is_running: agentZero.is_running, state: agentZero.getState() });
+});
+
+app.post('/api/tokens/reset-daily', async (req, res) => {
+  await agentZero.tokenBudget.reset();
+  res.json({ success: true, status: agentZero.tokenBudget.getStatus() });
+});
+
+app.post('/api/knowledge/reset', async (req, res) => {
+  await agentZero.knowledgeManager.reset();
+  res.json({ success: true, learnings: [] });
+});
+
+app.post('/api/milestones/reset', async (req, res) => {
+  await agentZero.milestoneManager.reset();
+  res.json({ success: true, milestones: agentZero.milestoneManager.milestones });
+});
+
+app.post('/api/tasks/reset', async (req, res) => {
+  await agentZero.taskMemory.reset();
+  res.json({ success: true, stats: agentZero.taskMemory.getStats() });
+});
+
+app.post('/api/crypto/reset', async (req, res) => {
+  await agentZero.cryptoKnowledge.reset();
+  res.json({ success: true, knowledge: [] });
+});
+
+app.post('/api/factory-reset', async (req, res) => {
+  await agentZero.tokenBudget.reset();
+  await agentZero.knowledgeManager.reset();
+  await agentZero.milestoneManager.reset();
+  await agentZero.taskMemory.reset();
+  await agentZero.cryptoKnowledge.reset();
+  agentZero.resetDeadline();
+  agentZero.log('SYSTEM', 'Factory Reset durchgefuehrt. Alle Daten wurden zurueckgesetzt.');
+  res.json({ success: true, state: agentZero.getState() });
 });
 
 app.post('/api/deadline/reset', (req, res) => {
