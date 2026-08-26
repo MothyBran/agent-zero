@@ -1,5 +1,9 @@
+[providers]
+node = true
+python = true
+
 [phases.setup]
-nixPkgs = ["nodejs_22", "npm-10_x"]
+nixPkgs = ["nodejs_22", "npm-10_x", "python3"]
 
 [phases.install]
 cmds = ["npm install"]
@@ -9,3 +13,4 @@ cmds = ["npm run build"]
 
 [start]
 cmd = "npm start"
+
