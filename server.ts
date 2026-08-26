@@ -1773,7 +1773,7 @@ class AgentZeroTS {
     }
 
     return new Promise((resolve) => {
-      const child = spawn('python3', [tempFile], { env: process.env, shell: true });
+      const child = spawn('python', [tempFile], { env: process.env, shell: true });
       let stdout = ''; let stderr = '';
       let isDone = false;
       
