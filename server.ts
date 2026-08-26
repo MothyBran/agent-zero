@@ -265,10 +265,10 @@ export const MULTI_CHAIN_CONFIGS: Record<string, any> = {
 };
 
 const FALLBACK_GROQ_MODELS = [
-  'llama-3.3-70b-versatile',
-  'llama-3.1-8b-instant',
-  'qwen/qwen3.6-27b',
-  'openai/gpt-oss-120b'
+  "llama-3.3-70b-versatile",
+  "llama-3.1-8b-instant",
+  "mixtral-8x7b-32768",
+  "gemma2-9b-it"
 ];
 
 // Resolves hanging requests gracefully
@@ -803,20 +803,20 @@ export class GroqIntelligenceManager {
     switch (taskType) {
       case 'CODE_GENERATION':
         if (isAvailable('llama-3.3-70b-versatile')) return 'llama-3.3-70b-versatile';
-        if (isAvailable('openai/gpt-oss-120b')) return 'openai/gpt-oss-120b';
+
         if (isAvailable('llama-3.1-8b-instant')) return 'llama-3.1-8b-instant';
         if (isAvailable('mixtral-8x7b-32768')) return 'mixtral-8x7b-32768';
         return 'llama-3.1-8b-instant';
 
       case 'DEEP_REASONING':
-        if (isAvailable('openai/gpt-oss-120b')) return 'openai/gpt-oss-120b';
+
         if (isAvailable('llama-3.3-70b-versatile')) return 'llama-3.3-70b-versatile';
-        if (isAvailable('openai/gpt-oss-20b')) return 'openai/gpt-oss-20b';
+
         return 'llama-3.3-70b-versatile';
 
       case 'RAPID_REFLEX':
         if (isAvailable('llama-3.1-8b-instant')) return 'llama-3.1-8b-instant';
-        if (isAvailable('openai/gpt-oss-20b')) return 'openai/gpt-oss-20b';
+
         if (isAvailable('gemma2-9b-it')) return 'gemma2-9b-it';
         return 'llama-3.1-8b-instant';
 
@@ -834,7 +834,7 @@ export class GroqIntelligenceManager {
       case 'MARKET_ANALYSIS':
       default:
         if (isAvailable('llama-3.3-70b-versatile')) return 'llama-3.3-70b-versatile';
-        if (isAvailable('openai/gpt-oss-120b')) return 'openai/gpt-oss-120b';
+
         if (isAvailable('llama-3.1-8b-instant')) return 'llama-3.1-8b-instant';
         return 'llama-3.3-70b-versatile';
     }
