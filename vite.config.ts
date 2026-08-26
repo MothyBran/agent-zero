@@ -8,5 +8,10 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 3000,
+    allowedHosts: true // Das ist der magische Fix für den Railway-Block!
+  },
+  preview: {
+    allowedHosts: true // Sicherheitshalber auch für den Preview-Modus
   }
 });
+
