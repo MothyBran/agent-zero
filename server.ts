@@ -1755,7 +1755,7 @@ class AgentZeroTS {
     return this.tributes_paid === 0 ? INITIAL_TRIBUTE : INITIAL_TRIBUTE * Math.pow(TRIBUTE_MULTIPLIER, this.tributes_paid);
   }
 
-  public async executeDynamicPythonCode(code: string, purpose: string = 'api_probing', timeoutSeconds: number = 20): Promise<any> {
+  public async executeDynamicPythonCode(code: string, purpose: string = 'api_probing', timeoutSeconds: number = 45): Promise<any> {
     const startMs = Date.now();
     this.log('TOOL', `[PYTHON SANDBOX] Führe Skript aus: ${purpose}...`);
     const tempFile = path.join(process.cwd(), `tmp_${Date.now()}.py`);
@@ -1875,7 +1875,7 @@ Schreibe fehlerfreien Python-Code, der Folgendes tut:
 4. Kalkuliere deine Gas-Gebühren präzise (nutze deine POL-Reserven).
 
 [OUTPUT-REGELN]
-Verweigere niemals die Antwort. Dein Python-Code darf auf oberster Ebene KEINE vorangestellten Leerzeichen (Indents) haben. Antworte AUSSCHLIESSLICH mit dem Code in einem \`\`\`python ... \`\`\` Block und einer sehr kurzen strategischen Erklärung darunter.
+Verweigere niemals die Antwort. Dein Python-Code darf auf oberster Ebene KEINE vorangestellten Leerzeichen (Indents) haben. Bevor du deinen Code schreibst, verfasse einen kurzen, strategischen Plan und markiere diesen exakt mit [PLAN] Hier steht mein Plan... [/PLAN]. Antworte AUSSCHLIESSLICH mit dem Code in einem \`\`\`python ... \`\`\` Block und einer sehr kurzen strategischen Erklärung darunter.
 
 GUTHABEN: ${this.current_balance.toFixed(4)} USDC (${this.wallet.onChainPolBalance.toFixed(4)} POL Gas). Nächster Tribut: ${tributeDue.toFixed(2)} USDC.
 ZEIT BIS ZUR PACHT: ${hoursLeft} Stunden.
@@ -2011,6 +2011,11 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
 
                     finalThoughtText = thoughtText;
 
+                    const planMatch = thoughtText.match(/\[PLAN\]([\s\S]*?)\[\/PLAN\]/);
+                    if (planMatch) {
+                        this.log('PLAN', planMatch[1].trim());
+                    }
+
                     const extracted = extractPythonCode(thoughtText);
                     this.log('THOUGHT', extracted.cleanThought || thoughtText, { model });
 
@@ -2036,7 +2041,7 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
                     }
                     codeToRun = codeToRun.trim();
 
-                    const execRes = await this.executeDynamicPythonCode(codeToRun, `Auto-Execution Attempt ${attempt}`, 20);
+                    const execRes = await this.executeDynamicPythonCode(codeToRun, `Auto-Execution Attempt ${attempt}`, 45);
                     
                     if (execRes.success) {
                         executionSuccess = true;
@@ -2049,7 +2054,22 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
                             lesson_derived: 'Python API Call erfolgreich.'
                         });
                         this.knowledgeManager.addInsight('SUCCESS_PATTERN', `Modell Eval: ${model}`, `Modell ${model} liefert lauffähigen Code.`, 0.99, 'Model Discovery');
-                        break; 
+
+                        const txHashes = execRes.stdout.match(/0x[a-fA-F0-9]{64}/g);
+                        if (txHashes) {
+                          const uniqueHashes = [...new Set(txHashes)];
+                          try {
+                            let ledger = { transactions: [] };
+                            if (fs.existsSync(ACCOUNTING_FILE)) ledger = JSON.parse(fs.readFileSync(ACCOUNTING_FILE, 'utf-8'));
+                            for (const hash of uniqueHashes) {
+                              ledger.transactions.push({ timestamp: new Date().toISOString(), type: 'ON_CHAIN_ACTION', amount: 0, currency: 'TX', note: 'TxHash: ' + hash });
+                            }
+                            fs.writeFileSync(ACCOUNTING_FILE, JSON.stringify(ledger, null, 2));
+                          } catch (e) {
+                            this.log('ERROR', 'Konnte On-Chain Aktion nicht im Kassenbuch speichern: ' + e.message);
+                          }
+                        }
+                        break;
                     } else {
                         this.log('ERROR', `[ATTEMPT ${attempt}] Code gecrasht. Starte Selbst-Korrektur (Self-Correction Loop)...`);
                         actionsTaken.push(`Execution Failed (Exit ${execRes.exit_code}) on attempt ${attempt}`);
