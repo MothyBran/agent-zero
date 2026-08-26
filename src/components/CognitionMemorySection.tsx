@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Brain, Activity, Target, Cpu, CheckCircle2, XCircle, Lightbulb, ShieldAlert, Sparkles, RefreshCw, BarChart2, RotateCcw } from 'lucide-react';
+import { Brain, Activity, Target, Cpu, CheckCircle2, XCircle, Lightbulb, ShieldAlert, Sparkles, RefreshCw, BarChart2 } from 'lucide-react';
 import { safeFetchJson, safePostJson } from '../lib/api';
 
 interface TaskItem {
@@ -60,31 +60,6 @@ interface MemoryApiResponse {
 export const CognitionMemorySection: React.FC = () => {
   const [data, setData] = useState<MemoryApiResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-
-  const [isResettingTasks, setIsResettingTasks] = useState(false);
-  const [isResettingKnowledge, setIsResettingKnowledge] = useState(false);
-  const [isResettingMilestones, setIsResettingMilestones] = useState(false);
-
-  const handleResetTasks = async () => {
-    setIsResettingTasks(true);
-    await safePostJson('/api/tasks/reset');
-    setIsResettingTasks(false);
-    fetchMemory();
-  };
-
-  const handleResetKnowledge = async () => {
-    setIsResettingKnowledge(true);
-    await safePostJson('/api/knowledge/reset');
-    setIsResettingKnowledge(false);
-    fetchMemory();
-  };
-
-  const handleResetMilestones = async () => {
-    setIsResettingMilestones(true);
-    await safePostJson('/api/milestones/reset');
-    setIsResettingMilestones(false);
-    fetchMemory();
-  };
 
   const fetchMemory = async () => {
     setIsLoading(true);
@@ -191,21 +166,11 @@ export const CognitionMemorySection: React.FC = () => {
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
             <div className="flex items-center gap-2 text-xs font-mono font-bold text-slate-200 uppercase tracking-wider">
               <Activity className="w-4 h-4 text-emerald-400" />
-              <span>Kurzzeitgedächtnis (Task Memory)</span>
+              <span>Kurzzeitgedächtnis (Task Memory)</span><button onClick={async () => { await safePostJson("/api/reset/memory"); window.location.reload(); }} className="ml-4 px-2 py-1 bg-red-900/50 hover:bg-red-800/80 text-red-300 rounded text-[10px] border border-red-500/30">Reset Memory</button>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleResetTasks}
-                disabled={isResettingTasks}
-                className="flex items-center gap-1 px-2 py-1 rounded bg-slate-800 hover:bg-rose-950/40 border border-slate-700 hover:border-rose-800 text-slate-400 hover:text-rose-300 transition-colors"
-              >
-                {isResettingTasks ? <RefreshCw className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
-                <span className="text-[10px]">Reset</span>
-              </button>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                {tasks.length} Aktionen
-              </span>
-            </div>
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              {tasks.length} Aktionen
+            </span>
           </div>
 
           <div className="space-y-2.5 max-h-[350px] overflow-y-auto">
@@ -255,19 +220,9 @@ export const CognitionMemorySection: React.FC = () => {
               <Lightbulb className="w-4 h-4 text-amber-400" />
               <span>Langzeitgedächtnis (Knowledge Base)</span>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleResetKnowledge}
-                disabled={isResettingKnowledge}
-                className="flex items-center gap-1 px-2 py-1 rounded bg-slate-800 hover:bg-rose-950/40 border border-slate-700 hover:border-rose-800 text-slate-400 hover:text-rose-300 transition-colors"
-              >
-                {isResettingKnowledge ? <RefreshCw className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
-                <span className="text-[10px]">Reset</span>
-              </button>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                {learnings.length} Lektionen
-              </span>
-            </div>
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              {learnings.length} Lektionen
+            </span>
           </div>
 
           <div className="space-y-2.5 max-h-[350px] overflow-y-auto">
@@ -305,19 +260,9 @@ export const CognitionMemorySection: React.FC = () => {
             <Target className="w-4 h-4 text-purple-400" />
             <span>Strategische Planungsschritte & Zwischenziele</span>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleResetMilestones}
-              disabled={isResettingMilestones}
-              className="flex items-center gap-1 px-2 py-1 rounded bg-slate-800 hover:bg-rose-950/40 border border-slate-700 hover:border-rose-800 text-slate-400 hover:text-rose-300 transition-colors"
-            >
-              {isResettingMilestones ? <RefreshCw className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
-              <span className="text-[10px]">Reset</span>
-            </button>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">
-              {milestones.filter(m => m.is_completed).length} / {milestones.length} Erreicht
-            </span>
-          </div>
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">
+            {milestones.filter(m => m.is_completed).length} / {milestones.length} Erreicht
+          </span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
