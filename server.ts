@@ -323,10 +323,13 @@ export class TokenBudgetManager {
     const rpm = this.getRpmCurrent();
     const usagePercent = (this.tokens_used_today / this.daily_limit) * 100;
     this.conservation_mode = usagePercent >= 65 || rpm >= 18;
-    if (rpm >= this.rpm_limit - 2) return { allowed: false, reason: `Rate-Limit Shield aktiv (${rpm}/${this.rpm_limit}).`, conservation: true };
+
+
+
     if (this.tokens_used_today >= this.daily_limit * 0.95) return { allowed: false, reason: `Token-Budget zu 95% erschöpft.`, conservation: true };
     return { allowed: true, conservation: this.conservation_mode, recommendedModel: this.conservation_mode ? 'llama-3.1-8b-instant' : undefined };
   }
+
   public async recordUsage(promptTokens: number, completionTokens: number, tokensSaved: number = 0) {
     this.recentRequests.push(Date.now());
     this.tokens_used_today += (promptTokens || 0) + (completionTokens || 0);
@@ -797,8 +800,8 @@ export class GroqIntelligenceManager {
     } catch {}
   }
 
-  public getOptimalModel(taskType: 'CODE_GENERATION' | 'MARKET_ANALYSIS' | 'RAPID_REFLEX' | 'STRUCTURED_JSON' | 'AGENTIC_SEARCH' | 'DEEP_REASONING', blacklisted: string[] = []): string {
-    const isAvailable = (id: string) => !blacklisted.includes(id);
+  public getOptimalModel(taskType: 'CODE_GENERATION' | 'MARKET_ANALYSIS' | 'RAPID_REFLEX' | 'STRUCTURED_JSON' | 'AGENTIC_SEARCH' | 'DEEP_REASONING', blacklisted: string[] = [], model_cooldowns: Record<string, number> = {}): string {
+    const isAvailable = (id: string) => !blacklisted.includes(id) && !(model_cooldowns[id] && Date.now() < model_cooldowns[id]);
 
     switch (taskType) {
       case 'CODE_GENERATION':
@@ -1670,7 +1673,8 @@ class AgentZeroTS {
   public is_running: boolean = false; public is_terminated: boolean = false;
   public shutdown_reason: string = ''; public jobs_completed: number = 0; public logs: LogItem[] = [];
   public active_model: string = 'Init...'; 
-  public blacklisted_models: string[] = []; 
+  public blacklisted_models: string[] = [];
+  public model_cooldowns: { [model_id: string]: number } = {};
   private timer: NodeJS.Timeout | null = null; private isProcessingCycle: boolean = false;
 
   constructor() {
@@ -1712,7 +1716,7 @@ class AgentZeroTS {
         is_terminated: this.is_terminated, 
         shutdown_reason: this.shutdown_reason, 
         jobs_completed: this.jobs_completed,
-        blacklisted_models: this.blacklisted_models 
+        blacklisted_models: this.blacklisted_models, model_cooldowns: this.model_cooldowns
       };
       fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
     } catch {}
@@ -1866,7 +1870,7 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
 
           // 1. Wenn Groq-Key vorhanden ist, versuche Live-Modelle von Groq abzufragen
           if (rawGroqKey) {
-            const optimalPrimary = this.groqIntelligence.getOptimalModel('CODE_GENERATION', this.blacklisted_models);
+            const optimalPrimary = this.groqIntelligence.getOptimalModel('CODE_GENERATION', this.blacklisted_models, this.model_cooldowns);
             let groqModels = Array.from(new Set([optimalPrimary, ...FALLBACK_GROQ_MODELS]));
             try {
               const mRes = await fetchWithTimeout('https://api.groq.com/openai/v1/models', { headers: { Authorization: `Bearer ${rawGroqKey}` } }, 5000);
@@ -1908,6 +1912,8 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
           // ==============================================================
           for (const model of candidateModels) {
             if (this.blacklisted_models.includes(model)) continue;
+            if (this.model_cooldowns[model] && Date.now() < this.model_cooldowns[model]) continue;
+            if (this.model_cooldowns[model] && Date.now() >= this.model_cooldowns[model]) { delete this.model_cooldowns[model]; }
             const isGeminiModel = model.startsWith('gemini');
             this.active_model = isGeminiModel ? `Gemini (${model})` : `Groq (${model})`;
             
@@ -1956,7 +1962,14 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
                       if (res.headers) this.groqIntelligence.recordRateLimitHeaders(res.headers);
                       if (!res.ok) {
                         const errBody = await res.text().catch(() => '');
-                        throw new Error(`HTTP ${res.status}${errBody ? ` (${errBody.slice(0, 100)})` : ''}`); 
+                        let errStr = `HTTP ${res.status}${errBody ? ` (${errBody.slice(0, 100)})` : ''}`;
+                        if (res.status === 429) {
+                          const retryAfter = res.headers.get('retry-after');
+                          let waitSeconds = retryAfter ? parseInt(retryAfter, 10) : 60;
+                          if (isNaN(waitSeconds)) waitSeconds = 60;
+                          errStr = `HTTP 429: Rate limit reached. waitSeconds=${waitSeconds}`;
+                        }
+                        throw new Error(errStr);
                       }
 
                       const data = await res.json();
@@ -2034,10 +2047,19 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
                     }
 
                 } catch (e: any) {
-                    this.log('ERROR', `KI API Fehler bei ${model}: ${e.message}. Setze auf Blacklist.`);
-                    this.blacklisted_models.push(model);
-                    this.saveState();
-                    break; 
+                    if (e.message.includes("waitSeconds=")) {
+                        const match = e.message.match(/waitSeconds=(\d+)/);
+                        const seconds = match ? parseInt(match[1], 10) : 60;
+                        this.model_cooldowns[model] = Date.now() + seconds * 1000;
+                        this.log('ERROR', `KI API Rate Limit bei ${model}. Pausiere für ${seconds}s.`);
+                        this.saveState();
+                        break;
+                    } else {
+                        this.log('ERROR', `KI API Fehler bei ${model}: ${e.message}. Setze auf Blacklist.`);
+                        this.blacklisted_models.push(model);
+                        this.saveState();
+                        break;
+                    }
                 }
             } // End While Loop
 
@@ -2051,8 +2073,9 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
           } // End For Loop (Models)
 
           if (!finalThoughtText && this.blacklisted_models.length > 0) {
-             this.log('SYSTEM', 'Alle verfügbaren Modelle fehlgeschlagen. Leere Blacklist für den nächsten Denkzyklus (Selbstheilung).');
+             this.log('SYSTEM', 'Alle verfügbaren Modelle fehlgeschlagen (Blacklist). Leere Blacklist für den nächsten Denkzyklus.');
              this.blacklisted_models = [];
+             // DO NOT clear model_cooldowns here, because rate limit cooldowns must be respected exactly.
              this.saveState();
           }
         }
@@ -2218,7 +2241,7 @@ app.get('/api/memory', (req, res) => {
     milestones: agentZero.milestoneManager.milestones || [],
     token_budget: agentZero.tokenBudget.getStatus(),
     active_model: agentZero.active_model,
-    blacklisted_models: agentZero.blacklisted_models || []
+    blacklisted_models: agentZero.blacklisted_models, model_cooldowns: agentZero.model_cooldowns
   });
 });
 
@@ -2239,6 +2262,7 @@ app.post("/api/reset/full", async (req, res) => {
   agentZero.knowledgeManager.learnings = [];
   agentZero.knowledgeManager.save();
   agentZero.blacklisted_models = [];
+  agentZero.model_cooldowns = {};
   agentZero.logs = [];
   agentZero.saveState();
   res.json({ success: true });
@@ -2258,7 +2282,7 @@ app.post("/api/reset/memory", async (req, res) => {
 });
 
 app.post('/api/blacklist/clear', (req, res) => {
-  agentZero.blacklisted_models = [];
+  agentZero.blacklisted_models = []; agentZero.model_cooldowns = {};
   agentZero.saveState();
   agentZero.log('SYSTEM', 'Modell-Blacklist manuell vom Admin geleert.');
   res.json({ success: true, blacklisted_models: [] });
@@ -2356,7 +2380,7 @@ app.get('/api/groq/knowledge', (req, res) => {
     models: agentZero.groqIntelligence.models,
     knowledge_base: agentZero.groqIntelligence.knowledge_base,
     rate_limit_headers: agentZero.groqIntelligence.rate_limit_headers,
-    blacklisted_models: agentZero.blacklisted_models
+    blacklisted_models: agentZero.blacklisted_models, model_cooldowns: agentZero.model_cooldowns
   });
 });
 
@@ -2463,7 +2487,7 @@ app.post('/api/groq/test', async (req, res) => {
 
 app.post('/api/groq/recommendation', (req, res) => {
   const { task_type = 'CODE_GENERATION' } = req.body;
-  const optimal = agentZero.groqIntelligence.getOptimalModel(task_type, agentZero.blacklisted_models);
+  const optimal = agentZero.groqIntelligence.getOptimalModel(task_type as any, agentZero.blacklisted_models, agentZero.model_cooldowns);
   const modelInfo = agentZero.groqIntelligence.models.find(m => m.id === optimal);
 
   res.json({
