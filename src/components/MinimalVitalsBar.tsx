@@ -8,9 +8,8 @@ interface MinimalVitalsBarProps {
   isLoading?: boolean;
   onLogout?: () => void;
   onRevive?: () => void;
-  onToggleRun,
+  onToggleRun?: () => void;
   onFullReset?: () => void;
-  onFullReset?: () => void; // NEU: Prop für den Button
 }
 
 export const MinimalVitalsBar: React.FC<MinimalVitalsBarProps> = ({
