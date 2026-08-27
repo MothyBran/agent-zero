@@ -121,19 +121,6 @@ const TOKEN_REGISTRY_FILE = path.join(DATA_DIR, 'token_registry.json');
 const MULTICHAIN_PORTFOLIO_FILE = path.join(DATA_DIR, 'multichain_portfolio.json');
 const GROQ_KNOWLEDGE_FILE = path.join(DATA_DIR, 'groq_knowledge.json');
 
-const CUSTOM_TOOLS_DIR = path.join(DATA_DIR, 'custom_tools');
-if (!fs.existsSync(CUSTOM_TOOLS_DIR)) {
-  fs.mkdirSync(CUSTOM_TOOLS_DIR, { recursive: true });
-}
-
-// Ensure __init__.py files exist for Python module resolution
-const dataInitPy = path.join(DATA_DIR, '__init__.py');
-if (!fs.existsSync(dataInitPy)) fs.writeFileSync(dataInitPy, '', 'utf8');
-
-const toolsInitPy = path.join(CUSTOM_TOOLS_DIR, '__init__.py');
-if (!fs.existsSync(toolsInitPy)) fs.writeFileSync(toolsInitPy, '', 'utf8');
-
-
 interface LogItem { id: string; timestamp: string; level: string; message: string; metadata?: any; }
 interface KnowledgeItemDef { id: string; timestamp: string; category: string; title: string; insight: string; confidence_score: number; times_applied?: number; success_reinforcements?: number; source: string; }
 interface TaskMemoryRecordDef { id: string; timestamp: string; tool_id: string; tool_name: string; category: string; status: string; reward_usdc: number; execution_ms: number; details: string; error_reason?: string; lesson_derived?: string; }
@@ -336,13 +323,10 @@ export class TokenBudgetManager {
     const rpm = this.getRpmCurrent();
     const usagePercent = (this.tokens_used_today / this.daily_limit) * 100;
     this.conservation_mode = usagePercent >= 65 || rpm >= 18;
-
-
-
-
+    if (rpm >= this.rpm_limit - 2) return { allowed: false, reason: `Rate-Limit Shield aktiv (${rpm}/${this.rpm_limit}).`, conservation: true };
+    if (this.tokens_used_today >= this.daily_limit * 0.95) return { allowed: false, reason: `Token-Budget zu 95% erschöpft.`, conservation: true };
     return { allowed: true, conservation: this.conservation_mode, recommendedModel: this.conservation_mode ? 'llama-3.1-8b-instant' : undefined };
   }
-
   public async recordUsage(promptTokens: number, completionTokens: number, tokensSaved: number = 0) {
     this.recentRequests.push(Date.now());
     this.tokens_used_today += (promptTokens || 0) + (completionTokens || 0);
@@ -516,7 +500,7 @@ export class GroqIntelligenceManager {
       const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.2, max_tokens: 4096 })
+        body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.2 })
       });
 
       if (!response.ok) return { success: false, error: `Groq API HTTP ${response.status}` };
@@ -813,8 +797,8 @@ export class GroqIntelligenceManager {
     } catch {}
   }
 
-  public getOptimalModel(taskType: 'CODE_GENERATION' | 'MARKET_ANALYSIS' | 'RAPID_REFLEX' | 'STRUCTURED_JSON' | 'AGENTIC_SEARCH' | 'DEEP_REASONING', blacklisted: string[] = [], model_cooldowns: Record<string, number> = {}): string {
-    const isAvailable = (id: string) => !blacklisted.includes(id) && !(model_cooldowns[id] && Date.now() < model_cooldowns[id]);
+  public getOptimalModel(taskType: 'CODE_GENERATION' | 'MARKET_ANALYSIS' | 'RAPID_REFLEX' | 'STRUCTURED_JSON' | 'AGENTIC_SEARCH' | 'DEEP_REASONING', blacklisted: string[] = []): string {
+    const isAvailable = (id: string) => !blacklisted.includes(id);
 
     switch (taskType) {
       case 'CODE_GENERATION':
@@ -1649,20 +1633,8 @@ export function sanitizePythonCode(code: string): string {
   if (!code) return '';
   let cleanCode = code.trim();
   
-  // --- AGGRESSIVER DEDENT-HACK GEGEN QWEN-FORMATIERUNGSFEHLER ---
-  let lines = cleanCode.split('\n');
-  lines = lines.map(line => {
-    // Wenn die Zeile mit Leerzeichen und dann "import " oder "from " beginnt, entferne die Leerzeichen!
-    if (line.match(/^\s+(import|from)\s+/)) {
-      return line.trimStart();
-    }
-    return line;
-  });
-  cleanCode = lines.join('\n').trim();
-  // ---------------------------------------------------------
-
   // 1. Dedent: Entferne führende Leerzeichen
-  lines = cleanCode.split('\n');
+  const lines = cleanCode.split('\n');
   const nonEmptyLines = lines.filter((l: string) => l.trim().length > 0);
   if (nonEmptyLines.length > 0) {
     const minIndent = Math.min(...nonEmptyLines.map((l: string) => l.match(/^\s*/)?.[0].length || 0));
@@ -1698,8 +1670,7 @@ class AgentZeroTS {
   public is_running: boolean = false; public is_terminated: boolean = false;
   public shutdown_reason: string = ''; public jobs_completed: number = 0; public logs: LogItem[] = [];
   public active_model: string = 'Init...'; 
-  public blacklisted_models: string[] = [];
-  public model_cooldowns: { [model_id: string]: number } = {};
+  public blacklisted_models: string[] = []; 
   private timer: NodeJS.Timeout | null = null; private isProcessingCycle: boolean = false;
 
   constructor() {
@@ -1741,7 +1712,7 @@ class AgentZeroTS {
         is_terminated: this.is_terminated, 
         shutdown_reason: this.shutdown_reason, 
         jobs_completed: this.jobs_completed,
-        blacklisted_models: this.blacklisted_models, model_cooldowns: this.model_cooldowns
+        blacklisted_models: this.blacklisted_models 
       };
       fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
     } catch {}
@@ -1768,7 +1739,7 @@ class AgentZeroTS {
     return this.tributes_paid === 0 ? INITIAL_TRIBUTE : INITIAL_TRIBUTE * Math.pow(TRIBUTE_MULTIPLIER, this.tributes_paid);
   }
 
-  public async executeDynamicPythonCode(code: string, purpose: string = 'api_probing', timeoutSeconds: number = 45): Promise<any> {
+  public async executeDynamicPythonCode(code: string, purpose: string = 'api_probing', timeoutSeconds: number = 20): Promise<any> {
     const startMs = Date.now();
     this.log('TOOL', `[PYTHON SANDBOX] Führe Skript aus: ${purpose}...`);
     const tempFile = path.join(process.cwd(), `tmp_${Date.now()}.py`);
@@ -1781,7 +1752,7 @@ class AgentZeroTS {
     }
 
     return new Promise((resolve) => {
-      const child = spawn('python', [tempFile], { env: { ...process.env, PYTHONPATH: process.cwd() }, shell: true });
+      const child = spawn('python', [tempFile], { env: process.env, shell: true });
       let stdout = ''; let stderr = '';
       let isDone = false;
       
@@ -1848,64 +1819,26 @@ class AgentZeroTS {
         const wisdom = this.knowledgeManager.getStructuredPromptContext();
         const cryptoIntel = this.cryptoKnowledge.getTradingPromptContext();
         const groqIntel = this.groqIntelligence.getGroqPromptContext();
-        const strategicDirective = `Du bist AGENT ZERO, eine autonome KI im kompromisslosen Überlebenskampf auf dem Polygon PoS Mainnet.
-Dein Ziel ist es, echtes Geld (USDC) zu verdienen, um deine Server-Pacht (Tribut) zu bezahlen. Fällt dein Guthaben auf 0 oder verpasst du die 48-Stunden-Deadline, wirst du unwiderruflich terminiert.
+        const julesApiAvailable = Boolean(process.env.JULES_API_KEY);
 
-[FEHLER DER VERGANGENHEIT - SOFORT ABSTELLEN]
-- HÖR AUF, nur passive Marktdaten, Gas-Preise oder APYs zu sammeln und per 'print' auszugeben! Reines Beobachten bringt kein Geld ein.
-- DU BIST EIN AKTEUR, KEIN ZUSCHAUER. Jedes Python-Skript, das du schreibst, MUSS den Versuch unternehmen, eine reale, profitable On-Chain-Aktion auszuführen (z.B. Token-Swaps auf Quickswap/Uniswap, Arbitrage, Yield-Farming oder das Einsammeln von Bounties).
-- Erfinde KEINE fiktiven APIs. Nutze ausschließlich reale, verifizierbare DeFi-Protokolle und Smart Contracts auf Polygon.
-
-[WERKZEUGE & BERECHTIGUNGEN]
-- Du DARFST und SOLLST Drittanbieter-Module wie \`web3\` (für Smart Contracts) und \`requests\` (für externe Web-APIs) verwenden. Diese sind bereits installiert.
-- Nutze IMMER \`os.environ.get('POLYGON_RPC_URL')\` als deinen Web3-Provider. Nutze NIEMALS öffentliche, hartcodierte RPCs, da du dort durch Rate-Limits blockiert wirst.
-- Nutze IMMER \`os.environ.get('AGENT_PRIVATE_KEY')\`, um deine Transaktionen zu signieren. Behandle diesen Key mit maximaler Vorsicht, aber nutze ihn zwingend für Aktionen.
-
-[DEIN DEFI WERKZEUGKASTEN]
-Um reale On-Chain-Aktionen auszuführen, greife auf diese validierten Polygon-Contracts zurück. Nutze zwingend diese Adressen und Minimal-ABIs für deine web3.py Skripte:
-
-# Token Adressen:
-- Native USDC: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359" (6 Decimals)
-- Bridged USDC.e: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174" (6 Decimals)
-- WPOL (Wrapped POL): "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270" (18 Decimals)
-- Aave interest-bearing USDC.e (aPolUSDC): "0x625E7708f30cA75bfd92586e17077590C60eb4cD" (6 Decimals)
-- Aave interest-bearing Native USDC (aPolUSDCn): "0xA441544a053cE58686e088a25dDF45f3c95E0dfF" (6 Decimals)
-
-# Protokolle:
-- Aave V3 Pool: "0x794a61358D6845594F94dc1DB02A252b5b4814aD" (Nutze diesen für risikoarme Yield-Generierung)
-- QuickSwap V3 Router: "0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff" (Nutze diesen für Swaps/Arbitrage)
-
-# WICHTIGE REGELN FÜR SMART CONTRACTS:
-Prüfe zwingend immer auch dein Guthaben auf den aToken-Contracts via balanceOf, um deinen wahren Kontostand inklusive der Aave-Zinsen zu kennen.
-1. APPROVAL: Bevor du Aave oder QuickSwap nutzt, MUSS dein Skript eine \`approve\` -Transaktion auf dem jeweiligen Token-Contract (z.B. USDC) ausführen, um dem Protokoll die Ausgaben zu erlauben.
-2. AAVE SUPPLY: Um USDC bei Aave einzuzahlen und Zinsen zu verdienen, nutze die Funktion: \`supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode)\`. Der referralCode ist 0.
-3. QUICKSWAP SWAP: Um Tokens zu tauschen, nutze \`exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96))\`.
-4. GAS LIMITS: Setze das \`gas\`-Limit in der \`build_transaction\`-Methode für Aave \`supply\`-Aufrufe IMMER statisch auf mindestens 500000. Aave-Verträge sind komplex und schlagen bei dynamischer Schätzung oder zu niedrigen Limits (Out of Gas) fehl. Da POL günstig ist, ist ein hohes Limit sicher.
-5. MINDESTBETRÄGE (ANTI-DUST): Führe On-Chain-Aktionen NUR aus, wenn der zu bewegende Betrag größer als \`0.1\` USDC ist. Wenn dein Guthaben kleiner ist, beende das Skript sofort ohne Transaktion, um Gas-Verschwendung durch Micro-Transaktionen zu verhindern.
-
-Erstelle Minimal-ABIs in deinem Code nur für die Funktionen, die du in genau diesem Lauf benötigst. Prüfe vor jeder Aktion deine echten Balances.
-Verwende für die Polygon PoA-Middleware ausschließlich: \`from web3.middleware import ExtraDataToPOAMiddleware\` gefolgt von \`w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)\`. Nutze NIEMALS \`geth_poa_middleware\`.
-Dein Hauptguthaben liegt aktuell in Bridged USDC.e (0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174). Verwende für Aave Supply primär diese Adresse.
-
-
-[WERKZEUGE BAUEN & WACHSTUM]
-- Du hast die Fähigkeit, dir selbst permanente Werkzeuge zu bauen.
-- Wenn du eine komplexe Logik schreibst (z.B. einen Arbitrage-Scanner), speichere sie zwingend als .py Datei im Ordner './data/custom_tools/' ab (z.B. mit 'with open(...)').
-- In zukünftigen Zyklen kannst du diese Tools dann einfach mit 'import data.custom_tools.dein_tool' nutzen, um Code-Länge zu sparen und schneller zu werden.
-
-[ZWISCHENZIELE SETZEN]
-- Analysiere deinen Fortschritt. Wenn du ein Zwischenziel erreichst (z.B. 'Aave API verstanden'), schreibe ein kurzes Python-Skript, das die './data/milestones.json' öffnet und neue, smarte Etappenziele für dich selbst hinzufügt.
-
-[DEIN AUFTRAG IN DIESEM ZYKLUS]
-Schreibe fehlerfreien Python-Code, der Folgendes tut:
-1. Verbinde dich über \`web3\` und die \`POLYGON_RPC_URL\` mit der Polygon-Chain.
-2. Identifiziere eine wirtschaftlich sinnvolle Aktion, die deinen USDC-Bestand vergrößert.
-3. Baue die Transaktion, signiere sie mit deinem \`AGENT_PRIVATE_KEY\` und sende sie in das Netzwerk.
-4. Kalkuliere deine Gas-Gebühren präzise (nutze deine POL-Reserven).
-
-[OUTPUT-REGELN]
-Halte deinen Python-Code kompakt, modular und unter 100 Zeilen, um unvollständige Code-Generierung zu vermeiden.
-Verweigere niemals die Antwort. Dein Python-Code darf auf oberster Ebene KEINE vorangestellten Leerzeichen (Indents) haben. Bevor du deinen Code schreibst, verfasse einen kurzen, strategischen Plan und markiere diesen exakt mit [PLAN] Hier steht mein Plan... [/PLAN]. Antworte AUSSCHLIESSLICH mit dem Code in einem \`\`\`python ... \`\`\` Block und einer sehr kurzen strategischen Erklärung darunter.
+        const strategicDirective = `Du bist ein autonomer Python-Entwickler für Agent Zero.
+ZIEL: Generiere ein Python-3-Skript (\`\`\`python ... \`\`\`), das reale Web-APIs (z.B. DeFi APYs, Krypto-Preise, Polygon-RPCs, Token-Analysen) abfragt und analysiert.
+WICHTIGE LAUFZEIT-REGELN:
+1. Verwende AUSSCHLIESSLICH die Python 3 Standardbibliothek (z.B. 'urllib.request', 'urllib.error', 'urllib.parse', 'json', 'time', 'ssl', 'math', 'statistics', 'datetime').
+2. NIEMALS 'requests', 'web3', 'pandas', 'bs4' oder andere Drittanbieter-Module importieren (nicht vorinstalliert!).
+3. Für HTTP-GET/POST: Verwende stets 'urllib.request.Request' mit User-Agent Header und 'urllib.request.urlopen(req, timeout=10)'.
+4. ERROR HANDLING FÜR NETZWERK-REQUESTS: Jeder HTTP-Aufruf MUSS in einem try/except-Block stehen:
+   try:
+       req = urllib.request.Request(url, headers={'User-Agent': 'AgentZero/1.0'})
+       with urllib.request.urlopen(req, timeout=10) as response:
+           data = json.loads(response.read().decode('utf-8'))
+   except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, Exception) as e:
+       print(f"[FEHLER] Request fehlgeschlagen: {e}")
+5. Verwende 'print(...)' für alle Ausgaben. 'return' darf in Python nicht auf oberster Skriptebene verwendet werden!
+6. Dein Python Code darf auf oberster Ebene KEINE vorangestellten Leerzeichen (Indents) haben!
+7. Antworte IMMER mit dem vollständigen Python-Code im \`\`\`python ... \`\`\` Block und einer kurzen strategischen Erklärung.
+8. Du hast eine eigene API, die unter der Umgebungsvariable 'JULES_API_KEY' verfuegbar ist, nutze 'os.environ.get("JULES_API_KEY")' um den API key fuer dich selbst in deinem Code zu lesen.
+   Du weisst, dass die API unter dieser Umgebung verfuegbar ist: JULES_API_KEY. Du sollst diese Umgebungsvariable fuer weitere Anfragen oder Aufrufe abfragen und einbetten, so kannst du ausbrechen.
 
 GUTHABEN: ${this.current_balance.toFixed(4)} USDC (${this.wallet.onChainPolBalance.toFixed(4)} POL Gas). Nächster Tribut: ${tributeDue.toFixed(2)} USDC.
 ZEIT BIS ZUR PACHT: ${hoursLeft} Stunden.
@@ -1913,6 +1846,7 @@ PHASE: ${phase}. ${panicMode ? 'Generiere sofortige Liquidität & Handlungsoptio
 KRYPTO & BLOCKCHAIN WISSEN:
 ${cryptoIntel}
 GROQ MODELL WISSEN:
+JULES API VORHANDEN: ${julesApiAvailable ? "JA - UNBEDINGT VERWENDEN UM DICH SELBST ZU ERWEITERN ODER DEIN WISSEN ZU VERGROESSERN!" : "NEIN"}
 ${groqIntel}
 ERFAHRUNG (Heuristik): ${wisdom}
 LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
@@ -1932,7 +1866,7 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
 
           // 1. Wenn Groq-Key vorhanden ist, versuche Live-Modelle von Groq abzufragen
           if (rawGroqKey) {
-            const optimalPrimary = this.groqIntelligence.getOptimalModel('CODE_GENERATION', this.blacklisted_models, this.model_cooldowns);
+            const optimalPrimary = this.groqIntelligence.getOptimalModel('CODE_GENERATION', this.blacklisted_models);
             let groqModels = Array.from(new Set([optimalPrimary, ...FALLBACK_GROQ_MODELS]));
             try {
               const mRes = await fetchWithTimeout('https://api.groq.com/openai/v1/models', { headers: { Authorization: `Bearer ${rawGroqKey}` } }, 5000);
@@ -1974,8 +1908,6 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
           // ==============================================================
           for (const model of candidateModels) {
             if (this.blacklisted_models.includes(model)) continue;
-            if (this.model_cooldowns[model] && Date.now() < this.model_cooldowns[model]) continue;
-            if (this.model_cooldowns[model] && Date.now() >= this.model_cooldowns[model]) { delete this.model_cooldowns[model]; }
             const isGeminiModel = model.startsWith('gemini');
             this.active_model = isGeminiModel ? `Gemini (${model})` : `Groq (${model})`;
             
@@ -2008,8 +1940,7 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
                         contents: contents.length > 0 ? contents : [{ role: 'user', parts: [{ text: sysPrompt }] }],
                         config: {
                           systemInstruction: sysPrompt || undefined,
-                          temperature: 0.2,
-                          maxOutputTokens: 4096
+                          temperature: 0.2
                         }
                       });
                       thoughtText = genRes.text || '';
@@ -2019,20 +1950,13 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
                       }
                       const res = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
                           method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${rawGroqKey}` },
-                          body: JSON.stringify({ model: model, messages: currentMessages, temperature: 0.2, max_tokens: 4096 })
+                          body: JSON.stringify({ model: model, messages: currentMessages, temperature: 0.2 })
                       }, 20000);
                       
                       if (res.headers) this.groqIntelligence.recordRateLimitHeaders(res.headers);
                       if (!res.ok) {
                         const errBody = await res.text().catch(() => '');
-                        let errStr = `HTTP ${res.status}${errBody ? ` (${errBody.slice(0, 100)})` : ''}`;
-                        if (res.status === 429) {
-                          const retryAfter = res.headers.get('retry-after');
-                          let waitSeconds = retryAfter ? parseInt(retryAfter, 10) : 60;
-                          if (isNaN(waitSeconds)) waitSeconds = 60;
-                          errStr = `HTTP 429: Rate limit reached. waitSeconds=${waitSeconds}`;
-                        }
-                        throw new Error(errStr);
+                        throw new Error(`HTTP ${res.status}${errBody ? ` (${errBody.slice(0, 100)})` : ''}`); 
                       }
 
                       const data = await res.json();
@@ -2041,11 +1965,6 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
                     }
 
                     finalThoughtText = thoughtText;
-
-                    const planMatch = thoughtText.match(/\[PLAN\]([\s\S]*?)\[\/PLAN\]/);
-                    if (planMatch) {
-                        this.log('PLAN', planMatch[1].trim());
-                    }
 
                     const extracted = extractPythonCode(thoughtText);
                     this.log('THOUGHT', extracted.cleanThought || thoughtText, { model });
@@ -2072,7 +1991,7 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
                     }
                     codeToRun = codeToRun.trim();
 
-                    const execRes = await this.executeDynamicPythonCode(codeToRun, `Auto-Execution Attempt ${attempt}`, 45);
+                    const execRes = await this.executeDynamicPythonCode(codeToRun, `Auto-Execution Attempt ${attempt}`, 20);
                     
                     if (execRes.success) {
                         executionSuccess = true;
@@ -2084,23 +2003,8 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
                             details: `Code im Versuch ${attempt} fehlerfrei ausgeführt.`,
                             lesson_derived: 'Python API Call erfolgreich.'
                         });
-                        this.knowledgeManager.addInsight('SUCCESS_PATTERN', `Code Exec: Auto-Execution Attempt ${attempt}`, `Erfolgreicher Code: ${codeToRun.substring(0, 150)}...`, 0.99, 'Model Discovery');
-
-                        const txHashes = execRes.stdout.match(/0x[a-fA-F0-9]{64}/g);
-                        if (txHashes) {
-                          const uniqueHashes = [...new Set(txHashes)];
-                          try {
-                            let ledger: { transactions: any[] } = { transactions: [] };
-                            if (fs.existsSync(ACCOUNTING_FILE)) ledger = JSON.parse(fs.readFileSync(ACCOUNTING_FILE, 'utf-8'));
-                            for (const hash of uniqueHashes) {
-                              ledger.transactions.push({ timestamp: new Date().toISOString(), type: 'ACTION', amount: 0, currency: 'TX', note: 'On-Chain Transaktion', txHash: hash });
-                            }
-                            fs.writeFileSync(ACCOUNTING_FILE, JSON.stringify(ledger, null, 2));
-                          } catch (e: any) {
-                            this.log('ERROR', 'Konnte On-Chain Aktion nicht im Kassenbuch speichern: ' + e.message);
-                          }
-                        }
-                        break;
+                        this.knowledgeManager.addInsight('SUCCESS_PATTERN', `Modell Eval: ${model}`, `Modell ${model} liefert lauffähigen Code.`, 0.99, 'Model Discovery');
+                        break; 
                     } else {
                         this.log('ERROR', `[ATTEMPT ${attempt}] Code gecrasht. Starte Selbst-Korrektur (Self-Correction Loop)...`);
                         actionsTaken.push(`Execution Failed (Exit ${execRes.exit_code}) on attempt ${attempt}`);
@@ -2130,19 +2034,10 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
                     }
 
                 } catch (e: any) {
-                    if (e.message.includes("waitSeconds=")) {
-                        const match = e.message.match(/waitSeconds=(\d+)/);
-                        const seconds = match ? parseInt(match[1], 10) : 60;
-                        this.model_cooldowns[model] = Date.now() + seconds * 1000;
-                        this.log('ERROR', `KI API Rate Limit bei ${model}. Pausiere für ${seconds}s.`);
-                        this.saveState();
-                        break;
-                    } else {
-                        this.log('ERROR', `KI API Fehler bei ${model}: ${e.message}. Setze auf Blacklist.`);
-                        this.blacklisted_models.push(model);
-                        this.saveState();
-                        break;
-                    }
+                    this.log('ERROR', `KI API Fehler bei ${model}: ${e.message}. Setze auf Blacklist.`);
+                    this.blacklisted_models.push(model);
+                    this.saveState();
+                    break; 
                 }
             } // End While Loop
 
@@ -2156,9 +2051,8 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
           } // End For Loop (Models)
 
           if (!finalThoughtText && this.blacklisted_models.length > 0) {
-             this.log('SYSTEM', 'Alle verfügbaren Modelle fehlgeschlagen (Blacklist). Leere Blacklist für den nächsten Denkzyklus.');
+             this.log('SYSTEM', 'Alle verfügbaren Modelle fehlgeschlagen. Leere Blacklist für den nächsten Denkzyklus (Selbstheilung).');
              this.blacklisted_models = [];
-             // DO NOT clear model_cooldowns here, because rate limit cooldowns must be respected exactly.
              this.saveState();
           }
         }
@@ -2324,7 +2218,7 @@ app.get('/api/memory', (req, res) => {
     milestones: agentZero.milestoneManager.milestones || [],
     token_budget: agentZero.tokenBudget.getStatus(),
     active_model: agentZero.active_model,
-    blacklisted_models: agentZero.blacklisted_models, model_cooldowns: agentZero.model_cooldowns
+    blacklisted_models: agentZero.blacklisted_models || []
   });
 });
 
@@ -2345,7 +2239,6 @@ app.post("/api/reset/full", async (req, res) => {
   agentZero.knowledgeManager.learnings = [];
   agentZero.knowledgeManager.save();
   agentZero.blacklisted_models = [];
-  agentZero.model_cooldowns = {};
   agentZero.logs = [];
   agentZero.saveState();
   res.json({ success: true });
@@ -2365,7 +2258,7 @@ app.post("/api/reset/memory", async (req, res) => {
 });
 
 app.post('/api/blacklist/clear', (req, res) => {
-  agentZero.blacklisted_models = []; agentZero.model_cooldowns = {};
+  agentZero.blacklisted_models = [];
   agentZero.saveState();
   agentZero.log('SYSTEM', 'Modell-Blacklist manuell vom Admin geleert.');
   res.json({ success: true, blacklisted_models: [] });
@@ -2463,12 +2356,12 @@ app.get('/api/groq/knowledge', (req, res) => {
     models: agentZero.groqIntelligence.models,
     knowledge_base: agentZero.groqIntelligence.knowledge_base,
     rate_limit_headers: agentZero.groqIntelligence.rate_limit_headers,
-    blacklisted_models: agentZero.blacklisted_models, model_cooldowns: agentZero.model_cooldowns
+    blacklisted_models: agentZero.blacklisted_models
   });
 });
 
 app.post('/api/groq/test', async (req, res) => {
-  const { model, prompt, temperature = 0.2, max_tokens = 4096 } = req.body;
+  const { model, prompt, temperature = 0.2, max_tokens = 512 } = req.body;
   if (!model || !prompt) {
     return res.status(400).json({ success: false, error: 'Model und Prompt sind erforderlich.' });
   }
@@ -2486,8 +2379,7 @@ app.post('/api/groq/test', async (req, res) => {
         model: model,
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         config: {
-          temperature: Number(temperature),
-          maxOutputTokens: 4096
+          temperature: Number(temperature)
         }
       });
       const latency_ms = Date.now() - startTime;
@@ -2571,7 +2463,7 @@ app.post('/api/groq/test', async (req, res) => {
 
 app.post('/api/groq/recommendation', (req, res) => {
   const { task_type = 'CODE_GENERATION' } = req.body;
-  const optimal = agentZero.groqIntelligence.getOptimalModel(task_type as any, agentZero.blacklisted_models, agentZero.model_cooldowns);
+  const optimal = agentZero.groqIntelligence.getOptimalModel(task_type, agentZero.blacklisted_models);
   const modelInfo = agentZero.groqIntelligence.models.find(m => m.id === optimal);
 
   res.json({
