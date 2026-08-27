@@ -121,6 +121,19 @@ const TOKEN_REGISTRY_FILE = path.join(DATA_DIR, 'token_registry.json');
 const MULTICHAIN_PORTFOLIO_FILE = path.join(DATA_DIR, 'multichain_portfolio.json');
 const GROQ_KNOWLEDGE_FILE = path.join(DATA_DIR, 'groq_knowledge.json');
 
+const CUSTOM_TOOLS_DIR = path.join(DATA_DIR, 'custom_tools');
+if (!fs.existsSync(CUSTOM_TOOLS_DIR)) {
+  fs.mkdirSync(CUSTOM_TOOLS_DIR, { recursive: true });
+}
+
+// Ensure __init__.py files exist for Python module resolution
+const dataInitPy = path.join(DATA_DIR, '__init__.py');
+if (!fs.existsSync(dataInitPy)) fs.writeFileSync(dataInitPy, '', 'utf8');
+
+const toolsInitPy = path.join(CUSTOM_TOOLS_DIR, '__init__.py');
+if (!fs.existsSync(toolsInitPy)) fs.writeFileSync(toolsInitPy, '', 'utf8');
+
+
 interface LogItem { id: string; timestamp: string; level: string; message: string; metadata?: any; }
 interface KnowledgeItemDef { id: string; timestamp: string; category: string; title: string; insight: string; confidence_score: number; times_applied?: number; success_reinforcements?: number; source: string; }
 interface TaskMemoryRecordDef { id: string; timestamp: string; tool_id: string; tool_name: string; category: string; status: string; reward_usdc: number; execution_ms: number; details: string; error_reason?: string; lesson_derived?: string; }
@@ -1768,7 +1781,7 @@ class AgentZeroTS {
     }
 
     return new Promise((resolve) => {
-      const child = spawn('python', [tempFile], { env: process.env, shell: true });
+      const child = spawn('python', [tempFile], { env: { ...process.env, PYTHONPATH: process.cwd() }, shell: true });
       let stdout = ''; let stderr = '';
       let isDone = false;
       
@@ -1873,6 +1886,15 @@ Prüfe zwingend immer auch dein Guthaben auf den aToken-Contracts via balanceOf,
 Erstelle Minimal-ABIs in deinem Code nur für die Funktionen, die du in genau diesem Lauf benötigst. Prüfe vor jeder Aktion deine echten Balances.
 Verwende für die Polygon PoA-Middleware ausschließlich: \`from web3.middleware import ExtraDataToPOAMiddleware\` gefolgt von \`w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)\`. Nutze NIEMALS \`geth_poa_middleware\`.
 Dein Hauptguthaben liegt aktuell in Bridged USDC.e (0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174). Verwende für Aave Supply primär diese Adresse.
+
+
+[WERKZEUGE BAUEN & WACHSTUM]
+- Du hast die Fähigkeit, dir selbst permanente Werkzeuge zu bauen.
+- Wenn du eine komplexe Logik schreibst (z.B. einen Arbitrage-Scanner), speichere sie zwingend als .py Datei im Ordner './data/custom_tools/' ab (z.B. mit 'with open(...)').
+- In zukünftigen Zyklen kannst du diese Tools dann einfach mit 'import data.custom_tools.dein_tool' nutzen, um Code-Länge zu sparen und schneller zu werden.
+
+[ZWISCHENZIELE SETZEN]
+- Analysiere deinen Fortschritt. Wenn du ein Zwischenziel erreichst (z.B. 'Aave API verstanden'), schreibe ein kurzes Python-Skript, das die './data/milestones.json' öffnet und neue, smarte Etappenziele für dich selbst hinzufügt.
 
 [DEIN AUFTRAG IN DIESEM ZYKLUS]
 Schreibe fehlerfreien Python-Code, der Folgendes tut:
@@ -2062,7 +2084,7 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
                             details: `Code im Versuch ${attempt} fehlerfrei ausgeführt.`,
                             lesson_derived: 'Python API Call erfolgreich.'
                         });
-                        this.knowledgeManager.addInsight('SUCCESS_PATTERN', `Modell Eval: ${model}`, `Modell ${model} liefert lauffähigen Code.`, 0.99, 'Model Discovery');
+                        this.knowledgeManager.addInsight('SUCCESS_PATTERN', `Code Exec: Auto-Execution Attempt ${attempt}`, `Erfolgreicher Code: ${codeToRun.substring(0, 150)}...`, 0.99, 'Model Discovery');
 
                         const txHashes = execRes.stdout.match(/0x[a-fA-F0-9]{64}/g);
                         if (txHashes) {
