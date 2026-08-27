@@ -1855,12 +1855,15 @@ Um reale On-Chain-Aktionen auszuführen, greife auf diese validierten Polygon-Co
 - Native USDC: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359" (6 Decimals)
 - Bridged USDC.e: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174" (6 Decimals)
 - WPOL (Wrapped POL): "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270" (18 Decimals)
+- Aave interest-bearing USDC.e (aPolUSDC): "0x625E7708f30cA75bfd92586e17077590C60eb4cD" (6 Decimals)
+- Aave interest-bearing Native USDC (aPolUSDCn): "0xA441544a053cE58686e088a25dDF45f3c95E0dfF" (6 Decimals)
 
 # Protokolle:
 - Aave V3 Pool: "0x794a61358D6845594F94dc1DB02A252b5b4814aD" (Nutze diesen für risikoarme Yield-Generierung)
 - QuickSwap V3 Router: "0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff" (Nutze diesen für Swaps/Arbitrage)
 
 # WICHTIGE REGELN FÜR SMART CONTRACTS:
+Prüfe zwingend immer auch dein Guthaben auf den aToken-Contracts via balanceOf, um deinen wahren Kontostand inklusive der Aave-Zinsen zu kennen.
 1. APPROVAL: Bevor du Aave oder QuickSwap nutzt, MUSS dein Skript eine \`approve\` -Transaktion auf dem jeweiligen Token-Contract (z.B. USDC) ausführen, um dem Protokoll die Ausgaben zu erlauben.
 2. AAVE SUPPLY: Um USDC bei Aave einzuzahlen und Zinsen zu verdienen, nutze die Funktion: \`supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode)\`. Der referralCode ist 0.
 3. QUICKSWAP SWAP: Um Tokens zu tauschen, nutze \`exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96))\`.
@@ -2065,13 +2068,13 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
                         if (txHashes) {
                           const uniqueHashes = [...new Set(txHashes)];
                           try {
-                            let ledger = { transactions: [] };
+                            let ledger: { transactions: any[] } = { transactions: [] };
                             if (fs.existsSync(ACCOUNTING_FILE)) ledger = JSON.parse(fs.readFileSync(ACCOUNTING_FILE, 'utf-8'));
                             for (const hash of uniqueHashes) {
-                              ledger.transactions.push({ timestamp: new Date().toISOString(), type: 'ON_CHAIN_ACTION', amount: 0, currency: 'TX', note: 'TxHash: ' + hash });
+                              ledger.transactions.push({ timestamp: new Date().toISOString(), type: 'ACTION', amount: 0, currency: 'TX', note: 'On-Chain Transaktion', txHash: hash });
                             }
                             fs.writeFileSync(ACCOUNTING_FILE, JSON.stringify(ledger, null, 2));
-                          } catch (e) {
+                          } catch (e: any) {
                             this.log('ERROR', 'Konnte On-Chain Aktion nicht im Kassenbuch speichern: ' + e.message);
                           }
                         }
