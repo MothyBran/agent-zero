@@ -1792,6 +1792,36 @@ class AgentZeroTS {
     });
   }
 
+
+  public async runOfflineAutonomy(): Promise<void> {
+    try {
+      const toolsDir = path.join(process.cwd(), 'data', 'custom_tools');
+
+      if (!fs.existsSync(toolsDir)) {
+         this.log('SYSTEM', '[OFFLINE MODE] Ordner data/custom_tools/ existiert nicht. Warte auf API-Reset.');
+         return;
+      }
+
+      const files = fs.readdirSync(toolsDir);
+      const pythonScripts = files.filter(f => f.endsWith('.py') && f !== '__init__.py');
+
+      if (pythonScripts.length === 0) {
+        this.log('SYSTEM', '[OFFLINE MODE] Keine lokalen Werkzeuge gefunden. Warte auf API-Reset.');
+        return;
+      }
+
+      const randomFile = pythonScripts[Math.floor(Math.random() * pythonScripts.length)];
+      const filePath = path.join(toolsDir, randomFile);
+      const code = fs.readFileSync(filePath, 'utf-8');
+
+      this.log('SYSTEM', `[OFFLINE MODE] API limitiert. Führe lokales Werkzeug ${randomFile} aus.`);
+      await this.executeDynamicPythonCode(code, 'Offline Tool Execution: ' + randomFile, 45);
+
+    } catch (e: any) {
+      this.log('ERROR', `[OFFLINE MODE] Fehler bei lokaler Autonomie: ${e.message}`);
+    }
+  }
+
   public async thinkAndAct(): Promise<{ thought: string; actions: string[]; model: string }> {
     // Verhindert Parallel-Läufe und Endlos-Hänger (Deadlock-Schutz)
     if (this.is_terminated || this.isProcessingCycle) {
@@ -1861,6 +1891,7 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
         
         if (!budgetCheck.allowed) {
           this.log('ERROR', `[TOKEN GUARD] ${budgetCheck.reason} Überspringe LLM-Aufruf.`);
+          await this.runOfflineAutonomy();
         } else {
           let candidateModels: string[] = [];
 
@@ -2054,6 +2085,9 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
              this.log('SYSTEM', 'Alle verfügbaren Modelle fehlgeschlagen. Leere Blacklist für den nächsten Denkzyklus (Selbstheilung).');
              this.blacklisted_models = [];
              this.saveState();
+          }
+          if (!finalThoughtText) {
+             await this.runOfflineAutonomy();
           }
         }
 
