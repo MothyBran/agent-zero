@@ -1473,7 +1473,7 @@ class AgentWalletTS {
       }
     }
 
-    return this.onChainUsdcBalance;
+    return this.onChainUsdcBalance || 0.0;
   }
 
   public async sendUsdcTransfer(toAddress: string, amountUsdc: number, note: string): Promise<{ success: boolean; txHash: string; message: string }> {
@@ -2057,7 +2057,8 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
           }
         }
 
-        const postBalance = await this.wallet.getUsdcBalance();
+        const portfolio = await this.wallet.getMultiChainPortfolio(this.cryptoKnowledge);
+        const postBalance = portfolio.total_usdc_across_chains || (await this.wallet.getUsdcBalance());
         if (postBalance > this.current_balance) {
           const earned = postBalance - this.current_balance;
           this.log('FINANCE', `[ECHTE EINNAHME] Wallet ist on-chain um +${earned.toFixed(4)} USDC gewachsen!`);
