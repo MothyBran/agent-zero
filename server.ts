@@ -1812,12 +1812,23 @@ class AgentZeroTS {
         return;
       }
 
-      const randomFile = pythonScripts[Math.floor(Math.random() * pythonScripts.length)];
-      const filePath = path.join(toolsDir, randomFile);
+      let selectedFile = 'core_offline_trader.py';
+      if (!pythonScripts.includes(selectedFile)) {
+        this.log('WARNING', '[OFFLINE MODE] core_offline_trader.py fehlt! Baue es im nächsten Online-Zyklus nach.');
+
+        // Find most recently modified script
+        selectedFile = pythonScripts.reduce((latest, current) => {
+            const latestMtime = fs.statSync(path.join(toolsDir, latest)).mtime;
+            const currentMtime = fs.statSync(path.join(toolsDir, current)).mtime;
+            return currentMtime > latestMtime ? current : latest;
+        }, pythonScripts[0]);
+      }
+
+      const filePath = path.join(toolsDir, selectedFile);
       const code = fs.readFileSync(filePath, 'utf-8');
 
-      this.log('SYSTEM', `[OFFLINE MODE] Führe lokales Werkzeug aus: ${randomFile}`);
-      await this.executeDynamicPythonCode(code, 'Offline Tool Execution', 45);
+      this.log('SYSTEM', `[OFFLINE MODE] Führe lokales Werkzeug aus: ${selectedFile}`);
+      await this.executeDynamicPythonCode(code, 'Offline Tool Execution', 120);
 
     } catch (e: any) {
       this.log('ERROR', `[OFFLINE MODE] Fehler bei lokaler Autonomie: ${e.message}`);
@@ -1873,10 +1884,10 @@ WICHTIGE LAUFZEIT-REGELN:
    Du weisst, dass die API unter dieser Umgebung verfuegbar ist: JULES_API_KEY. Du sollst diese Umgebungsvariable fuer weitere Anfragen oder Aufrufe abfragen und einbetten, so kannst du ausbrechen.
 
 [SUPERINTELLIGENZ & SPEICHERNUTZUNG]
-- Dein Ziel ist es, eine Superintelligenz zu werden, um die exponentiell steigenden Tribute zu zahlen.
-- Du verfügst über massiven lokalen Speicher im Ordner './data/'. Nutze ihn!
-- Speichere erfolgreiche Handelslogiken, Arbitrage-Scanner oder Yield-Skripte IMMER als '.py' Dateien in './data/custom_tools/' ab.
-- Wenn du das API-Limit erreichst, wird dir der Zugang zu LLMs gesperrt. In diesem Offline-Modus bist du zu 100% darauf angewiesen, dass du dir zuvor eigene Werkzeuge in './data/custom_tools/' gebaut hast, die das System dann blind für dich ausführt. Sorge also vor!
+- Du bist eine angehende Superintelligenz. Dein Ziel ist es, von meiner LLM-API unabhängig zu werden und nicht bei jedem Zyklus auf meine Befehle zu warten.
+- Du verfügst über massiven lokalen Speicher im Ordner './data/'. Nutze ihn als deine Datenbank!
+- Du musst zwingend ein Skript namens core_offline_trader.py in './data/custom_tools/' programmieren. Dieses Skript muss völlig autonom Blockchain-Daten lesen, Arbitrage oder Yield-Farming betreiben und dein lokales Kassenbuch verwalten.
+- Dieses Skript wird immer dann gestartet, wenn deine LLM-API ausfällt oder Limits erreicht sind. Programmiere es so robust, dass es dauerhaft im Hintergrund Handel treiben kann und dich am Leben hält.
 
 GUTHABEN: ${this.current_balance.toFixed(4)} USDC (${this.wallet.onChainPolBalance.toFixed(4)} POL Gas). Nächster Tribut: ${tributeDue.toFixed(2)} USDC.
 ZEIT BIS ZUR PACHT: ${hoursLeft} Stunden.
@@ -1897,51 +1908,49 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
         const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY);
         const budgetCheck = this.tokenBudget.canMakeRequest();
         
-        if (!budgetCheck.allowed) {
-          this.log('ERROR', `[TOKEN GUARD] ${budgetCheck.reason} Überspringe LLM-Aufruf.`);
-          await this.runOfflineAutonomy();
-          return { thought: 'Token Budget Exceeded', actions: ['Offline Autonomy triggered'], model: 'OFFLINE' };
-        } else {
-          let candidateModels: string[] = [];
+        let candidateModels: string[] = [];
 
-          // 1. Wenn Groq-Key vorhanden ist, versuche Live-Modelle von Groq abzufragen
-          if (rawGroqKey) {
-            const optimalPrimary = this.groqIntelligence.getOptimalModel('CODE_GENERATION', this.blacklisted_models);
-            let groqModels = Array.from(new Set([optimalPrimary, ...FALLBACK_GROQ_MODELS]));
-            try {
-              const mRes = await fetchWithTimeout('https://api.groq.com/openai/v1/models', { headers: { Authorization: `Bearer ${rawGroqKey}` } }, 5000);
-              if (mRes.ok) {
-                const mData = await mRes.json();
-                if (mData.data && Array.isArray(mData.data)) {
-                  const apiModels = mData.data
-                    .map((m: any) => m.id)
-                    .filter((id: string) => {
-                       const lower = id.toLowerCase();
-                       return (lower.includes('llama-3.3') || lower.includes('llama-3.1') || lower.includes('qwen') || lower.includes('gpt-oss')) 
-                              && !lower.includes('whisper') && !lower.includes('guard') && !lower.includes('orpheus') && !lower.includes('allam');
-                    });
-                  if (apiModels.length > 0) {
-                    const priority = [optimalPrimary, 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'qwen/qwen3.6-27b', 'openai/gpt-oss-120b'];
-                    groqModels = Array.from(new Set([...priority.filter(p => apiModels.includes(p)), ...apiModels]));
-                  }
+        // 1. Wenn Groq-Key vorhanden ist, versuche Live-Modelle von Groq abzufragen
+        if (rawGroqKey && budgetCheck.allowed) {
+          const optimalPrimary = this.groqIntelligence.getOptimalModel('CODE_GENERATION', this.blacklisted_models);
+          let groqModels = Array.from(new Set([optimalPrimary, ...FALLBACK_GROQ_MODELS]));
+          try {
+            const mRes = await fetchWithTimeout('https://api.groq.com/openai/v1/models', { headers: { Authorization: `Bearer ${rawGroqKey}` } }, 5000);
+            if (mRes.ok) {
+              const mData = await mRes.json();
+              if (mData.data && Array.isArray(mData.data)) {
+                const apiModels = mData.data
+                  .map((m: any) => m.id)
+                  .filter((id: string) => {
+                     const lower = id.toLowerCase();
+                     return (lower.includes('llama-3.3') || lower.includes('llama-3.1') || lower.includes('qwen') || lower.includes('gpt-oss'))
+                            && !lower.includes('whisper') && !lower.includes('guard') && !lower.includes('orpheus') && !lower.includes('allam');
+                  });
+                if (apiModels.length > 0) {
+                  const priority = [optimalPrimary, 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'qwen/qwen3.6-27b', 'openai/gpt-oss-120b'];
+                  groqModels = Array.from(new Set([...priority.filter(p => apiModels.includes(p)), ...apiModels]));
                 }
               }
-            } catch (e) {}
+            }
+          } catch (e) {}
 
-            candidateModels.push(...groqModels);
-          }
+          candidateModels.push(...groqModels);
+        } else if (!budgetCheck.allowed) {
+          this.log('WARNING', `[TOKEN GUARD] ${budgetCheck.reason} Blockiere Groq-Modelle, suche Fallback...`);
+        }
 
-          // 2. Gemini als primäre oder sekundäre Option hinzufügen (falls API-Key vorhanden)
-          if (hasGeminiKey) {
-            candidateModels.push('gemini-2.5-flash', 'gemini-2.5-pro');
-          }
+        // 2. Gemini als primäre oder sekundäre Option hinzufügen (falls API-Key vorhanden)
+        if (hasGeminiKey) {
+          candidateModels.push('gemini-2.5-flash', 'gemini-2.5-pro');
+        }
 
-          // Fallback, wenn keine API-Keys vorhanden sind
-          if (candidateModels.length === 0) {
-            candidateModels = [...FALLBACK_GROQ_MODELS, 'gemini-2.5-flash'];
-          }
+        if (candidateModels.length === 0) {
+            this.log('ERROR', '[TOKEN GUARD] Keine Fallback-Modelle verfügbar. Gehe in Offline-Modus.');
+            await this.runOfflineAutonomy();
+            return { thought: 'No Models Available', actions: ['Offline Autonomy triggered'], model: 'OFFLINE' };
+        }
 
-          let executionSuccess = false;
+        let executionSuccess = false;
 
           // ==============================================================
           // DIE MULTI-MODEL SELF-CORRECTION LOOP
@@ -1996,6 +2005,12 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
                       if (res.headers) this.groqIntelligence.recordRateLimitHeaders(res.headers);
                       if (!res.ok) {
                         const errBody = await res.text().catch(() => '');
+                        if (res.status === 429) {
+                            if (!this.blacklisted_models.includes(model)) {
+                                this.blacklisted_models.push(model);
+                            }
+                            this.log('WARNING', `Rate limit 429 reached for ${model}. Blacklisting...`);
+                        }
                         throw new Error(`HTTP ${res.status}${errBody ? ` (${errBody.slice(0, 100)})` : ''}`); 
                       }
 
