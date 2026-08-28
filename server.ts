@@ -2113,7 +2113,6 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
           if (!executionSuccess) {
              await this.runOfflineAutonomy();
           }
-        }
 
         const portfolio = await this.wallet.getMultiChainPortfolio(this.cryptoKnowledge);
         const postBalance = portfolio.total_usdc_across_chains || (await this.wallet.getUsdcBalance());
