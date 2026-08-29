@@ -431,7 +431,7 @@ export interface GroqModelInfo {
   id: string;
   name: string;
   speed: string;
-  category: 'Production Model' | 'Production System' | 'Preview Model' | 'Audio / Speech';
+  category: 'Production Model' | 'Production System' | 'Preview Model' | 'Audio / Speech' | 'Primary Tier' | 'Frontier Tier';
   context: string;
   context_tokens: number;
   max_completion_tokens: number;
