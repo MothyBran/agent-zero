@@ -265,7 +265,7 @@ export const MULTI_CHAIN_CONFIGS: Record<string, any> = {
 };
 
 const OPENROUTER_MODEL_CASCADE = [
-  "google/gemini-2.0-flash-001",
+  "google/gemini-2.5-flash",
   "meta-llama/llama-3.3-70b-instruct",
   "deepseek/deepseek-chat",
   "anthropic/claude-3.5-sonnet",
@@ -521,8 +521,8 @@ export class OpenRouterIntelligenceManager {
   private initDefaults() {
     this.models = [
       {
-        id: 'google/gemini-2.0-flash-001',
-        name: 'Gemini 2.0 Flash',
+        id: 'google/gemini-2.5-flash',
+        name: 'Gemini 2.5 Flash',
         speed: 'Sehr Schnell',
         category: 'Primary Tier',
         context: '1M',
@@ -1875,7 +1875,7 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
                     this.log('ERROR', `KI API Fehler bei ${model}: ${e.message}. Setze auf Blacklist.`);
                     this.blacklisted_models.push(model);
                     this.saveState();
-                    continue;
+                    break;
                 }
             } // End While Loop
 
