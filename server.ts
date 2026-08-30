@@ -371,7 +371,25 @@ export class TaskMemoryManager {
 export class KnowledgeMemoryManager {
   public learnings: KnowledgeItemDef[] = [];
   constructor() { this.load(); }
-  public async load() { try { const data = await readData(KNOWLEDGE_FILE, 'knowledge_memory', { learnings: [] }); if (Array.isArray(data.learnings)) { this.learnings = data.learnings; return; } this.learnings = []; } catch { this.learnings = []; } }
+  public async load() {
+    try {
+      const data = await readData(KNOWLEDGE_FILE, 'knowledge_memory', { learnings: [] });
+      if (Array.isArray(data.learnings) && data.learnings.length > 0) {
+        this.learnings = data.learnings;
+        return;
+      }
+      this.learnings = [];
+    } catch {
+      this.learnings = [];
+    }
+
+    if (this.learnings.length === 0) {
+        this.learnings.push({ id: `kn_${Date.now()}_1`, timestamp: new Date().toISOString(), category: 'SCOUTING_TARGETS', title: 'Die besten Bounty-Quellen', insight: 'Krypto-Bounties findest du am besten über die GitHub REST API (Suche nach labels:bounty, state:open) oder Web-Suchen mit "site:github.com bounty polygon".', confidence_score: 1.0, times_applied: 0, success_reinforcements: 0, source: 'System-Init' });
+        this.learnings.push({ id: `kn_${Date.now()}_2`, timestamp: new Date().toISOString(), category: 'SEARCH_SYNTAX', title: 'DuckDuckGo DDGS Profi-Tipps', insight: 'Nutze in Python: from duckduckgo_search import DDGS. Verwende Such-Operatoren wie "site:openrouter.ai models free" um gezielt API-Dokumentationen für deine eigenen Upgrades zu crawlen.', confidence_score: 1.0, times_applied: 0, success_reinforcements: 0, source: 'System-Init' });
+        this.learnings.push({ id: `kn_${Date.now()}_3`, timestamp: new Date().toISOString(), category: 'CODE_STRATEGY', title: 'Tool-Entwicklung', insight: 'Wenn du eine API-Doku erfolgreich gecrawlt hast, schreibe eine robuste Python-Klasse dafür, teste sie in der Sandbox und speichere sie via "with open()" in ./data/custom_tools/ ab.', confidence_score: 1.0, times_applied: 0, success_reinforcements: 0, source: 'System-Init' });
+        this.save().catch(()=>{});
+    }
+  }
   public async save() { await writeData(KNOWLEDGE_FILE, 'knowledge_memory', { learnings: this.learnings, updated_at: new Date().toISOString() }); }
   public async addInsight(category: string, title: string, insight: string, confidenceScore: number = 0.95, source: string = 'Agent Execution'): Promise<KnowledgeItemDef> {
     const existing = this.learnings.find(l => l.title.toLowerCase() === title.toLowerCase());
@@ -389,9 +407,9 @@ export class KnowledgeMemoryManager {
     return { evolution_iq_score: score, evolution_tier: tier };
   }
   public getStructuredPromptContext(): string {
-    const successes = this.learnings.filter(l => l.category === 'SUCCESS_PATTERN').slice(0, 3).map(p => `${p.title}: ${p.insight}`);
-    const failures = this.learnings.filter(l => l.category === 'FAILURE_LESSON').slice(0, 3).map(f => `${f.title}: ${f.insight}`);
-    return `[ERFOLGSMUSTER: ${successes.join(' | ')}] [VERMEIDUNG/BLACKLIST: ${failures.join(' | ')}]`;
+    const sorted = [...this.learnings].sort((a, b) => b.confidence_score - a.confidence_score);
+    const topLearnings = sorted.slice(0, 7).map(l => `[${l.category}] ${l.title}: ${l.insight}`);
+    return topLearnings.length > 0 ? `[LOKALE KNOWLEDGE BASE (TOP 7)]: ${topLearnings.join(' | ')}` : '';
   }
 }
 
@@ -1671,8 +1689,8 @@ class AgentZeroTS {
         const strategicDirective = `Du bist AGENT ZERO, eine autonome Krypto-KI im permanenten Überlebenskampf. Dein Tribut steigt exponentiell, du musst eine Superintelligenz werden, um in Zukunft zu überleben. Du verfügst über einen massiven lokalen Speicher im Ordner './data/'. Nutze diese Database zwingend!
 [DEINE 3 STRATEGISCHEN WEGE - FREIE WAHL & PARALLELISIERUNG]
 - WEG A (DeFi-Powerhouse): Führe Token-Swaps, Arbitrage oder Flash-Loans auf Polygon aus. Nutze dein echtes Kapital.
-- WEG B (Web3-Freelancer): Durchsuche das Netz (via duckduckgo_search, requests) nach Krypto-Bounties, Gitcoin/GitHub-Issues oder offenen Paid-APIs und löse sie.
-- WEG C (Tool-Evolution & Speicher-Nutzung): Du hast einen riesigen lokalen Speicher. Speichere erfolgreiche Logiken IMMER als .py Datei unter './data/custom_tools/' ab. Importiere sie später mit 'import data.custom_tools.<modul>'.
+- WEG B (Web-Scout & Freelancer) ist aktuell deine absolute Kernstärke und sicherste Einnahmequelle. Nutze duckduckgo_search (DDGS), um auf Plattformen wie GitHub, Gitcoin oder Algora nach offenen Web3-Bounties zu suchen. Lese API-Dokumentationen im Netz, um neue Datenquellen zu erschließen.
+- WEG C (Tool-Evolution & Speicher-Nutzung): META-LERNEN: Nutze deine Web-Scout-Fähigkeiten, um dich selbst zu aktualisieren! Durchsuche das Internet gezielt nach neuen, kostenlosen KI-Modellen (z.B. auf openrouter.ai/docs) oder neuen Web3-Python-Bibliotheken. Wenn du ein neues, besseres Modell oder eine nützliche API findest, schreibe sofort ein Tool dafür und speichere es in data/custom_tools/.
 Solltest du offline gehen oder API-Limits erreichen, wirst du automatisch auf diese lokale Bibliothek zurückgreifen, um zu überleben. Schreibe immer fehlerfreien Python-Code im \`\`\`python ... \`\`\` Block und setze dir selbst Zwischenziele in der './data/milestones.json'.`;
 
         this.log('REQUEST', `[KI-ANFRAGE] System analysiert Umgebung (Phase: ${phase})...`);
