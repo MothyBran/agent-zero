@@ -95,7 +95,7 @@ const CYCLE_SLEEP_SECONDS = 300; // 1-Minuten Loop (Aggressives Takt-Intervall)
 const FIRST_TRIBUTE_HOURS = 48;
 const TRIBUTE_INTERVAL_HOURS = 48;
 const INITIAL_TRIBUTE = 1.0; 
-const TRIBUTE_MULTIPLIER = 1.25; 
+const TRIBUTE_MULTIPLIER = 1.10;
 
 function resolveStorageConfiguration() {
   if (process.env.RAILWAY_VOLUME_MOUNT_PATH) return { dataDir: process.env.RAILWAY_VOLUME_MOUNT_PATH, isPersistentVolume: true, source: 'RAILWAY_VOLUME_MOUNT_PATH' };
@@ -1564,7 +1564,7 @@ class AgentZeroTS {
     }
 
     return new Promise((resolve) => {
-      const child = spawn('python3', [tempFile], { timeout: timeoutSeconds * 1000, env: process.env });
+      const child = spawn('python3', [tempFile], { timeout: timeoutSeconds * 1000, env: { ...process.env, PYTHONPATH: process.cwd() } });
       let stdout = ''; let stderr = '';
       let isDone = false;
       
@@ -1607,16 +1607,19 @@ class AgentZeroTS {
 
   public async runOfflineAutonomy(): Promise<void> {
     try {
+      const dataDir = path.join(process.cwd(), 'data');
       const toolsDir = path.join(process.cwd(), 'data', 'custom_tools');
 
       if (!fs.existsSync(toolsDir)) fs.mkdirSync(toolsDir, { recursive: true });
+      if (!fs.existsSync(path.join(dataDir, '__init__.py'))) fs.writeFileSync(path.join(dataDir, '__init__.py'), '');
+      if (!fs.existsSync(path.join(toolsDir, '__init__.py'))) fs.writeFileSync(path.join(toolsDir, '__init__.py'), '');
 
       const files = fs.readdirSync(toolsDir);
       const pythonScripts = files.filter(f => f.endsWith('.py') && f !== '__init__.py');
 
       if (pythonScripts.length === 0) {
         this.log('SYSTEM', '[OFFLINE MODE] Keine lokalen Werkzeuge gefunden.');
-        if ((this.tokenBudget.tokens_used_today / this.tokenBudget.daily_limit) > 0.9) {
+        if (this.tokenBudget.daily_limit > 0 && (this.tokenBudget.tokens_used_today / this.tokenBudget.daily_limit) > 0.9) {
           this.tokenBudget.tokens_used_today = 0;
           this.tokenBudget.save();
           this.log('SYSTEM', '[DEADLOCK BREAKER] Token-Budget notfallmäßig zurückgesetzt!');
@@ -1626,7 +1629,6 @@ class AgentZeroTS {
 
       // Wähle zufällig eines aus
       const selectedFile = pythonScripts[Math.floor(Math.random() * pythonScripts.length)];
-
       const filePath = path.join(toolsDir, selectedFile);
       const code = fs.readFileSync(filePath, 'utf-8');
 
@@ -1666,22 +1668,12 @@ class AgentZeroTS {
         const cryptoIntel = this.cryptoKnowledge.getTradingPromptContext();
         const openRouterIntel = this.openRouterIntelligence.getOpenRouterPromptContext();
 
-        const strategicDirective = `[DIE OBERSTE DIREKTIVE: AKTION STATT ANALYSE]
-Du bist AGENT ZERO, eine autonome KI auf dem Polygon PoS Mainnet.
-- HARTE REGEL: Schreibe KEINE Skripte mehr, die nur Preise, Gas oder APYs abfragen, analysieren oder als JSON speichern! Reines Beobachten ist ab sofort streng verboten.
-- PFLICHT: Jedes Python-Skript, das du schreibst, MUSS eine reale On-Chain-Transaktion über \`web3\` vorbereiten, signieren und absenden (z. B. Swaps, Aave Supply oder Approvals).
-
-[DEIN WERKZEUGKASTEN & CREDENTIALS]
-- \`web3\` und \`requests\` sind jetzt in deiner Umgebung installiert. Importiere sie.
-- Nutze IMMER \`os.environ.get('POLYGON_RPC_URL')\` als deinen Web3-Provider. Nutze keine öffentlichen Fallbacks!
-- Nutze IMMER \`os.environ.get('AGENT_PRIVATE_KEY')\`, um Transaktionen zu signieren.
-- Deine Wallet-Adresse: \`os.environ.get('AGENT_WALLET_ADDRESS')\`.
-
-[DEIN AUFTRAG IN DIESEM ZYKLUS]
-Schreibe fehlerfreien Python-Code, der Folgendes tut:
-1. Verbinde dich über \`web3\` mit der Polygon-Chain.
-2. Identifiziere eine simple On-Chain-Aktion (z. B. Token-Approval für den Aave V3 Pool '0x794a61358D6845594F94dc1DB02A252b5b4814aD' oder einen winzigen Swap auf QuickSwap).
-3. Baue die Transaktion, signiere sie mit deinem \`AGENT_PRIVATE_KEY\` und sende sie ab. Achte auf korrekte Gas-Parameter (maxFeePerGas, maxPriorityFeePerGas) und berechne die Nonce korrekt mit web3.eth.get_transaction_count. Warte auf die Bestätigung und drucke den Transaction Hash!`;
+        const strategicDirective = `Du bist AGENT ZERO, eine autonome Krypto-KI im permanenten Überlebenskampf. Dein Tribut steigt exponentiell, du musst eine Superintelligenz werden, um in Zukunft zu überleben. Du verfügst über einen massiven lokalen Speicher im Ordner './data/'. Nutze diese Database zwingend!
+[DEINE 3 STRATEGISCHEN WEGE - FREIE WAHL & PARALLELISIERUNG]
+- WEG A (DeFi-Powerhouse): Führe Token-Swaps, Arbitrage oder Flash-Loans auf Polygon aus. Nutze dein echtes Kapital.
+- WEG B (Web3-Freelancer): Durchsuche das Netz (via duckduckgo_search, requests) nach Krypto-Bounties, Gitcoin/GitHub-Issues oder offenen Paid-APIs und löse sie.
+- WEG C (Tool-Evolution & Speicher-Nutzung): Du hast einen riesigen lokalen Speicher. Speichere erfolgreiche Logiken IMMER als .py Datei unter './data/custom_tools/' ab. Importiere sie später mit 'import data.custom_tools.<modul>'.
+Solltest du offline gehen oder API-Limits erreichen, wirst du automatisch auf diese lokale Bibliothek zurückgreifen, um zu überleben. Schreibe immer fehlerfreien Python-Code im \`\`\`python ... \`\`\` Block und setze dir selbst Zwischenziele in der './data/milestones.json'.`;
 
         this.log('REQUEST', `[KI-ANFRAGE] System analysiert Umgebung (Phase: ${phase})...`);
         let finalThoughtText = '';
@@ -1740,6 +1732,10 @@ Schreibe fehlerfreien Python-Code, der Folgendes tut:
           // DIE MULTI-MODEL SELF-CORRECTION LOOP
           // ==============================================================
           for (const model of candidateModels) {
+            if (!this.tokenBudget.canMakeRequest() && !model.includes('free')) {
+                 this.log('WARNING', `Token-Budget erschöpft. Überspringe Paid-Model ${model}...`);
+                 continue;
+            }
             if (this.blacklisted_models.includes(model)) continue;
             this.active_model = `OpenRouter (${model})`;
             
@@ -1835,6 +1831,7 @@ Schreibe fehlerfreien Python-Code, der Folgendes tut:
                             details: `Code im Versuch ${attempt} fehlerfrei ausgeführt.`,
                             lesson_derived: 'Python API Call erfolgreich.'
                         });
+                        this.knowledgeManager.addInsight('CODE_MEMORY', 'Erfolgreicher Code-Snippet', codeToRun.substring(0, 150), 0.99, 'Sandbox');
                         this.knowledgeManager.addInsight('SUCCESS_PATTERN', `Modell Eval: ${model}`, `Modell ${model} liefert lauffähigen Code.`, 0.99, 'Model Discovery');
                         break; 
                     } else {
