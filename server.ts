@@ -1719,12 +1719,33 @@ LETZTE EREIGNISSE:\n${recentLogs ? recentLogs : 'Keine vorherigen Aktionen.'}`;
         const rawOpenRouterKey = process.env.OPENROUTER_API_KEY || process.env.GROQ_API_KEY || process.env.FREE_LLM_API_KEY || '';
         let candidateModels: string[] = [];
 
-        // Verwende ausschließlich die statische Kaskade für OpenRouter
-        if (rawOpenRouterKey && budgetCheck.allowed) {
-          candidateModels = OPENROUTER_MODEL_CASCADE.filter(m => !this.blacklisted_models.includes(m));
-          if (candidateModels.length === 0) candidateModels = OPENROUTER_MODEL_CASCADE; // Fallback if all blacklisted
-        } else if (!budgetCheck.allowed) {
-          this.log('WARNING', `[TOKEN GUARD] ${budgetCheck.reason} Blockiere Groq-Modelle, suche Fallback...`);
+        if (rawOpenRouterKey) {
+            // Free-Tier Discovery
+            let discoveredFreeModels: string[] = [];
+            try {
+                const response = await fetchWithTimeout('https://openrouter.ai/api/v1/models', {
+                    headers: { 'Authorization': `Bearer ${rawOpenRouterKey}` }
+                }, 5000);
+
+                if (response.ok) {
+                    const data = await response.json() as any;
+                    if (data && Array.isArray(data.data)) {
+                        discoveredFreeModels = data.data
+                            .filter((m: any) => m.id.endsWith(':free') || (m.pricing && m.pricing.prompt === "0" && m.pricing.completion === "0"))
+                            .map((m: any) => m.id);
+
+                        this.log('SYSTEM', `[MODEL DISCOVERY] ${discoveredFreeModels.length} kostenlose Modelle auf OpenRouter gefunden.`);
+                    }
+                }
+            } catch (e: any) {
+                this.log('WARNING', `[MODEL DISCOVERY] Fehler bei OpenRouter Discovery: ${e.message}`);
+            }
+
+            // Kombiniere Discovery und statische Kaskade, dedupliziere und filtere Blacklist
+            const combinedModels = Array.from(new Set([...discoveredFreeModels, ...OPENROUTER_MODEL_CASCADE]));
+            candidateModels = combinedModels.filter(m => !this.blacklisted_models.includes(m));
+
+            if (candidateModels.length === 0) candidateModels = combinedModels; // Fallback
         }
 
         // 2. Gemini als primäre oder sekundäre Option hinzufügen (falls API-Key vorhanden)
