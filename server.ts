@@ -2521,17 +2521,21 @@ app.post('/api/wallet/creator-address', async (req, res) => {
 
 async function start() {
   if (process.env.NODE_ENV !== 'production') {
+    // Vite Dev-Server für lokale Entwicklung
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
+    // Statischer Build für Railway-Produktion
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
   }
 
-   app.listen(PORT, '::', () => console.log(`[AGENT ZERO] Server live on Port ${PORT}`));
-  }
-  start();
+  // FIX: '::' lauscht auf IPv4 UND IPv6, damit der Railway Healthcheck durchgeht
+  app.listen(PORT, '::', () => console.log(`[AGENT ZERO] Server live on Port ${PORT}`));
+}
+start();
