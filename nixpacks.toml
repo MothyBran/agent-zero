@@ -1,8 +1,11 @@
 [phases.setup]
+# WICHTIG: Keine 'providers'-Variable nutzen! 
+# Wir laden Node, npm, Python und gcc explizit und genau einmal herunter.
 nixPkgs = ["nodejs_22", "npm-10_x", "python3", "gcc"]
 
 [phases.install]
-# Wir machen alles manuell, ohne Nixpacks Auto-Magic
+# Absolute manuelle Kontrolle: Kein automatisches Pfuschen von Nixpacks.
+# Wir installieren erst Node-Pakete, erstellen dann EINMAL das venv und laden die pip-Pakete.
 cmds = [
     "npm install",
     "python3 -m venv /opt/venv",
@@ -10,7 +13,11 @@ cmds = [
 ]
 
 [phases.build]
+# Baut das React/Vite-Frontend und das Backend
 cmds = ["npm run build"]
 
 [start]
+# Der PATH-Inject sorgt dafür, dass die server.ts und die Sandbox 
+# die Python-Pakete aus dem /opt/venv finden, ohne abzustürzen.
 cmd = "PATH=/opt/venv/bin:$PATH npm start"
+
