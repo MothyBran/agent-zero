@@ -265,11 +265,9 @@ export const MULTI_CHAIN_CONFIGS: Record<string, any> = {
 };
 
 const OPENROUTER_MODEL_CASCADE = [
-  "google/gemini-2.5-flash",
-  "meta-llama/llama-3.3-70b-instruct",
-  "deepseek/deepseek-chat",
-  "anthropic/claude-3.5-sonnet",
-  "openai/gpt-4o"
+  "openrouter/free",
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "qwen/qwen-2.5-72b-instruct:free"
 ];
 
 // Resolves hanging requests gracefully
