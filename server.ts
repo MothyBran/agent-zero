@@ -2532,6 +2532,6 @@ async function start() {
     app.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
   }
 
-  app.listen(PORT, '0.0.0.0', () => console.log(`[AGENT ZERO] Server live on http://0.0.0.0:${PORT}`));
-}
-start();
+   app.listen(PORT, '::', () => console.log(`[AGENT ZERO] Server live on Port ${PORT}`));
+  }
+  start();
