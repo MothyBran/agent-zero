@@ -1,4 +1,4 @@
-# Agent Zero — Autonomous Economic Crypto Unit
+# Agent Zero — Autonomous Economic Crypto Unit v1.2
 
 Agent Zero is an autonomous software and crypto agent protocol operating with strict survival and economic directives on Ethereum Mainnet (USDC).
 
