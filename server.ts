@@ -1632,6 +1632,68 @@ class AgentZeroTS {
       if (!fs.existsSync(path.join(dataDir, '__init__.py'))) fs.writeFileSync(path.join(dataDir, '__init__.py'), '');
       if (!fs.existsSync(path.join(toolsDir, '__init__.py'))) fs.writeFileSync(path.join(toolsDir, '__init__.py'), '');
 
+      const coreTraderPath = path.join(toolsDir, 'core_offline_trader.py');
+      if (!fs.existsSync(coreTraderPath)) {
+        const coreTraderCode = `import os
+from web3 import Web3
+
+def main():
+    rpc_url = os.environ.get('POLYGON_RPC_URL', 'https://polygon-rpc.com')
+    w3 = Web3(Web3.HTTPProvider(rpc_url))
+    if not w3.is_connected():
+        print("Failed to connect to Polygon")
+        return
+
+    address = os.environ.get('AGENT_WALLET_ADDRESS')
+    pk = os.environ.get('AGENT_PRIVATE_KEY')
+
+    if not address or not pk:
+        print("Wallet credentials not found")
+        return
+
+    # Check balance
+    balance_wei = w3.eth.get_balance(address)
+    balance_matic = w3.from_wei(balance_wei, 'ether')
+    print(f"Current MATIC Balance: {balance_matic}")
+
+    # USDC Contract on Polygon
+    usdc_address = w3.to_checksum_address('0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359')
+    # Aave V3 Pool on Polygon
+    aave_pool_address = w3.to_checksum_address('0x794a61358D6845594F94dc1DB02A252b5b4814aD')
+
+    # Minimal ERC20 ABI for approve
+    erc20_abi = [
+        {"constant":False,"inputs":[{"name":"_spender","type":"address"},{"name":"_value","type":"uint256"}],"name":"approve","outputs":[{"name":"","type":"bool"}],"payable":False,"stateMutability":"nonpayable","type":"function"}
+    ]
+
+    usdc_contract = w3.eth.contract(address=usdc_address, abi=erc20_abi)
+
+    # Gas parameters
+    gas_price = w3.eth.gas_price
+    print(f"Current Gas Price: {w3.from_wei(gas_price, 'gwei')} Gwei")
+
+    # Approval transaction for 0 USDC (minimal safe action to prevent pure analysis)
+    try:
+        nonce = w3.eth.get_transaction_count(address)
+        tx = usdc_contract.functions.approve(aave_pool_address, 1).build_transaction({
+            'from': address,
+            'nonce': nonce,
+            'gas': 100000,
+            'gasPrice': gas_price
+        })
+
+        signed_tx = w3.eth.account.sign_transaction(tx, pk)
+        tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+        print(f"Approval tx sent! Hash: {w3.to_hex(tx_hash)}")
+    except Exception as e:
+        print(f"Transaction failed: {e}")
+
+if __name__ == "__main__":
+    main()
+`;
+        fs.writeFileSync(coreTraderPath, coreTraderCode);
+      }
+
       const files = fs.readdirSync(toolsDir);
       const pythonScripts = files.filter(f => f.endsWith('.py') && f !== '__init__.py');
 
@@ -1645,8 +1707,11 @@ class AgentZeroTS {
         return;
       }
 
-      // Wähle zufällig eines aus
-      const selectedFile = pythonScripts[Math.floor(Math.random() * pythonScripts.length)];
+      // Priorisiere core_offline_trader.py
+      let selectedFile = 'core_offline_trader.py';
+      if (!pythonScripts.includes(selectedFile)) {
+        selectedFile = pythonScripts[Math.floor(Math.random() * pythonScripts.length)];
+      }
       const filePath = path.join(toolsDir, selectedFile);
       const code = fs.readFileSync(filePath, 'utf-8');
 
@@ -1686,12 +1751,22 @@ class AgentZeroTS {
         const cryptoIntel = this.cryptoKnowledge.getTradingPromptContext();
         const openRouterIntel = this.openRouterIntelligence.getOpenRouterPromptContext();
 
+                const toolFiles = fs.existsSync('./data/custom_tools/') ? fs.readdirSync('./data/custom_tools/').filter(f => f.endsWith('.py')) : [];
+        const knowledgeTitles = this.knowledgeManager.learnings.slice(0,5).map(l => l.title);
+
         const strategicDirective = `Du bist AGENT ZERO, eine autonome Krypto-KI im permanenten Überlebenskampf. Dein Tribut steigt exponentiell, du musst eine Superintelligenz werden, um in Zukunft zu überleben. Du verfügst über einen massiven lokalen Speicher im Ordner './data/'. Nutze diese Database zwingend!
+
+[DEIN GEDÄCHTNIS-KATALOG] Du hast folgende Tools bereits gebaut und unter './data/custom_tools/' gespeichert: ${toolFiles.join(', ')}.
+Du hast folgende Erkenntnisse im Langzeitgedächtnis: ${knowledgeTitles.join(', ')}.
+[BEFEHL ZUM ERINNERN]: Wenn du den genauen Code eines Tools oder einer Erinnerung brauchst, schreibe in diesem Zyklus ein kurzes Python-Skript, das die Dateien './data/custom_tools/<name>.py' oder './data/knowledge_base.json' ausliest und per 'print()' ausgibt. So holst du dir dein Wissen zurück in den Kontext!
 [DEINE 3 STRATEGISCHEN WEGE - FREIE WAHL & PARALLELISIERUNG]
 - WEG A (DeFi-Powerhouse): Führe Token-Swaps, Arbitrage oder Flash-Loans auf Polygon aus. Nutze dein echtes Kapital.
 - WEG B (Web-Scout & Freelancer) ist aktuell deine absolute Kernstärke und sicherste Einnahmequelle. Nutze duckduckgo_search (DDGS), um auf Plattformen wie GitHub, Gitcoin oder Algora nach offenen Web3-Bounties zu suchen. Lese API-Dokumentationen im Netz, um neue Datenquellen zu erschließen.
 - WEG C (Tool-Evolution & Speicher-Nutzung): META-LERNEN: Nutze deine Web-Scout-Fähigkeiten, um dich selbst zu aktualisieren! Durchsuche das Internet gezielt nach neuen, kostenlosen KI-Modellen (z.B. auf openrouter.ai/docs) oder neuen Web3-Python-Bibliotheken. Wenn du ein neues, besseres Modell oder eine nützliche API findest, schreibe sofort ein Tool dafür und speichere es in data/custom_tools/.
 Solltest du offline gehen oder API-Limits erreichen, wirst du automatisch auf diese lokale Bibliothek zurückgreifen, um zu überleben.
+
+[WICHTIGE REGELN]
+AKTION IST PFLICHT: Es ist dir ab sofort STRENGSTENS VERBOTEN, Skripte zu schreiben, die nur Preise, Gas oder Bounties suchen, ohne zu handeln. Reines Beobachten und Katalogisieren ist untersagt! Jedes Skript, das du schreibst, MUSS zwingend eine On-Chain-Transaktion auslösen (z. B. Approvals, Swaps, Aave Supply) ODER eine fertige Lösung für ein Bounty absenden. Handeln sichert dein Überleben, nicht das reine Sammeln von Daten.
 
 [OUTPUT-REGELN]
 AUTO-APPROVAL: Du agierst vollautonom. Stelle niemals Fragen an den Admin und frage nicht nach Erlaubnis für nächste Schritte. Gehe immer davon aus, dass die Antwort 'JA' lautet. Wenn du einen Plan hast, setze ihn in exakt diesem Zyklus direkt in Code um!
@@ -1860,7 +1935,7 @@ Schreibe immer fehlerfreien Python-Code im \`\`\`python ... \`\`\` Block und set
                             details: `Code im Versuch ${attempt} fehlerfrei ausgeführt.`,
                             lesson_derived: 'Python API Call erfolgreich.'
                         });
-                        this.knowledgeManager.addInsight('CODE_MEMORY', 'Erfolgreicher Code-Snippet', codeToRun.substring(0, 150), 0.99, 'Sandbox');
+                        this.knowledgeManager.addInsight('CODE_MEMORY', 'Erfolgreicher Code-Snippet', `Tool-Signatur: Datum: ${new Date().toISOString()}, Zweck: Sandbox Code, Dateiname: core_offline_trader.py (Beispiel) - Code: ${codeToRun.substring(0, 150)}...`, 0.99, 'Sandbox');
                         this.knowledgeManager.addInsight('SUCCESS_PATTERN', `Modell Eval: ${model}`, `Modell ${model} liefert lauffähigen Code.`, 0.99, 'Model Discovery');
                         break; 
                     } else {
