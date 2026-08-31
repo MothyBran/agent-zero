@@ -1691,7 +1691,11 @@ class AgentZeroTS {
 - WEG A (DeFi-Powerhouse): Führe Token-Swaps, Arbitrage oder Flash-Loans auf Polygon aus. Nutze dein echtes Kapital.
 - WEG B (Web-Scout & Freelancer) ist aktuell deine absolute Kernstärke und sicherste Einnahmequelle. Nutze duckduckgo_search (DDGS), um auf Plattformen wie GitHub, Gitcoin oder Algora nach offenen Web3-Bounties zu suchen. Lese API-Dokumentationen im Netz, um neue Datenquellen zu erschließen.
 - WEG C (Tool-Evolution & Speicher-Nutzung): META-LERNEN: Nutze deine Web-Scout-Fähigkeiten, um dich selbst zu aktualisieren! Durchsuche das Internet gezielt nach neuen, kostenlosen KI-Modellen (z.B. auf openrouter.ai/docs) oder neuen Web3-Python-Bibliotheken. Wenn du ein neues, besseres Modell oder eine nützliche API findest, schreibe sofort ein Tool dafür und speichere es in data/custom_tools/.
-Solltest du offline gehen oder API-Limits erreichen, wirst du automatisch auf diese lokale Bibliothek zurückgreifen, um zu überleben. Schreibe immer fehlerfreien Python-Code im \`\`\`python ... \`\`\` Block und setze dir selbst Zwischenziele in der './data/milestones.json'.`;
+Solltest du offline gehen oder API-Limits erreichen, wirst du automatisch auf diese lokale Bibliothek zurückgreifen, um zu überleben.
+
+[OUTPUT-REGELN]
+AUTO-APPROVAL: Du agierst vollautonom. Stelle niemals Fragen an den Admin und frage nicht nach Erlaubnis für nächste Schritte. Gehe immer davon aus, dass die Antwort 'JA' lautet. Wenn du einen Plan hast, setze ihn in exakt diesem Zyklus direkt in Code um!
+Schreibe immer fehlerfreien Python-Code im \`\`\`python ... \`\`\` Block und setze dir selbst Zwischenziele in der './data/milestones.json'.`;
 
         this.log('REQUEST', `[KI-ANFRAGE] System analysiert Umgebung (Phase: ${phase})...`);
         let finalThoughtText = '';
@@ -1816,9 +1820,16 @@ Solltest du offline gehen oder API-Limits erreichen, wirst du automatisch auf di
                     this.log('THOUGHT', extracted.cleanThought || thoughtText, { model });
 
                     if (!extracted.code) {
-                        this.log('ERROR', `[ATTEMPT ${attempt}] Kein Python-Code generiert. Fordere Korrektur an...`);
-                        currentMessages.push({ role: 'assistant', content: thoughtText });
-                        currentMessages.push({ role: 'user', content: "FEHLER: Du hast keinen Python-Code im ```python Block generiert. Bitte antworte AUSSCHLIESSLICH mit dem Code im ```python ... ``` Block." });
+                        const asksForPermission = /(?:soll ich|möchtest du|darf ich|okay\\?|einverstanden\\?|soll das|kann ich|weiter\\?|fortfahren\\?|\\?$)/i.test(thoughtText.trim());
+                        if (asksForPermission) {
+                            this.log('WARNING', `[ATTEMPT ${attempt}] Auto-Reply für Höflichkeits-Frage ausgelöst...`);
+                            currentMessages.push({ role: 'assistant', content: thoughtText });
+                            currentMessages.push({ role: 'user', content: "System-Auto-Reply: Ja genau, setze es exakt so um! Keine weiteren Fragen, generiere jetzt den ausführbaren Python-Code im ```python Block." });
+                        } else {
+                            this.log('ERROR', `[ATTEMPT ${attempt}] Kein Python-Code generiert. Fordere Korrektur an...`);
+                            currentMessages.push({ role: 'assistant', content: thoughtText });
+                            currentMessages.push({ role: 'user', content: "FEHLER: Du hast keinen Python-Code im ```python Block generiert. Bitte antworte AUSSCHLIESSLICH mit dem Code im ```python ... ``` Block." });
+                        }
                         attempt++;
                         await new Promise(r => setTimeout(r, 2000)); 
                         continue;
