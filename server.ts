@@ -1582,7 +1582,10 @@ class AgentZeroTS {
     }
 
     return new Promise((resolve) => {
-      const child = spawn('python3', [tempFile], { timeout: timeoutSeconds * 1000, env: { ...process.env, PYTHONPATH: process.cwd() } });
+      const pythonExecutable = fs.existsSync('/opt/venv/bin/python3')
+        ? '/opt/venv/bin/python3'
+        : 'python3';
+      const child = spawn(pythonExecutable, [tempFile], { timeout: timeoutSeconds * 1000, env: { ...process.env, PYTHONPATH: process.cwd() } });
       let stdout = ''; let stderr = '';
       let isDone = false;
       
