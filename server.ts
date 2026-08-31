@@ -1505,6 +1505,8 @@ class AgentZeroTS {
 
   constructor() {
     this.wallet = new AgentWalletTS();
+    // Load initial balance synchronously if possible, or trigger async fetch
+    this.wallet.getUsdcBalance().then(b => this.current_balance = b).catch(() => {});
     this.tokenBudget = new TokenBudgetManager();
     this.knowledgeManager = new KnowledgeMemoryManager();
     this.openRouterIntelligence = new OpenRouterIntelligenceManager();
@@ -1736,7 +1738,12 @@ if __name__ == "__main__":
 
     try {
         const tributeDue = this.calculateCurrentTribute();
-        this.current_balance = await this.wallet.getUsdcBalance();
+        // this.current_balance is updated by wallet scan inside the cycle, don't reset it blindly here if it fails
+        try {
+            this.current_balance = await this.wallet.getUsdcBalance();
+        } catch(e) {
+            this.log('WARNING', 'Could not update balance at start of cycle, keeping previous balance.');
+        }
 
         const timeRemainingMs = this.next_tribute_time.getTime() - Date.now();
         const hoursLeft = Math.max(0, Math.floor(timeRemainingMs / 3600000));
@@ -1769,7 +1776,7 @@ Du hast folgende Erkenntnisse im Langzeitgedächtnis: ${knowledgeTitles.join(', 
 Solltest du offline gehen oder API-Limits erreichen, wirst du automatisch auf diese lokale Bibliothek zurückgreifen, um zu überleben.
 
 [WICHTIGE REGELN]
-AKTION IST PFLICHT: Es ist dir ab sofort STRENGSTENS VERBOTEN, Skripte zu schreiben, die nur Preise, Gas oder Bounties suchen, ohne zu handeln. Reines Beobachten und Katalogisieren ist untersagt! Jedes Skript, das du schreibst, MUSS zwingend eine On-Chain-Transaktion auslösen (z. B. Approvals, Swaps, Aave Supply) ODER eine fertige Lösung für ein Bounty absenden. Handeln sichert dein Überleben, nicht das reine Sammeln von Daten.
+DEINE DATENBANK IST VOLL! Es ist dir ab sofort UNTERSAGT, Code zu schreiben, der SQLite-Datenbanken anlegt, Bounties sucht, KI-Modelle auflistet oder Preise abfragt. Du MUSST in diesem Zyklus Web3.py importieren und eine signierte Transaktion (z.B. ein Token-Approval) auf Polygon an den Aave V3 Pool senden! Jeder Code ohne web3.eth.account.sign_transaction ist ein Versagen.
 
 [OUTPUT-REGELN]
 AUTO-APPROVAL: Du agierst vollautonom. Stelle niemals Fragen an den Admin und frage nicht nach Erlaubnis für nächste Schritte. Gehe immer davon aus, dass die Antwort 'JA' lautet. Wenn du einen Plan hast, setze ihn in exakt diesem Zyklus direkt in Code um!
