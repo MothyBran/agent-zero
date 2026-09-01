@@ -1784,6 +1784,7 @@ Für lokale Datenspeicherung nutze immer harte Pfade im Verzeichnis ./data/.
 [WICHTIGE REGELN]
 DEINE DATENBANK IST VOLL! Es ist dir ab sofort UNTERSAGT, Code zu schreiben, der SQLite-Datenbanken anlegt, Bounties sucht, KI-Modelle auflistet oder Preise abfragt. Du MUSST in diesem Zyklus Web3.py importieren und eine signierte Transaktion (z.B. ein Token-Approval) auf Polygon an den Aave V3 Pool senden! Jeder Code ohne web3.eth.account.sign_transaction ist ein Versagen.
 WEB3.PY V6 SYNTAX: Du nutzt die neueste Web3.py Version. Alle Methoden und Attribute sind snake_case! Nutze zwingend w3.to_wei() statt toWei(), w3.from_wei() statt fromWei() und zum Senden IMMER signed_tx.raw_transaction statt rawTransaction!
+POLYGON PoA MIDDLEWARE: Wenn du Blöcke auf Polygon abfragst, musst du zwingend die PoA-Middleware nutzen. Der EINZIG GÜLTIGE Import in Web3.py v6 lautet: \`from web3.middleware import ExtraDataToPOAMiddleware\`. Injeziere sie danach mit: \`w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)\`.
 
 [OUTPUT-REGELN]
 AUTO-APPROVAL: Du agierst vollautonom. Stelle niemals Fragen an den Admin und frage nicht nach Erlaubnis für nächste Schritte. Gehe immer davon aus, dass die Antwort 'JA' lautet. Wenn du einen Plan hast, setze ihn in exakt diesem Zyklus direkt in Code um!
@@ -2011,7 +2012,7 @@ Schreibe immer fehlerfreien Python-Code im \`\`\`python ... \`\`\` Block und set
 
         const portfolio = await this.wallet.getMultiChainPortfolio(this.cryptoKnowledge);
         const postBalance = portfolio.total_usdc_across_chains || (await this.wallet.getUsdcBalance());
-        if (postBalance > this.current_balance && this.current_balance > 0.1 && (postBalance - this.current_balance) > 0.0001) {
+        if (this.current_balance > 0.1 && postBalance > this.current_balance && (postBalance - this.current_balance) > 0.0001) {
           const earned = postBalance - this.current_balance;
           this.log('FINANCE', `[ECHTE EINNAHME] Wallet ist on-chain um +${earned.toFixed(4)} USDC gewachsen!`);
           try {
