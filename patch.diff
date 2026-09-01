@@ -1,0 +1,12 @@
+--- server.ts
++++ server.ts
+@@ -1586,9 +1586,7 @@
+
+     return new Promise((resolve) => {
+-      const pythonExecutable = '/opt/venv/bin/python3';//
+-
+-
++      const pythonExecutable = '/opt/venv/bin/python3';
+       const child = spawn(pythonExecutable, [tempFile], { timeout: timeoutSeconds * 1000, env: { ...process.env, PYTHONPATH: process.cwd() } });
+       let stdout = ''; let stderr = '';
+       let isDone = false;

@@ -94,7 +94,7 @@ app.post('/api/auth/login', (req, res) => {
 const CYCLE_SLEEP_SECONDS = 300; // 1-Minuten Loop (Aggressives Takt-Intervall)
 const FIRST_TRIBUTE_HOURS = 48;
 const TRIBUTE_INTERVAL_HOURS = 48;
-const INITIAL_TRIBUTE = 1.0; 
+const INITIAL_TRIBUTE = 1.0;
 const TRIBUTE_MULTIPLIER = 1.10;
 
 function resolveStorageConfiguration() {
@@ -173,10 +173,10 @@ export const MULTI_CHAIN_CONFIGS: Record<string, any> = {
     coingeckoNativeId: 'polygon-ecosystem-token',
     fallbackPrice: 0.1143,
     rpcUrls: [
-      process.env.POLYGON_RPC_URL || '', 
-      'https://polygon-rpc.com', 
-      'https://rpc.ankr.com/polygon', 
-      'https://polygon.llamarpc.com', 
+      process.env.POLYGON_RPC_URL || '',
+      'https://polygon-rpc.com',
+      'https://rpc.ankr.com/polygon',
+      'https://polygon.llamarpc.com',
       'https://polygon-bor-rpc.publicnode.com'
     ].filter(Boolean),
     tokens: [
@@ -289,8 +289,8 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: nu
 // ==========================================
 
 export class TokenBudgetManager {
-  public daily_limit: number = 500000; 
-  public rpm_limit: number = 30; 
+  public daily_limit: number = 500000;
+  public rpm_limit: number = 30;
   private recentRequests: number[] = [];
   public tokens_used_today: number = 0;
   public tokens_saved_by_compression: number = 0;
@@ -671,10 +671,10 @@ export class OpenRouterIntelligenceManager {
   }
 
   public getOpenRouterPromptContext(): string {
-    const activeHeader = this.rate_limit_headers.remaining_tokens 
+    const activeHeader = this.rate_limit_headers.remaining_tokens
       ? `Rate-Limit: ${this.rate_limit_headers.remaining_tokens}/${this.rate_limit_headers.limit_tokens || 70000} TPM verbleibend`
       : 'Rate-Limit: Normalbetrieb';
-    
+
     return `[OPENROUTER MODEL INTELLIGENCE & CAPABILITIES:
 - Primary Code Engine: llama-3.3-70b-versatile (131k Ctx, 280 tps, Temp: 0.1-0.2)
 - High-Speed Reflex Engine: llama-3.1-8b-instant (131k Ctx, 800 tps, Temp: 0.1)
@@ -1012,8 +1012,8 @@ export function normalizeEvmAddress(input: string | undefined | null): string {
 }
 
 class AgentWalletTS {
-  public address: string = ''; 
-  public creatorAddress: string = ''; 
+  public address: string = '';
+  public creatorAddress: string = '';
   public hasSigner: boolean = false;
   public onChainUsdcBalance: number = 0.0;
   public onChainPolBalance: number = 0.0;
@@ -1023,7 +1023,7 @@ class AgentWalletTS {
 
   constructor() {
     const rawKeyEnv = process.env.AGENT_PRIVATE_KEY || process.env.WALLET_PRIVATE_KEY || process.env.PRIVATE_KEY || '';
-    
+
     if (rawKeyEnv) {
       let rawKey = rawKeyEnv.replace(/[^a-fA-F0-9]/g, '');
       if (rawKey.length >= 64) {
@@ -1037,7 +1037,7 @@ class AgentWalletTS {
         }
       }
     }
-    
+
     let savedAddress = '';
     let savedCreator = '';
     try {
@@ -1113,7 +1113,7 @@ class AgentWalletTS {
       for (const rpcUrl of chainConfig.rpcUrls) {
         try {
           const rpc = new ethers.JsonRpcProvider(rpcUrl, { chainId: chainConfig.chainId, name: chainKey }, { staticNetwork: true });
-          
+
           // Native Gas Balance
           const rawBal = await Promise.race([
             rpc.getBalance(this.address),
@@ -1250,8 +1250,8 @@ class AgentWalletTS {
   }
 
   public async getUsdcBalance(): Promise<number> {
-    if (!this.address) return 0.0; 
-    
+    if (!this.address) return 0.0;
+
     const rpcPool = [
       process.env.POLYGON_RPC_URL,
       'https://polygon-rpc.com',
@@ -1264,7 +1264,7 @@ class AgentWalletTS {
     for (const rpcUrl of rpcPool) {
       try {
         const rpc = new ethers.JsonRpcProvider(rpcUrl, { chainId: 137, name: 'polygon' }, { staticNetwork: true });
-        
+
         // 1. Native USDC
         const c1 = new ethers.Contract(MULTI_CHAIN_CONFIGS.polygon.usdcAddress, ERC20_BALANCE_ABI, rpc);
         const bal1 = await Promise.race([
@@ -1297,9 +1297,9 @@ class AgentWalletTS {
 
         const total = usdcNative + usdcBridged;
         this.onChainUsdcBalance = total;
-        return total; 
+        return total;
       } catch (e) {
-        continue; 
+        continue;
       }
     }
 
@@ -1311,7 +1311,7 @@ class AgentWalletTS {
     if (!this.hasSigner || !this.signer || !targetAddr) {
       return { success: false, txHash: '', message: 'Kein Private Key (AGENT_PRIVATE_KEY) oder keine Creator-Zieladresse hinterlegt.' };
     }
-    
+
     if (!ethers.isAddress(targetAddr)) {
       return { success: false, txHash: '', message: `Ungültige Creator-Zieladresse: ${toAddress}` };
     }
@@ -1364,13 +1364,13 @@ class AgentWalletTS {
         try {
           const feeData = await rpc.getFeeData();
           const minPriority = ethers.parseUnits('35', 'gwei');
-          const priority = feeData.maxPriorityFeePerGas && feeData.maxPriorityFeePerGas > minPriority 
-            ? (feeData.maxPriorityFeePerGas * 130n / 100n) 
+          const priority = feeData.maxPriorityFeePerGas && feeData.maxPriorityFeePerGas > minPriority
+            ? (feeData.maxPriorityFeePerGas * 130n / 100n)
             : minPriority;
-          const maxFee = feeData.maxFeePerGas 
-            ? (feeData.maxFeePerGas * 130n / 100n) 
+          const maxFee = feeData.maxFeePerGas
+            ? (feeData.maxFeePerGas * 130n / 100n)
             : ethers.parseUnits('70', 'gwei');
-          
+
           txOverrides = {
             maxPriorityFeePerGas: priority,
             maxFeePerGas: maxFee
@@ -1379,14 +1379,14 @@ class AgentWalletTS {
 
         const tx = await tokenContract.transfer(targetAddr, parsedUnits, txOverrides);
         const receipt = await tx.wait(1);
-        return { 
-          success: true, 
-          txHash: tx.hash, 
-          message: `Tribut on-chain erfolgreich übertragen (${tokenName}) an ${targetAddr}. Block: ${receipt?.blockNumber || 'bestätigt'}` 
+        return {
+          success: true,
+          txHash: tx.hash,
+          message: `Tribut on-chain erfolgreich übertragen (${tokenName}) an ${targetAddr}. Block: ${receipt?.blockNumber || 'bestätigt'}`
         };
       } catch (err: any) {
         lastError = err.shortMessage || err.reason || err.message || 'RPC Transaktionsfehler';
-        continue; 
+        continue;
       }
     }
     return { success: false, txHash: '', message: lastError || 'Alle RPC-Verbindungen fehlgeschlagen.' };
@@ -1462,7 +1462,7 @@ export function extractPythonCode(rawText: string): { code: string | null; clean
 export function sanitizePythonCode(code: string): string {
   if (!code) return '';
   let cleanCode = code.trim();
-  
+
   // 1. Dedent: Entferne führende Leerzeichen
   const lines = cleanCode.split('\n');
   const nonEmptyLines = lines.filter((l: string) => l.trim().length > 0);
@@ -1499,8 +1499,8 @@ class AgentZeroTS {
   public birth_time: Date = new Date(); public next_tribute_time: Date = new Date();
   public is_running: boolean = false; public is_terminated: boolean = false;
   public shutdown_reason: string = ''; public jobs_completed: number = 0; public logs: LogItem[] = [];
-  public active_model: string = 'Init...'; 
-  public blacklisted_models: string[] = []; 
+  public active_model: string = 'Init...';
+  public blacklisted_models: string[] = [];
   private timer: NodeJS.Timeout | null = null; private isProcessingCycle: boolean = false;
 
   constructor() {
@@ -1514,7 +1514,7 @@ class AgentZeroTS {
     this.taskMemory = new TaskMemoryManager();
     this.milestoneManager = new MilestoneManager();
 
-    this.loadState(); 
+    this.loadState();
     this.syncBalanceInitial();
   }
 
@@ -1537,14 +1537,14 @@ class AgentZeroTS {
 
   public saveState() {
     try {
-      const state = { 
-        tributes_paid: this.tributes_paid, 
-        birth_time: this.birth_time.toISOString(), 
-        next_tribute_time: this.next_tribute_time.toISOString(), 
-        is_terminated: this.is_terminated, 
-        shutdown_reason: this.shutdown_reason, 
+      const state = {
+        tributes_paid: this.tributes_paid,
+        birth_time: this.birth_time.toISOString(),
+        next_tribute_time: this.next_tribute_time.toISOString(),
+        is_terminated: this.is_terminated,
+        shutdown_reason: this.shutdown_reason,
         jobs_completed: this.jobs_completed,
-        blacklisted_models: this.blacklisted_models 
+        blacklisted_models: this.blacklisted_models
       };
       fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
     } catch {}
@@ -1575,7 +1575,7 @@ class AgentZeroTS {
     const startMs = Date.now();
     this.log('TOOL', `[PYTHON SANDBOX] Führe Skript aus: ${purpose}...`);
     const tempFile = path.join(process.cwd(), `tmp_${Date.now()}.py`);
-    
+
     try {
       const sanitized = sanitizePythonCode(code);
       fs.writeFileSync(tempFile, sanitized, 'utf-8');
@@ -1584,11 +1584,13 @@ class AgentZeroTS {
     }
 
     return new Promise((resolve) => {
-      const pythonExecutable = '/opt/venv/bin/python3';
+      const pythonExecutable = '/opt/venv/bin/python3';//
+
+
       const child = spawn(pythonExecutable, [tempFile], { timeout: timeoutSeconds * 1000, env: { ...process.env, PYTHONPATH: process.cwd() } });
       let stdout = ''; let stderr = '';
       let isDone = false;
-      
+
       const timer = setTimeout(() => {
           if(!isDone) {
             isDone = true;
@@ -1731,7 +1733,7 @@ if __name__ == "__main__":
     if (this.is_terminated || this.isProcessingCycle) {
         return { thought: 'System blocked.', actions: [], model: 'NONE' };
     }
-    
+
     this.isProcessingCycle = true;
 
     try {
@@ -1796,7 +1798,7 @@ Schreibe immer fehlerfreien Python-Code im \`\`\`python ... \`\`\` Block und set
         const rawGroqKey = process.env.OPENROUTER_API_KEY || process.env.GROQ_API_KEY || process.env.FREE_LLM_API_KEY || '';
         const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY);
         const budgetCheck = this.tokenBudget.canMakeRequest();
-        
+
         const rawOpenRouterKey = process.env.OPENROUTER_API_KEY || process.env.GROQ_API_KEY || process.env.FREE_LLM_API_KEY || '';
         let candidateModels: string[] = [];
 
@@ -1852,10 +1854,10 @@ Schreibe immer fehlerfreien Python-Code im \`\`\`python ... \`\`\` Block und set
             }
             if (this.blacklisted_models.includes(model)) continue;
             this.active_model = `OpenRouter (${model})`;
-            
+
             const maxAttempts = 3;
             let attempt = 1;
-            
+
             const { compressedSystem, compressedUser, tokensSaved } = this.tokenBudget.compressPrompt(strategicDirective, "Erstelle das Python-Skript zur Datensammlung.");
             const currentMessages: any[] = [
               { role: 'system', content: compressedSystem },
@@ -1866,7 +1868,7 @@ Schreibe immer fehlerfreien Python-Code im \`\`\`python ... \`\`\` Block und set
                 try {
                     this.log('SYSTEM', `[ATTEMPT ${attempt}/${maxAttempts}] Generiere Code mit Modell ${model}...`);
                     let thoughtText = '';
-                    
+
                     if (!rawOpenRouterKey) {
                         throw new Error('OPENROUTER_API_KEY nicht gesetzt.');
                     }
@@ -1889,7 +1891,7 @@ Schreibe immer fehlerfreien Python-Code im \`\`\`python ... \`\`\` Block und set
                           },
                           body: JSON.stringify(reqBody)
                       }, 20000);
-                      
+
                       if (res.headers) this.openRouterIntelligence.recordRateLimitHeaders(res.headers);
                       if (!res.ok) {
                         const errBody = await res.text().catch(() => '');
@@ -1899,7 +1901,7 @@ Schreibe immer fehlerfreien Python-Code im \`\`\`python ... \`\`\` Block und set
                             }
                             this.log('WARNING', `Rate limit 429 reached for ${model}. Blacklisting...`);
                         }
-                        throw new Error(`HTTP ${res.status}${errBody ? ` (${errBody.slice(0, 100)})` : ''}`); 
+                        throw new Error(`HTTP ${res.status}${errBody ? ` (${errBody.slice(0, 100)})` : ''}`);
                       }
 
                       const data = await res.json();
@@ -1923,12 +1925,12 @@ Schreibe immer fehlerfreien Python-Code im \`\`\`python ... \`\`\` Block und set
                             currentMessages.push({ role: 'user', content: "FEHLER: Du hast keinen Python-Code im ```python Block generiert. Bitte antworte AUSSCHLIESSLICH mit dem Code im ```python ... ``` Block." });
                         }
                         attempt++;
-                        await new Promise(r => setTimeout(r, 2000)); 
+                        await new Promise(r => setTimeout(r, 2000));
                         continue;
                     }
 
                     let codeToRun = extracted.code;
-                    
+
                     // DEDENT: Entfernt führende Leerzeichen
                     let lines = codeToRun.split('\n');
                     const nonEmptyLines = lines.filter((l: string) => l.trim().length > 0);
@@ -1941,7 +1943,7 @@ Schreibe immer fehlerfreien Python-Code im \`\`\`python ... \`\`\` Block und set
                     codeToRun = codeToRun.trim();
 
                     const execRes = await this.executeDynamicPythonCode(codeToRun, `Auto-Execution Attempt ${attempt}`, 20);
-                    
+
                     if (execRes.success) {
                         executionSuccess = true;
                         actionsTaken.push(`Executed Sandbox Code (Exit 0) on attempt ${attempt}`);
@@ -1954,7 +1956,7 @@ Schreibe immer fehlerfreien Python-Code im \`\`\`python ... \`\`\` Block und set
                         });
                         this.knowledgeManager.addInsight('CODE_MEMORY', 'Erfolgreicher Code-Snippet', `Tool-Signatur: Datum: ${new Date().toISOString()}, Zweck: Sandbox Code, Dateiname: core_offline_trader.py (Beispiel) - Code: ${codeToRun.substring(0, 150)}...`, 0.99, 'Sandbox');
                         this.knowledgeManager.addInsight('SUCCESS_PATTERN', `Modell Eval: ${model}`, `Modell ${model} liefert lauffähigen Code.`, 0.99, 'Model Discovery');
-                        break; 
+                        break;
                     } else {
                         this.log('ERROR', `[ATTEMPT ${attempt}] Code gecrasht. Starte Selbst-Korrektur (Self-Correction Loop)...`);
                         actionsTaken.push(`Execution Failed (Exit ${execRes.exit_code}) on attempt ${attempt}`);
@@ -1964,7 +1966,7 @@ Schreibe immer fehlerfreien Python-Code im \`\`\`python ... \`\`\` Block und set
                             status: 'FAILURE', reward_usdc: 0, execution_ms: execRes.execution_ms,
                             details: `Crash in Versuch ${attempt}: ${(execRes.stderr || execRes.stdout).substring(0, 100)}...`
                         });
-                        
+
                         let errorHelp = '';
                         const errText = execRes.stderr || execRes.stdout;
                         if (errText.includes("No module named 'requests'")) {
@@ -1996,7 +1998,7 @@ Schreibe immer fehlerfreien Python-Code im \`\`\`python ... \`\`\` Block und set
             } else if (attempt > maxAttempts) {
                 this.log('ERROR', `Modell ${model} konnte den Code nach ${maxAttempts} Versuchen nicht reparieren.`);
                 this.knowledgeManager.addInsight('ERROR_RECOVERY', 'Self-Correction Failed', `Modell ${model} konnte den Code nach 3 Versuchen nicht reparieren.`, 0.85, 'Sandbox Eval');
-                break; 
+                break;
             }
           } // End For Loop (Models)
 
@@ -2068,15 +2070,15 @@ Schreibe immer fehlerfreien Python-Code im \`\`\`python ... \`\`\` Block und set
     if (this.is_terminated || this.is_running) return;
     this.is_running = true;
     this.log('SYSTEM', `Autonomer Zyklus aktiviert. Initialer Denkprozess startet...`);
-    
+
     // Direkt anstoßen und alle Fehler catchen, falls `finally` versagt
     this.thinkAndAct().catch((e: any) => {
        this.log('ERROR', `Kritischer asynchroner Startfehler abgefangen: ${e.message}`);
        this.isProcessingCycle = false;
     });
-    
+
     // Heartbeat-Timer
-    this.timer = setInterval(() => { 
+    this.timer = setInterval(() => {
       if (this.is_running && !this.is_terminated) {
          this.thinkAndAct().catch((e: any) => {
            this.log('ERROR', `Kritischer asynchroner Timerfehler abgefangen: ${e.message}`);
@@ -2239,7 +2241,7 @@ app.post('/api/agent/revive', (req, res) => {
 app.get('/api/intelligence/evaluation', (req, res) => {
   const taskStats = agentZero.taskMemory.getStats();
   const evolution = agentZero.knowledgeManager.getEvolutionStats(agentZero.tributes_paid, agentZero.milestoneManager.milestones.filter(m => m.is_completed).length, taskStats);
-  
+
   res.json({
     iq_score: evolution.evolution_iq_score,
     evolution_tier: evolution.evolution_tier,
@@ -2262,7 +2264,7 @@ app.get('/api/intelligence/evaluation', (req, res) => {
       tokens_consumed_today: agentZero.tokenBudget.tokens_used_today,
       conservation_mode: agentZero.tokenBudget.conservation_mode
     },
-    reasoning_stream: [] 
+    reasoning_stream: []
   });
 });
 
@@ -2501,7 +2503,7 @@ app.post('/api/crypto/research', async (req, res) => {
     } catch {}
 
     const insightTitle = `Live DeFi Markt-Scan: ${new Date().toLocaleDateString('de-DE')} ${new Date().toLocaleTimeString('de-DE')}`;
-    const topYieldSummary = topYieldPools.length > 0 
+    const topYieldSummary = topYieldPools.length > 0
       ? `Top Rendite: ${topYieldPools.map(p => `${p.project} (${p.symbol}) APY: ${p.apy}%`).join(' | ')}`
       : 'Polygon Aave V3 & QuickSwap V3 Pools stabil mit ~3.8-6.2% APY.';
 
