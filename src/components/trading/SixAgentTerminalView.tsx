@@ -5,6 +5,7 @@ import {
   TradingPosition,
   OrderTarget
 } from '../../types/trading';
+import { MarketSentimentWidget } from './MarketSentimentWidget';
 import {
   Search,
   Filter,
@@ -445,6 +446,15 @@ export const SixAgentTerminalView: React.FC<SixAgentTerminalViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Dedicated Real-Time Market Sentiment & Orderbook Imbalance Widget */}
+      {state.marketSentiment && (
+        <MarketSentimentWidget
+          sentiment={state.marketSentiment}
+          autoPilotEnabled={state.autoPilotEnabled}
+          analystThreshold={state.strategy.analystPassThreshold}
+        />
+      )}
 
       {/* Main 12-Column Six-Agent Workbench Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">

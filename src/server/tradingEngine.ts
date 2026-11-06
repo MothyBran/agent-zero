@@ -17,6 +17,8 @@ import {
   OptimizationLog,
   ModePortfolioState,
   TerminalLogLine,
+  MarketSentimentTelemetry,
+  OrderbookDepthSnapshot,
   TradingSystemState
 } from '../types/trading';
 
@@ -36,6 +38,8 @@ export type {
   OptimizationLog,
   ModePortfolioState,
   TerminalLogLine,
+  MarketSentimentTelemetry,
+  OrderbookDepthSnapshot,
   TradingSystemState
 };
 
@@ -176,6 +180,8 @@ export class MultiAssetTradingEngine {
   private terminalLogLines: TerminalLogLine[] = [];
   private recentActivityLogs: TradingSystemState['recentActivityLogs'] = [];
   private pipeline: PipelineTelemetry;
+  private marketSentiment: MarketSentimentTelemetry;
+  private lastFearGreedFetchMs: number = 0;
   private ruleKillCounters: number[] = [0, 0, 0, 0, 0, 0, 0, 0];
   private rotationCursor: number = 0;
   private fastTickTimer: NodeJS.Timeout | null = null;
@@ -206,6 +212,29 @@ export class MultiAssetTradingEngine {
     this.strategy = this.loadStrategy();
     this.demoPortfolio = this.loadPortfolio('DEMO');
     this.livePortfolio = this.loadPortfolio('LIVE');
+
+    this.marketSentiment = {
+      updatedAt: new Date().toISOString(),
+      fearAndGreedIndex: 50,
+      fearAndGreedPrevious: 50,
+      fearAndGreedDelta: 0,
+      fearAndGreedLabel: 'Lade Live-Daten...',
+      fearAndGreedSource: 'Alternative.me Crypto F&G API',
+      aggregateBidRatioPct: 50,
+      aggregateImbalancePct: 0,
+      totalAnalyzedBookUsd: 0,
+      orderbookSnapshots: [],
+      advancingCount: 0,
+      decliningCount: 0,
+      breadthBullishPct: 50,
+      avgRsi14: 50,
+      avgVolatilityPct: 1.0,
+      tradeFavorabilityScore: 65,
+      timingStatus: 'FAVORABLE_SELECTIVE',
+      timingHeadline: 'Initialisiere Echtzeit-Marktstimmung & Orderbuch-Tiefe...',
+      timingExplanation: 'Verbinde mit Alternative.me Fear & Greed Feed und Binance L2 Orderbuch-Stream.',
+      autoExecutionImpact: 'Vollautomatischer 6-Agenten-Handel aktiv (Filter ≥ 8/8 Regeln · Analyst ≥ 70/100).'
+    };
 
     this.pipeline = {
       activeStage: 'SCOUT',
@@ -578,13 +607,17 @@ export class MultiAssetTradingEngine {
     this.pipeline.currentFilterRuleIndex = 8;
     this.pipeline.analystScoredCount += 1;
 
-    // 3. ANALYST stage: Score 0-100 across 6 quantitative dimensions
+    // 3. ANALYST stage: Score 0-100 across 6 quantitative dimensions (enriched by real-time L2 Orderbook Imbalance & Sentiment)
+    const matchingBook = this.marketSentiment.orderbookSnapshots.find(b => b.symbol === candidate.symbol);
+    const liveBidRatio = matchingBook ? matchingBook.bidRatioPct : this.marketSentiment.aggregateBidRatioPct;
+    const orderbookEdgeBoost = Math.round((liveBidRatio - 50) * 0.35);
+
     const momentum = Math.min(99, Math.max(42, Math.round(52 + Math.abs(candidate.confluenceScore) * 0.48)));
     const uniqueBuyersOrVolume = Math.min(98, Math.max(55, Math.round(64 + (candidate.volume24h > 0 ? 22 : 12))));
-    const buySellRatio = Math.min(96, Math.max(48, Math.round(58 + (candidate.change24hPct >= 0 ? 20 : 12))));
+    const buySellRatio = Math.min(98, Math.max(40, Math.round(58 + (candidate.change24hPct >= 0 ? 18 : 10) + orderbookEdgeBoost)));
     const trendGrowth = Math.min(97, Math.max(45, Math.round(candidate.indicators.ema9 >= candidate.indicators.ema21 ? 78 : 66)));
     const liquidityEfficiency = Math.min(99, Math.max(60, Math.round(92 - candidate.spreadBps * 5)));
-    const smartFlowConfluence = Math.min(98, Math.max(50, Math.round(62 + Math.abs(0.5 - candidate.indicators.bollingerPctB) * 65)));
+    const smartFlowConfluence = Math.min(98, Math.max(50, Math.round(62 + Math.abs(0.5 - candidate.indicators.bollingerPctB) * 65 + (orderbookEdgeBoost * 0.5))));
 
     const finalScore = Math.round(
       (momentum * 0.22) +
@@ -1167,6 +1200,9 @@ export class MultiAssetTradingEngine {
         this.lastTickAt = new Date().toISOString();
       }
 
+      // Refresh live Fear & Greed Index + L2 Orderbook Depth Imbalance + Market Breadth
+      await this.refreshMarketSentimentTelemetry();
+
       // Run 2 steps of the 6-agent pipeline on fresh scan
       this.stepSixAgentPipeline();
       this.stepSixAgentPipeline();
@@ -1715,6 +1751,203 @@ Fasse in 2 kurzen Sätzen auf Deutsch die Strategie-Optimierung zusammen:
     return this.getState();
   }
 
+  private async refreshMarketSentimentTelemetry(): Promise<void> {
+    const nowMs = Date.now();
+
+    // 1. Live Crypto Fear & Greed Index from Alternative.me (refresh every 5 minutes)
+    let fgValue = this.marketSentiment.fearAndGreedIndex || 50;
+    let fgPrev = this.marketSentiment.fearAndGreedPrevious || 50;
+    let fgLabel = this.marketSentiment.fearAndGreedLabel;
+    let fgSource = this.marketSentiment.fearAndGreedSource;
+
+    if (nowMs - this.lastFearGreedFetchMs > 300_000 || fgLabel === 'Lade Live-Daten...') {
+      try {
+        const fgRes = await this.fetchWithTimeout('https://api.alternative.me/fng/?limit=2', 4500);
+        if (fgRes.ok) {
+          const fgJson = await fgRes.json();
+          const dataArr = fgJson?.data;
+          if (Array.isArray(dataArr) && dataArr.length >= 1) {
+            const todayVal = parseInt(dataArr[0].value, 10);
+            const yesterdayVal = dataArr[1] ? parseInt(dataArr[1].value, 10) : todayVal;
+            if (!isNaN(todayVal)) {
+              fgValue = todayVal;
+              fgPrev = !isNaN(yesterdayVal) ? yesterdayVal : todayVal;
+              fgLabel = dataArr[0].value_classification || 'Neutral';
+              fgSource = 'Alternative.me Crypto Fear & Greed Live';
+              this.lastFearGreedFetchMs = nowMs;
+            }
+          }
+        }
+      } catch {
+        // Fallback: derive live sentiment from real-time market quotes RSI & 24h momentum if Alternative.me is unreachable
+      }
+    }
+
+    // 2. Live Binance Spot L2 Orderbook Depth Imbalance (Top 20 Bids vs Top 20 Asks)
+    const depthPairs: { symbol: string; displaySymbol: string; binanceSymbol: string }[] = [
+      { symbol: 'BTC', displaySymbol: '$BTC', binanceSymbol: 'BTCUSDT' },
+      { symbol: 'ETH', displaySymbol: '$ETH', binanceSymbol: 'ETHUSDT' },
+      { symbol: 'SOL', displaySymbol: '$SOL', binanceSymbol: 'SOLUSDT' },
+      { symbol: 'POL', displaySymbol: '$POL', binanceSymbol: 'POLUSDT' }
+    ];
+
+    const snapshots: OrderbookDepthSnapshot[] = [];
+    let totalBidsUsd = 0;
+    let totalAsksUsd = 0;
+
+    await Promise.all(
+      depthPairs.map(async pair => {
+        try {
+          const res = await this.fetchWithTimeout(
+            `https://api.binance.com/api/v3/depth?symbol=${pair.binanceSymbol}&limit=20`,
+            3500
+          );
+          if (!res.ok) return;
+          const book = await res.json();
+          const bids: [string, string][] = Array.isArray(book?.bids) ? book.bids : [];
+          const asks: [string, string][] = Array.isArray(book?.asks) ? book.asks : [];
+          if (bids.length === 0 || asks.length === 0) return;
+
+          let bidVolUsd = 0;
+          for (const [pStr, qStr] of bids) {
+            const p = parseFloat(pStr);
+            const q = parseFloat(qStr);
+            if (p > 0 && q > 0) bidVolUsd += p * q;
+          }
+
+          let askVolUsd = 0;
+          for (const [pStr, qStr] of asks) {
+            const p = parseFloat(pStr);
+            const q = parseFloat(qStr);
+            if (p > 0 && q > 0) askVolUsd += p * q;
+          }
+
+          const bestBid = parseFloat(bids[0][0]) || 0;
+          const bestAsk = parseFloat(asks[0][0]) || 0;
+          const mid = (bestBid + bestAsk) / 2;
+          const spreadBps = mid > 0 ? Number((((bestAsk - bestBid) / mid) * 10000).toFixed(2)) : 1.0;
+
+          const totalBook = bidVolUsd + askVolUsd;
+          const bidRatioPct = totalBook > 0 ? Number(((bidVolUsd / totalBook) * 100).toFixed(1)) : 50;
+          const imbalancePct = totalBook > 0 ? Number((((bidVolUsd - askVolUsd) / totalBook) * 100).toFixed(1)) : 0;
+
+          let pressureLabel: OrderbookDepthSnapshot['pressureLabel'] = 'BALANCED';
+          if (imbalancePct >= 22) pressureLabel = 'STRONG_BUY_WALL';
+          else if (imbalancePct >= 7) pressureLabel = 'BUY_PRESSURE';
+          else if (imbalancePct <= -22) pressureLabel = 'STRONG_SELL_WALL';
+          else if (imbalancePct <= -7) pressureLabel = 'SELL_PRESSURE';
+
+          totalBidsUsd += bidVolUsd;
+          totalAsksUsd += askVolUsd;
+
+          snapshots.push({
+            symbol: pair.symbol,
+            displaySymbol: pair.displaySymbol,
+            bidVolumeUsd: Math.round(bidVolUsd),
+            askVolumeUsd: Math.round(askVolUsd),
+            bidRatioPct,
+            imbalancePct,
+            bestBid,
+            bestAsk,
+            spreadBps,
+            pressureLabel
+          });
+        } catch {}
+      })
+    );
+
+    // Keep stable order BTC, ETH, SOL, POL
+    snapshots.sort((a, b) => {
+      const order = ['BTC', 'ETH', 'SOL', 'POL'];
+      return order.indexOf(a.symbol) - order.indexOf(b.symbol);
+    });
+
+    const totalAnalyzedBookUsd = Math.round(totalBidsUsd + totalAsksUsd);
+    const aggregateBidRatioPct = totalAnalyzedBookUsd > 0
+      ? Number(((totalBidsUsd / totalAnalyzedBookUsd) * 100).toFixed(1))
+      : this.marketSentiment.aggregateBidRatioPct;
+    const aggregateImbalancePct = totalAnalyzedBookUsd > 0
+      ? Number((((totalBidsUsd - totalAsksUsd) / totalAnalyzedBookUsd) * 100).toFixed(1))
+      : this.marketSentiment.aggregateImbalancePct;
+
+    // 3. Multi-Asset Market Breadth & Volatility Regime from live quotes
+    const quotes = this.marketQuotes;
+    const advancingCount = quotes.filter(q => q.change24hPct > 0).length;
+    const decliningCount = quotes.filter(q => q.change24hPct < 0).length;
+    const breadthBullishPct = quotes.length > 0
+      ? Math.round((advancingCount / quotes.length) * 100)
+      : 50;
+    const avgRsi14 = quotes.length > 0
+      ? Number((quotes.reduce((acc, q) => acc + q.indicators.rsi14, 0) / quotes.length).toFixed(1))
+      : 50;
+    const avgVolatilityPct = quotes.length > 0
+      ? Number((quotes.reduce((acc, q) => acc + q.indicators.volatilityPct, 0) / quotes.length).toFixed(2))
+      : 1.0;
+
+    if (fgLabel === 'Lade Live-Daten...') {
+      fgValue = Math.round((avgRsi14 * 0.6) + (breadthBullishPct * 0.4));
+      fgPrev = fgValue;
+      fgLabel = fgValue >= 75 ? 'Extreme Greed' : fgValue >= 56 ? 'Greed' : fgValue <= 25 ? 'Extreme Fear' : fgValue <= 44 ? 'Fear' : 'Neutral';
+      fgSource = 'Multi-Asset Live RSI & Marktbreite Index';
+    }
+
+    // 4. Compute Unified Trade Favorability Score (0 - 100)
+    // Strong directional orderbook imbalance + healthy volatility + clear non-choppy regime = high trade favorability
+    const orderbookConviction = Math.min(35, Math.abs(aggregateImbalancePct) * 1.15 + (aggregateBidRatioPct >= 52 ? 12 : 6));
+    const volatilityScore = avgVolatilityPct >= 0.45 && avgVolatilityPct <= 4.5 ? 28 : 16;
+    const qualifiedAssetsCount = quotes.filter(q => q.passedHardRules && q.analystScore >= this.strategy.analystPassThreshold).length;
+    const setupDensityScore = Math.min(37, 15 + qualifiedAssetsCount * 7);
+
+    const tradeFavorabilityScore = Math.max(18, Math.min(98, Math.round(orderbookConviction + volatilityScore + setupDensityScore)));
+
+    let timingStatus: MarketSentimentTelemetry['timingStatus'] = 'FAVORABLE_SELECTIVE';
+    let timingHeadline = 'Selektives Marktumfeld · Nur Top-Setups (Score ≥ 70)';
+    let timingExplanation = `Orderbuch-Imbalance (${aggregateImbalancePct >= 0 ? '+' : ''}${aggregateImbalancePct}%) und Fear & Greed (${fgValue}/100 · ${fgLabel}) signalisieren ein selektives Umfeld.`;
+    let autoExecutionImpact = `Vollautomatischer Handel aktiv: Agent Zero filtert streng über alle 8 Regeln und führt nur Setups ab Score ${this.strategy.analystPassThreshold}/100 aus.`;
+
+    if (tradeFavorabilityScore >= 72 && (aggregateImbalancePct >= 5 || breadthBullishPct >= 55 || fgValue <= 32)) {
+      timingStatus = 'OPTIMAL_LONG';
+      timingHeadline = fgValue <= 32
+        ? 'Starkes Antizyklisches Kaufsignal (Extreme Fear + Orderbuch-Kaufdruck)'
+        : 'Optimales Umfeld für Long-Momentum & Breakout-Trades';
+      timingExplanation = `Käufer dominieren das L2-Orderbuch (${aggregateBidRatioPct}% Bid-Tiefe bei $${(totalAnalyzedBookUsd / 1000).toFixed(0)}k Liquidität) bei ${breadthBullishPct}% positiver Marktbreite.`;
+      autoExecutionImpact = `Vollautomatischer Handel aktiv: EXECUTOR übernimmt qualifizierte Long-Kandidaten sofort bei Handoff (Score ≥ ${this.strategy.analystPassThreshold}).`;
+    } else if (tradeFavorabilityScore >= 70 && aggregateImbalancePct <= -8 && breadthBullishPct <= 42) {
+      timingStatus = 'OPTIMAL_SHORT';
+      timingHeadline = 'Starker Verkaufsdruck im Orderbuch · Reversal- & Short-Umfeld';
+      timingExplanation = `Angebots-Überhang im L2-Orderbuch (${aggregateImbalancePct}% Ask-Dominanz) und schwache Marktbreite (${breadthBullishPct}% steigend).`;
+      autoExecutionImpact = `Vollautomatischer Handel aktiv: Demo nutzt Short-/Reversal-Setups; Live-Spot wartet geduldig auf Support-Rebounds.`;
+    } else if (tradeFavorabilityScore < 48) {
+      timingStatus = 'CAUTIOUS_DEFENSIVE';
+      timingHeadline = 'Geringes Momentum / Seitwärts-Chop · Defensiver Filter-Modus';
+      timingExplanation = `Geringe Orderbuch-Richtung (${aggregateImbalancePct}%) oder niedrige Volatilität (${avgVolatilityPct}%). Erhöhtes Fehlausbruchs-Risiko.`;
+      autoExecutionImpact = `Vollautomatischer Schutz aktiv: FILTER blockiert ~${this.pipeline.filterKillRatePct}% aller schwachen Paare automatisch.`;
+    }
+
+    this.marketSentiment = {
+      updatedAt: new Date().toISOString(),
+      fearAndGreedIndex: fgValue,
+      fearAndGreedPrevious: fgPrev,
+      fearAndGreedDelta: fgValue - fgPrev,
+      fearAndGreedLabel: fgLabel,
+      fearAndGreedSource: fgSource,
+      aggregateBidRatioPct,
+      aggregateImbalancePct,
+      totalAnalyzedBookUsd,
+      orderbookSnapshots: snapshots.length > 0 ? snapshots : this.marketSentiment.orderbookSnapshots,
+      advancingCount,
+      decliningCount,
+      breadthBullishPct,
+      avgRsi14,
+      avgVolatilityPct,
+      tradeFavorabilityScore,
+      timingStatus,
+      timingHeadline,
+      timingExplanation,
+      autoExecutionImpact
+    };
+  }
+
   public getState(): TradingSystemState {
     const chain = this.getLiveChainBalances();
     const alpacaConnected = Boolean(process.env.ALPACA_API_KEY && process.env.ALPACA_SECRET_KEY);
@@ -1729,6 +1962,7 @@ Fasse in 2 kurzen Sätzen auf Deutsch die Strategie-Optimierung zusammen:
       lastTickAt: this.lastTickAt,
       isScanning: this.isScanning,
       pipeline: this.pipeline,
+      marketSentiment: this.marketSentiment,
       marketQuotes: this.marketQuotes,
       orderTargets: this.orderTargets,
       strategy: this.strategy,

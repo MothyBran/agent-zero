@@ -226,6 +226,46 @@ export interface TerminalLogLine {
   detail: string;
 }
 
+export interface OrderbookDepthSnapshot {
+  symbol: string;
+  displaySymbol: string;
+  bidVolumeUsd: number;
+  askVolumeUsd: number;
+  bidRatioPct: number; // 0-100 (% of total top-20 book volume on bid side)
+  imbalancePct: number; // -100 to +100 ((Bid - Ask) / (Bid + Ask) * 100)
+  bestBid: number;
+  bestAsk: number;
+  spreadBps: number;
+  pressureLabel: 'STRONG_BUY_WALL' | 'BUY_PRESSURE' | 'BALANCED' | 'SELL_PRESSURE' | 'STRONG_SELL_WALL';
+}
+
+export interface MarketSentimentTelemetry {
+  updatedAt: string;
+  // 1. Crypto Fear & Greed Index (Alternative.me live feed)
+  fearAndGreedIndex: number; // 0-100
+  fearAndGreedPrevious: number; // yesterday 0-100
+  fearAndGreedDelta: number;
+  fearAndGreedLabel: string; // e.g., "Fear", "Greed", "Extreme Greed"
+  fearAndGreedSource: string;
+  // 2. Real-time L2 Orderbook Imbalance (Binance Spot L2 Depth)
+  aggregateBidRatioPct: number; // 0-100
+  aggregateImbalancePct: number; // -100 to +100
+  totalAnalyzedBookUsd: number;
+  orderbookSnapshots: OrderbookDepthSnapshot[];
+  // 3. Multi-Asset Market Breadth & Volatility Regime
+  advancingCount: number;
+  decliningCount: number;
+  breadthBullishPct: number; // 0-100
+  avgRsi14: number;
+  avgVolatilityPct: number;
+  // 4. Unified Trade Favorability Verdict (Visual Timing Signal, while execution remains 100% automated)
+  tradeFavorabilityScore: number; // 0-100
+  timingStatus: 'OPTIMAL_LONG' | 'OPTIMAL_SHORT' | 'FAVORABLE_SELECTIVE' | 'CAUTIOUS_DEFENSIVE';
+  timingHeadline: string;
+  timingExplanation: string;
+  autoExecutionImpact: string;
+}
+
 export interface TradingSystemState {
   activeMode: TradingMode;
   autoPilotEnabled: boolean;
@@ -234,6 +274,7 @@ export interface TradingSystemState {
   lastTickAt: string;
   isScanning: boolean;
   pipeline: PipelineTelemetry;
+  marketSentiment: MarketSentimentTelemetry;
   marketQuotes: MarketAssetQuote[];
   orderTargets: OrderTarget[];
   strategy: StrategyParameters;
@@ -248,3 +289,4 @@ export interface TradingSystemState {
   terminalLogLines: TerminalLogLine[];
   recentActivityLogs: { id: string; timestamp: string; mode: TradingMode; type: 'TARGET_SET' | 'TARGET_HIT' | 'TRADE_OPEN' | 'TRADE_CLOSE' | 'OPTIMIZE' | 'ALERT'; message: string }[];
 }
+

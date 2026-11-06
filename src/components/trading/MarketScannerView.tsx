@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { AssetCategory, MarketAssetQuote, TradingMode, StrategyParameters } from '../../types/trading';
+import { AssetCategory, MarketAssetQuote, TradingMode, StrategyParameters, MarketSentimentTelemetry } from '../../types/trading';
+import { MarketSentimentWidget } from './MarketSentimentWidget';
 import { ArrowUpRight, ArrowDownRight, Search, SlidersHorizontal, TrendingUp, TrendingDown } from 'lucide-react';
 
 interface MarketScannerViewProps {
@@ -7,6 +8,8 @@ interface MarketScannerViewProps {
   activeMode: TradingMode;
   availableCashUsd: number;
   strategy: StrategyParameters;
+  sentiment?: MarketSentimentTelemetry;
+  autoPilotEnabled?: boolean;
   isScanning: boolean;
   onExecuteOrder: (symbol: string, side: 'LONG' | 'SHORT', amountUsd: number) => Promise<{ success: boolean; message: string }>;
   onTriggerScan: () => Promise<void>;
@@ -58,6 +61,8 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
   activeMode,
   availableCashUsd,
   strategy,
+  sentiment,
+  autoPilotEnabled = true,
   isScanning,
   onExecuteOrder,
   onTriggerScan
@@ -138,6 +143,15 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
 
   return (
     <div className="space-y-8">
+      {/* Dedicated Real-Time Market Sentiment & Orderbook Imbalance Widget */}
+      {sentiment && (
+        <MarketSentimentWidget
+          sentiment={sentiment}
+          autoPilotEnabled={autoPilotEnabled}
+          analystThreshold={strategy.analystPassThreshold}
+        />
+      )}
+
       {/* Top Filter & Search Bar */}
       <div className="waterdrop-card p-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div className="space-y-1">

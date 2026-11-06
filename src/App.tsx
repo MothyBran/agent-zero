@@ -269,6 +269,8 @@ export function App() {
                   activeMode={activeMode}
                   availableCashUsd={currentPortfolio.cashBalanceUsd}
                   strategy={tradingState.strategy}
+                  sentiment={tradingState.marketSentiment}
+                  autoPilotEnabled={tradingState.autoPilotEnabled}
                   isScanning={tradingState.isScanning || isTriggeringScan}
                   onExecuteOrder={handleExecuteOrder}
                   onTriggerScan={handleTriggerScanAndTrade}
