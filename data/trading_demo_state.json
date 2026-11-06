@@ -1,0 +1,296 @@
+{
+  "worstLossUsd": 0,
+  "bestTradeUsd": 0,
+  "mode": "DEMO",
+  "initialCapitalUsd": 10000,
+  "cashBalanceUsd": 7000.05,
+  "equityUsd": 9998.975,
+  "totalRealizedPnlUsd": 0,
+  "totalUnrealizedPnlUsd": -1.025,
+  "totalFeesPaidUsd": 0.78,
+  "winCount": 0,
+  "lossCount": 0,
+  "winRatePct": 0,
+  "profitFactor": 1,
+  "sharpeEstimate": 0,
+  "maxDrawdownPct": 0.01,
+  "openPositions": [
+    {
+      "id": "pos_1793993531517_mzuu",
+      "mode": "DEMO",
+      "symbol": "POL",
+      "displaySymbol": "$POL",
+      "name": "Polygon Ecosystem",
+      "category": "CRYPTO",
+      "side": "SHORT",
+      "entryPrice": 0.09275,
+      "currentPrice": 0.09277,
+      "peakPrice": 0.09275,
+      "quantity": 8622.318059,
+      "notionalUsd": 799.96,
+      "allocationPct": 8,
+      "stopLoss": 0.093584,
+      "takeProfit": 0.09108,
+      "trailingActive": false,
+      "trailingStopPrice": 0.093584,
+      "trailActivationPct": 1.2,
+      "trailUnderPeakPct": 0.55,
+      "priceHistory": [
+        0.09275,
+        0.09275,
+        0.09275,
+        0.09277
+      ],
+      "stopHistory": [
+        0.093584,
+        0.093584,
+        0.093584,
+        0.093584
+      ],
+      "unrealizedPnlUsd": -0.1724,
+      "unrealizedPnlPct": -0.02,
+      "openedAt": "2026-11-06T19:32:11.517Z",
+      "executionVenue": "Polygon Native QuickSwap",
+      "entryReason": "Analyst Score 73/100 → Executor (8% Allokation)"
+    },
+    {
+      "id": "pos_1793993530234_2lxn",
+      "mode": "DEMO",
+      "symbol": "ETH",
+      "displaySymbol": "$ETH",
+      "name": "Ethereum (WETH Polygon)",
+      "category": "CRYPTO",
+      "side": "SHORT",
+      "entryPrice": 2229.13,
+      "currentPrice": 2229.34,
+      "peakPrice": 2229.13,
+      "quantity": 0.3587,
+      "notionalUsd": 799.99,
+      "allocationPct": 8,
+      "stopLoss": 2246.96,
+      "takeProfit": 2189.01,
+      "trailingActive": false,
+      "trailingStopPrice": 2246.96,
+      "trailActivationPct": 1.2,
+      "trailUnderPeakPct": 0.55,
+      "priceHistory": [
+        2229.13,
+        2229.13,
+        2229.13,
+        2229.13,
+        2229.34
+      ],
+      "stopHistory": [
+        2246.96,
+        2246.96,
+        2246.96,
+        2246.96,
+        2246.96
+      ],
+      "unrealizedPnlUsd": -0.0753,
+      "unrealizedPnlPct": -0.01,
+      "openedAt": "2026-11-06T19:32:10.234Z",
+      "executionVenue": "Polygon Uniswap V3",
+      "entryReason": "Analyst Score 74/100 → Executor (8% Allokation)"
+    },
+    {
+      "id": "pos_1793993475658_rk9u",
+      "mode": "DEMO",
+      "symbol": "TSLA",
+      "displaySymbol": "TSLA",
+      "name": "Tesla Inc.",
+      "category": "STOCKS",
+      "side": "LONG",
+      "entryPrice": 360.17,
+      "currentPrice": 359.97,
+      "quantity": 3.886665,
+      "notionalUsd": 1400,
+      "stopLoss": 357.80247,
+      "takeProfit": 364.58939,
+      "unrealizedPnlUsd": -0.7773,
+      "unrealizedPnlPct": -0.06,
+      "openedAt": "2026-11-06T19:31:15.658Z",
+      "executionVenue": "Alpaca Zero-Commission / IEX",
+      "entryReason": "BUY (Score 57): Aufwärtstrend (EMA9 > EMA21), Günstige RSI-Zone (43.5)",
+      "priceHistory": [
+        360.17,
+        360.04,
+        360.04,
+        359.97
+      ],
+      "stopHistory": [
+        357.80247,
+        357.80247,
+        357.80247,
+        357.80247
+      ]
+    }
+  ],
+  "closedTrades": [],
+  "equityCurve": [
+    {
+      "timestamp": "2026-11-06T19:09:30.222Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:09:32.978Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:09:38.778Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:18:22.132Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:18:45.620Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:19:10.617Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:19:35.618Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:20:00.675Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:20:25.614Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:20:50.630Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:21:15.618Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:21:40.619Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:22:05.620Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:22:30.631Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:22:55.625Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:23:20.623Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:23:45.623Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:24:10.622Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:24:35.624Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:25:00.720Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:25:25.622Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:25:50.618Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:26:15.629Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:26:40.637Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:27:05.627Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:27:30.639Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:27:55.627Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:28:20.635Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:28:45.632Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:29:10.638Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:29:35.634Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:30:00.732Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:30:25.635Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:30:50.648Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:31:15.659Z",
+      "equity": 10000
+    },
+    {
+      "timestamp": "2026-11-06T19:31:40.640Z",
+      "equity": 9999.8134
+    },
+    {
+      "timestamp": "2026-11-06T19:32:10.235Z",
+      "equity": 9999.8134
+    },
+    {
+      "timestamp": "2026-11-06T19:32:10.237Z",
+      "equity": 9999.4947
+    },
+    {
+      "timestamp": "2026-11-06T19:32:11.517Z",
+      "equity": 9999.4947
+    },
+    {
+      "timestamp": "2026-11-06T19:32:11.517Z",
+      "equity": 9999.4947
+    },
+    {
+      "timestamp": "2026-11-06T19:32:14.772Z",
+      "equity": 9998.975
+    }
+  ]
+}

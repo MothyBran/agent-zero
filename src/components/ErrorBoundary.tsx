@@ -32,25 +32,25 @@ export class ErrorBoundary extends Component<Props, State> {
   public render() {
     if (this.state.hasError) {
       return (
-        <div className="p-6 m-4 rounded-xl bg-slate-900 border border-rose-800/60 font-mono text-xs space-y-4 shadow-xl">
-          <div className="flex items-center gap-2 text-rose-400 font-bold">
+        <div className="waterdrop-card p-6 m-4 text-xs space-y-4">
+          <div className="flex items-center gap-2 text-rose-700 font-bold">
             <ShieldAlert className="w-5 h-5" />
-            <span className="text-sm uppercase tracking-wider">
+            <span className="text-sm">
               {this.props.fallbackTitle || 'Komponenten-Schutzschild ausgelöst'}
             </span>
           </div>
-          <p className="text-slate-300">
-            Ein Rendering-Fehler wurde isoliert und abgefangen, um einen Totalabsturz des Dashboards zu verhindern:
+          <p className="text-[#2c4c70]">
+            Ein Rendering-Fehler wurde isoliert und abgefangen, um die Stabilität des Dashboards zu wahren:
           </p>
-          <div className="p-3 bg-slate-950 rounded border border-slate-800 text-rose-300 overflow-x-auto text-[11px]">
+          <div className="pearl-surface p-3 rounded-xl font-mono text-rose-800 overflow-x-auto text-[11px]">
             {this.state.error?.message || 'Unbekannter Ausnahmefehler'}
           </div>
           <button
             onClick={this.handleReset}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold cursor-pointer transition-all"
+            className="waterdrop-btn-primary flex items-center gap-2 px-4 py-2 rounded-xl font-semibold cursor-pointer"
           >
             <RefreshCw className="w-3.5 h-3.5" />
-            <span>Komponente neu laden</span>
+            <span>Ansicht neu laden</span>
           </button>
         </div>
       );

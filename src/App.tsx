@@ -1,24 +1,21 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { AgentState, LogEntry, ReasoningStreamItem, IntelligenceEvaluation } from './types';
-import { MinimalVitalsBar } from './components/MinimalVitalsBar';
-import { LiveTerminal } from './components/LiveTerminal';
-import { VitalsSection } from './components/VitalsSection';
-import { LedgerSection } from './components/LedgerSection';
-import { BusinessProfileSection } from './components/BusinessProfileSection';
-import { CognitionMemorySection } from './components/CognitionMemorySection';
+import { TradingSystemState, TradingMode } from './types/trading';
+import { SixAgentTerminalView } from './components/trading/SixAgentTerminalView';
+import { MarketScannerView } from './components/trading/MarketScannerView';
+import { PortfolioPositionsView } from './components/trading/PortfolioPositionsView';
+import { SelfOptimizerView } from './components/trading/SelfOptimizerView';
+import { ConceptMasterplanView } from './components/trading/ConceptMasterplanView';
 import { LoginPage } from './components/LoginPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { AlertTriangle, HeartPulse, BookOpen, Building2, Brain, Terminal } from 'lucide-react';
 import { safeFetchJson, safePostJson } from './lib/api';
+import { RefreshCw, ShieldAlert } from 'lucide-react';
 
-type DashboardTab = 'VITALS' | 'LEDGER' | 'PROFILE' | 'COGNITION' | 'TERMINAL';
+type ActiveSection = 'TERMINAL' | 'SCANNER' | 'PORTFOLIO' | 'OPTIMIZER' | 'CONCEPT';
 
 export function App() {
-  const [activeTab, setActiveTab] = useState<DashboardTab>('VITALS');
-  const [state, setState] = useState<AgentState | null>(null);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [reasoningStream, setReasoningStream] = useState<ReasoningStreamItem[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [activeSection, setActiveSection] = useState<ActiveSection>('TERMINAL');
+  const [tradingState, setTradingState] = useState<TradingSystemState | null>(null);
+  const [isTriggeringScan, setIsTriggeringScan] = useState(false);
 
   const [authStatus, setAuthStatus] = useState<{ auth_required: boolean; configured: boolean } | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -35,202 +32,276 @@ export function App() {
           setAuthStatus({ auth_required: false, configured: false });
           setIsAuthenticated(true);
         }
-      }).catch(() => {
+      })
+      .catch(() => {
         setAuthStatus({ auth_required: false, configured: false });
         setIsAuthenticated(true);
       });
   }, []);
 
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    try { localStorage.removeItem('agent_zero_auth'); } catch {}
-  };
-
-  const handleLoginSuccess = () => {
-    setIsAuthenticated(true);
-    try { localStorage.setItem('agent_zero_auth', 'true'); } catch {}
-    fetchAllData();
-  };
-
-  const fetchAllData = useCallback(async () => {
-    const [statusData, logsData, evalData] = await Promise.all([
-      safeFetchJson<AgentState>('/api/status'),
-      safeFetchJson<{ logs: LogEntry[] }>('/api/logs'),
-      safeFetchJson<IntelligenceEvaluation>('/api/intelligence/evaluation')
-    ]);
-
-    if (statusData.ok && statusData.data) setState(statusData.data);
-    if (logsData.ok && logsData.data?.logs) setLogs(logsData.data.logs);
-    if (evalData.ok && evalData.data?.reasoning_stream) setReasoningStream(evalData.data.reasoning_stream);
+  const fetchTradingState = useCallback(async () => {
+    const res = await safeFetchJson<TradingSystemState>('/api/trading/state');
+    if (res.ok && res.data) {
+      setTradingState(res.data);
+    }
   }, []);
 
   useEffect(() => {
     if (isAuthenticated) {
-      fetchAllData();
-      const interval = setInterval(fetchAllData, 3000);
+      fetchTradingState();
+      const interval = setInterval(fetchTradingState, 2500);
       return () => clearInterval(interval);
     }
-  }, [fetchAllData, isAuthenticated]);
+  }, [fetchTradingState, isAuthenticated]);
 
-  const handleManualRefresh = async () => {
-    setIsLoading(true);
-    await fetchAllData();
-    setIsLoading(false);
+  const handleLoginSuccess = () => {
+    setIsAuthenticated(true);
+    try { localStorage.setItem('agent_zero_auth', 'true'); } catch {}
+    fetchTradingState();
   };
 
-  const handleReviveAgent = async () => {
-    const res = await safePostJson('/api/agent/revive', { amount: 2.5 });
-    if (res.ok) await fetchAllData();
-  };
-
-  const handleClearLogs = async () => {
-    await safePostJson("/api/reset/logs");
-    setLogs([]);
-    setReasoningStream([]);
-  };
-
-  const handleFullReset = async () => {
-    if (window.confirm("Bist du sicher? Dies löscht das gesamte Wissen und alle Logs.")) {
-      await safePostJson("/api/reset/full");
-      window.location.reload();
-    }
-  };
-
-  const handleToggleRun = async () => {
-    const res = await safePostJson<{ state: AgentState }>('/api/agent/toggle');
+  const handleSwitchMode = async (mode: TradingMode) => {
+    const res = await safePostJson<{ success: boolean; state: TradingSystemState }>('/api/trading/mode', { mode });
     if (res.ok && res.data?.state) {
-      setState(res.data.state);
-      fetchAllData();
+      setTradingState(res.data.state);
     }
   };
 
-  const isTerminated = state?.is_terminated || state?.status === 'SHUTDOWN';
+  const handleToggleAutoPilot = async () => {
+    if (!tradingState) return;
+    const res = await safePostJson<{ success: boolean; state: TradingSystemState }>('/api/trading/autopilot', {
+      enabled: !tradingState.autoPilotEnabled
+    });
+    if (res.ok && res.data?.state) {
+      setTradingState(res.data.state);
+    }
+  };
+
+  const handleTriggerScanAndTrade = async () => {
+    setIsTriggeringScan(true);
+    try {
+      const res = await safePostJson<{ success: boolean; state: TradingSystemState }>('/api/trading/scan');
+      if (res.ok && res.data?.state) {
+        setTradingState(res.data.state);
+      }
+    } finally {
+      setIsTriggeringScan(false);
+    }
+  };
+
+  const handleExecuteOrder = async (symbol: string, side: 'LONG' | 'SHORT', amountUsd: number) => {
+    const res = await safePostJson<{ success: boolean; message: string; state?: TradingSystemState }>('/api/trading/order', {
+      symbol,
+      side,
+      amountUsd
+    });
+    if (res.ok && res.data) {
+      if (res.data.state) setTradingState(res.data.state);
+      return { success: res.data.success, message: res.data.message };
+    }
+    return { success: false, message: res.error || 'Order fehlgeschlagen.' };
+  };
+
+  const handleClosePosition = async (positionId: string) => {
+    const res = await safePostJson<{ success: boolean; state?: TradingSystemState }>('/api/trading/close', { positionId });
+    if (res.ok && res.data?.state) {
+      setTradingState(res.data.state);
+    }
+  };
+
+  const handleRunOptimization = async () => {
+    const res = await safePostJson<{ success: boolean; state?: TradingSystemState }>('/api/trading/optimize');
+    if (res.ok && res.data?.state) {
+      setTradingState(res.data.state);
+    }
+  };
+
+  const handleResetDemo = async (capitalUsd: number) => {
+    const res = await safePostJson<{ success: boolean; state?: TradingSystemState }>('/api/trading/reset-demo', { capital: capitalUsd });
+    if (res.ok && res.data?.state) {
+      setTradingState(res.data.state);
+    }
+  };
 
   if (authStatus?.auth_required && !isAuthenticated) {
     return <LoginPage onLoginSuccess={handleLoginSuccess} />;
   }
 
-  return (
-    <div className="h-screen w-screen bg-[#05070e] text-slate-100 flex flex-col font-mono overflow-hidden select-text">
-      {/* 1. Minimal Vitals Header */}
-      <MinimalVitalsBar
-        state={state}
-        onRefresh={handleManualRefresh}
-        isLoading={isLoading}
-        onLogout={handleLogout}
-        onRevive={handleReviveAgent}
-        onToggleRun={handleToggleRun}
-        onFullReset={handleFullReset}
-      />
+  const activeMode: TradingMode = tradingState?.activeMode || 'DEMO';
+  const currentPortfolio = activeMode === 'DEMO'
+    ? tradingState?.demoPortfolio
+    : tradingState?.livePortfolio;
 
-      {/* 2. Critical Alert Banner if Terminated */}
-      {isTerminated && (
-        <div className="bg-rose-950/90 border-b border-rose-800 text-rose-100 py-2.5 px-4 shadow-lg shrink-0 flex items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 animate-bounce" />
-            <div>
-              <span className="font-bold text-rose-300 uppercase tracking-wider">
-                [CRITICAL ALERT] AGENT ZERO TERMINIERT
-              </span>
-              <span className="text-rose-400/90 ml-2">
-                Grund: {state?.shutdown_reason || '48h Pachtfrist abgelaufen oder Guthaben auf 0.00 USDC.'}
-              </span>
-            </div>
-          </div>
-          <button
-            onClick={handleReviveAgent}
-            className="px-3 py-1 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow cursor-pointer transition-all shrink-0"
+  return (
+    <div className="min-h-screen w-full flex flex-col text-[#0b213a]">
+      {/* Strict 3-Zone Top Bar Contract */}
+      <header className="sticky top-0 z-30 backdrop-blur-xl bg-white/80 border-b border-white/95 shadow-xs px-6 py-3.5 flex items-center justify-between gap-8">
+        {/* Zone 1: Single text element wordmark */}
+        <a
+          href="#terminal"
+          onClick={(e) => { e.preventDefault(); setActiveSection('TERMINAL'); }}
+          className="text-lg font-bold tracking-tight text-[#08203e] font-display whitespace-nowrap shrink-0"
+        >
+          Agent Zero
+        </a>
+
+        {/* Zone 2: 5 concise single-line navigation links */}
+        <nav className="flex items-center gap-6 text-xs sm:text-sm font-semibold text-[#35567c] overflow-x-auto">
+          <a
+            href="#terminal"
+            onClick={(e) => { e.preventDefault(); setActiveSection('TERMINAL'); }}
+            className={`transition-colors whitespace-nowrap shrink-0 pb-0.5 ${
+              activeSection === 'TERMINAL'
+                ? 'text-[#08203e] border-b-2 border-sky-600'
+                : 'hover:text-[#08203e]'
+            }`}
           >
-            ⚡ NOTFALL-RESTART
+            6-Agenten Terminal
+          </a>
+          <a
+            href="#scanner"
+            onClick={(e) => { e.preventDefault(); setActiveSection('SCANNER'); }}
+            className={`transition-colors whitespace-nowrap shrink-0 pb-0.5 ${
+              activeSection === 'SCANNER'
+                ? 'text-[#08203e] border-b-2 border-sky-600'
+                : 'hover:text-[#08203e]'
+            }`}
+          >
+            Markt & Order-Ziele
+          </a>
+          <a
+            href="#portfolio"
+            onClick={(e) => { e.preventDefault(); setActiveSection('PORTFOLIO'); }}
+            className={`transition-colors whitespace-nowrap shrink-0 pb-0.5 ${
+              activeSection === 'PORTFOLIO'
+                ? 'text-[#08203e] border-b-2 border-sky-600'
+                : 'hover:text-[#08203e]'
+            }`}
+          >
+            Portfolio & Trades
+          </a>
+          <a
+            href="#optimizer"
+            onClick={(e) => { e.preventDefault(); setActiveSection('OPTIMIZER'); }}
+            className={`transition-colors whitespace-nowrap shrink-0 pb-0.5 ${
+              activeSection === 'OPTIMIZER'
+                ? 'text-[#08203e] border-b-2 border-sky-600'
+                : 'hover:text-[#08203e]'
+            }`}
+          >
+            KI-Selbstoptimierung
+          </a>
+          <a
+            href="#concept"
+            onClick={(e) => { e.preventDefault(); setActiveSection('CONCEPT'); }}
+            className={`transition-colors whitespace-nowrap shrink-0 pb-0.5 ${
+              activeSection === 'CONCEPT'
+                ? 'text-[#08203e] border-b-2 border-sky-600'
+                : 'hover:text-[#08203e]'
+            }`}
+          >
+            Konzept & Wallet
+          </a>
+        </nav>
+
+        {/* Zone 3: 1 primary action (Mode Switch Paper vs Live) */}
+        <div className="flex items-center shrink-0">
+          <button
+            type="button"
+            onClick={() => handleSwitchMode(activeMode === 'DEMO' ? 'LIVE' : 'DEMO')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-mono font-bold cursor-pointer whitespace-nowrap shrink-0 transition-all ${
+              activeMode === 'DEMO'
+                ? 'waterdrop-btn-pearl text-sky-900'
+                : 'bg-emerald-600 text-white shadow-sm'
+            }`}
+          >
+            {activeMode === 'DEMO' ? 'paper-✓ → live' : 'live-✓ → paper'}
           </button>
         </div>
-      )}
+      </header>
 
-      {/* 3. Navigation Bar (4 Core Sections + Terminal) */}
-      <nav className="bg-slate-950 border-b border-slate-800/80 px-4 sm:px-6 py-2 flex items-center gap-1.5 overflow-x-auto shrink-0 select-none">
-        <button
-          onClick={() => setActiveTab('VITALS')}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold tracking-wider transition-all whitespace-nowrap cursor-pointer ${
-            activeTab === 'VITALS'
-              ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 shadow-sm'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'
-          }`}
-        >
-          <HeartPulse className="w-3.5 h-3.5" />
-          <span>1. LEBENSDATEN</span>
-        </button>
+      {/* Main Workspace Container */}
+      <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
+        {/* Strict Live Mode Notice Banner when in ECHT-BETRIEB */}
+        {activeMode === 'LIVE' && (
+          <div className="waterdrop-card p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-[#0b213a]">
+            <div className="flex items-center gap-2.5">
+              <ShieldAlert className="w-4 h-4 text-emerald-700 shrink-0" />
+              <span>
+                <strong>Echt-Betrieb Sicherheitsgarantie:</strong> Keine fiktiven oder simulierten Salden aktiv. Verifiziertes Polygon Wallet ({tradingState?.liveConnectors.polygonDexOnChain.walletAddress || 'Nicht verbunden'}): <strong>{tradingState?.liveConnectors.polygonDexOnChain.usdcBalance.toFixed(4)} USDC</strong> und <strong>{tradingState?.liveConnectors.polygonDexOnChain.polGasBalance.toFixed(4)} POL Gas</strong>.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleSwitchMode('DEMO')}
+              className="waterdrop-btn-pearl px-3 py-1 rounded-lg font-mono font-bold text-[11px] shrink-0 cursor-pointer"
+            >
+              Zurück in Demo-Spielgeld
+            </button>
+          </div>
+        )}
 
-        <button
-          onClick={() => setActiveTab('LEDGER')}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold tracking-wider transition-all whitespace-nowrap cursor-pointer ${
-            activeTab === 'LEDGER'
-              ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 shadow-sm'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'
-          }`}
-        >
-          <BookOpen className="w-3.5 h-3.5" />
-          <span>2. KASSENBUCH</span>
-        </button>
+        {/* Active View Content */}
+        <ErrorBoundary fallbackTitle="Trading-Modul Schutzschild">
+          {!tradingState ? (
+            <div className="waterdrop-card p-12 text-center space-y-3">
+              <RefreshCw className="w-6 h-6 text-sky-600 animate-spin mx-auto" />
+              <div className="text-sm font-semibold text-[#0b213a]">
+                Starte 6-Agenten Hard-Handoff Pipeline (SCOUT → FILTER → ANALYST → EXECUTOR → RISK → LOGGER)...
+              </div>
+            </div>
+          ) : (
+            <>
+              {activeSection === 'TERMINAL' && (
+                <SixAgentTerminalView
+                  state={tradingState}
+                  onToggleAutoPilot={handleToggleAutoPilot}
+                  onTriggerScan={handleTriggerScanAndTrade}
+                  onRunOptimize={handleRunOptimization}
+                  onClosePosition={handleClosePosition}
+                  onExecuteOrder={handleExecuteOrder}
+                />
+              )}
 
-        <button
-          onClick={() => setActiveTab('PROFILE')}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold tracking-wider transition-all whitespace-nowrap cursor-pointer ${
-            activeTab === 'PROFILE'
-              ? 'bg-purple-950/80 text-purple-300 border border-purple-500/40 shadow-sm'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'
-          }`}
-        >
-          <Building2 className="w-3.5 h-3.5" />
-          <span>3. ENTITÄTS-PROFIL</span>
-        </button>
+              {activeSection === 'SCANNER' && currentPortfolio && (
+                <MarketScannerView
+                  quotes={tradingState.marketQuotes}
+                  activeMode={activeMode}
+                  availableCashUsd={currentPortfolio.cashBalanceUsd}
+                  strategy={tradingState.strategy}
+                  isScanning={tradingState.isScanning || isTriggeringScan}
+                  onExecuteOrder={handleExecuteOrder}
+                  onTriggerScan={handleTriggerScanAndTrade}
+                />
+              )}
 
-        <button
-          onClick={() => setActiveTab('COGNITION')}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold tracking-wider transition-all whitespace-nowrap cursor-pointer ${
-            activeTab === 'COGNITION'
-              ? 'bg-indigo-950/80 text-indigo-300 border border-indigo-500/40 shadow-sm'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'
-          }`}
-        >
-          <Brain className="w-3.5 h-3.5" />
-          <span>4. KOGNITION & GEDÄCHTNIS</span>
-        </button>
+              {activeSection === 'PORTFOLIO' && currentPortfolio && (
+                <PortfolioPositionsView
+                  portfolio={currentPortfolio}
+                  activeMode={activeMode}
+                  liveConnectors={tradingState.liveConnectors}
+                  onClosePosition={handleClosePosition}
+                  onResetDemo={handleResetDemo}
+                  onSwitchTabToScanner={() => setActiveSection('TERMINAL')}
+                />
+              )}
 
-        <button
-          onClick={() => setActiveTab('TERMINAL')}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold tracking-wider transition-all whitespace-nowrap cursor-pointer ${
-            activeTab === 'TERMINAL'
-              ? 'bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 shadow-sm'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900 border border-transparent'
-          }`}
-        >
-          <Terminal className="w-3.5 h-3.5" />
-          <span>5. LIVE TERMINAL</span>
-        </button>
-      </nav>
+              {activeSection === 'OPTIMIZER' && (
+                <SelfOptimizerView
+                  strategy={tradingState.strategy}
+                  optimizationHistory={tradingState.optimizationHistory}
+                  activityLogs={tradingState.recentActivityLogs}
+                  onRunOptimize={handleRunOptimization}
+                />
+              )}
 
-      {/* 4. Main Content Area */}
-      <main className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
-        <ErrorBoundary fallbackTitle="Dashboard-Modul Schutzschild">
-          {activeTab === 'VITALS' && (
-            <VitalsSection state={state} onRefresh={fetchAllData} />
-          )}
-          {activeTab === 'LEDGER' && (
-            <LedgerSection />
-          )}
-          {activeTab === 'PROFILE' && (
-            <BusinessProfileSection />
-          )}
-          {activeTab === 'COGNITION' && (
-            <CognitionMemorySection />
-          )}
-          {activeTab === 'TERMINAL' && (
-            <LiveTerminal
-              logs={logs}
-              reasoningStream={reasoningStream}
-              walletAddress={state?.wallet_address}
-              onClear={handleClearLogs}
-            />
+              {activeSection === 'CONCEPT' && (
+                <ConceptMasterplanView
+                  liveConnectors={tradingState.liveConnectors}
+                  onRefreshState={fetchTradingState}
+                />
+              )}
+            </>
           )}
         </ErrorBoundary>
       </main>

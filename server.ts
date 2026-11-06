@@ -6,6 +6,7 @@ import { ethers } from 'ethers';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
+import { MultiAssetTradingEngine, TradingMode } from './src/server/tradingEngine';
 
 dotenv.config();
 
@@ -56,7 +57,14 @@ function getGeminiClient(): GoogleGenAI | null {
   const key = process.env.GEMINI_API_KEY;
   if (!key) return null;
   if (!geminiClient) {
-    geminiClient = new GoogleGenAI({ apiKey: key });
+    geminiClient = new GoogleGenAI({
+      apiKey: key,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
   }
   return geminiClient;
 }
@@ -1391,6 +1399,210 @@ class AgentWalletTS {
     }
     return { success: false, txHash: '', message: lastError || 'Alle RPC-Verbindungen fehlgeschlagen.' };
   }
+
+  public async executePolygonDexSwap(params: {
+    direction: 'BUY_TOKEN' | 'SELL_TOKEN';
+    symbol: string;
+    amountUsdc: number;
+    expectedPriceUsd?: number;
+  }): Promise<{ success: boolean; txHash: string; message: string }> {
+    if (!this.hasSigner || !this.signer || !this.address) {
+      return { success: false, txHash: '', message: 'Kein AGENT_PRIVATE_KEY für On-Chain Signatur hinterlegt.' };
+    }
+
+    const POLYGON_UNISWAP_V3_ROUTER = '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45';
+    const TOKEN_MAP: Record<string, { address: string; decimals: number; fee: number }> = {
+      BTC:  { address: '0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6', decimals: 8,  fee: 500 },  // WBTC 0.05% pool
+      ETH:  { address: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', decimals: 18, fee: 500 },  // WETH 0.05% pool
+      POL:  { address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', decimals: 18, fee: 500 },  // WPOL 0.05% pool
+      LINK: { address: '0x53E0bca35eC356BD5ddDFebbD1Fc0fD03FaBad39', decimals: 18, fee: 3000 }, // LINK 0.3% pool
+      AVAX: { address: '0x2C89bbc92BD86F8075d1DEcc58C7F4E0107f286b', decimals: 18, fee: 3000 }  // AVAX 0.3% pool
+    };
+
+    const cleanSym = params.symbol.replace(/^\$/, '').toUpperCase();
+    const targetToken = TOKEN_MAP[cleanSym];
+    if (!targetToken) {
+      return {
+        success: false,
+        txHash: '',
+        message: `Symbol ${cleanSym} hat keinen direkten Polygon Uniswap V3 Pool (Verfügbar On-Chain: BTC/WBTC, ETH/WETH, POL/WPOL, LINK, AVAX).`
+      };
+    }
+
+    const ERC20_SWAP_ABI = [
+      'function balanceOf(address owner) view returns (uint256)',
+      'function allowance(address owner, address spender) view returns (uint256)',
+      'function approve(address spender, uint256 amount) returns (bool)'
+    ];
+
+    const ROUTER_ABI = [
+      'function exactInputSingle(tuple(address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96) params) external payable returns (uint256 amountOut)'
+    ];
+
+    const rpcPool = [
+      process.env.POLYGON_RPC_URL,
+      'https://polygon-rpc.com',
+      'https://polygon.llamarpc.com',
+      'https://1rpc.io/matic',
+      'https://polygon-bor-rpc.publicnode.com'
+    ].filter(Boolean) as string[];
+
+    let lastError = '';
+
+    for (const rpcUrl of rpcPool) {
+      try {
+        const rpc = new ethers.JsonRpcProvider(rpcUrl, { chainId: 137, name: 'polygon' }, { staticNetwork: true });
+        const walletWithRpc = this.signer.connect(rpc);
+
+        // 1. Check Gas Reserve & Gas Ceiling (Max 250 Gwei)
+        const polBal = await rpc.getBalance(this.address);
+        this.onChainPolBalance = Number(ethers.formatEther(polBal));
+        if (this.onChainPolBalance < 0.25) {
+          return { success: false, txHash: '', message: `Gas-Schutzsperre: Zu wenig POL (${this.onChainPolBalance.toFixed(3)} POL). Mindestens 0.25 POL erforderlich.` };
+        }
+
+        const feeData = await rpc.getFeeData();
+        const maxGasAllowed = ethers.parseUnits('250', 'gwei');
+        if (feeData.gasPrice && feeData.gasPrice > maxGasAllowed) {
+          return { success: false, txHash: '', message: 'Gas-Schutzsperre: Polygon Netzwerk-Gas aktuell über 250 Gwei.' };
+        }
+
+        const minPriority = ethers.parseUnits('35', 'gwei');
+        const priority = feeData.maxPriorityFeePerGas && feeData.maxPriorityFeePerGas > minPriority
+          ? (feeData.maxPriorityFeePerGas * 125n / 100n)
+          : minPriority;
+        const maxFee = feeData.maxFeePerGas
+          ? (feeData.maxFeePerGas * 125n / 100n)
+          : ethers.parseUnits('75', 'gwei');
+        const txOverrides = { maxPriorityFeePerGas: priority, maxFeePerGas: maxFee };
+
+        // Determine active USDC contract (Native USDC vs Bridged USDC.e)
+        const nativeUsdcAddr = MULTI_CHAIN_CONFIGS.polygon.usdcAddress;
+        const bridgedUsdcAddr = MULTI_CHAIN_CONFIGS.polygon.usdcBridgedAddress!;
+        const cNative = new ethers.Contract(nativeUsdcAddr, ERC20_SWAP_ABI, walletWithRpc);
+        const cBridged = new ethers.Contract(bridgedUsdcAddr, ERC20_SWAP_ABI, walletWithRpc);
+
+        const [balN, balB] = await Promise.all([
+          cNative.balanceOf(this.address) as Promise<bigint>,
+          cBridged.balanceOf(this.address) as Promise<bigint>
+        ]);
+        const numN = Number(ethers.formatUnits(balN, 6));
+        const numB = Number(ethers.formatUnits(balB, 6));
+        const totalUsdc = numN + numB;
+        this.onChainUsdcBalance = totalUsdc;
+
+        const useBridged = numB > numN;
+        const activeUsdcAddr = useBridged ? bridgedUsdcAddr : nativeUsdcAddr;
+        const activeUsdcContract = useBridged ? cBridged : cNative;
+        const activeUsdcBal = useBridged ? numB : numN;
+
+        const router = new ethers.Contract(POLYGON_UNISWAP_V3_ROUTER, ROUTER_ABI, walletWithRpc);
+
+        if (params.direction === 'BUY_TOKEN') {
+          // HARD FLOOR RESERVE LOCK: Never drop total USDC below 0.50 USDC!
+          if (totalUsdc - params.amountUsdc < 0.50) {
+            return {
+              success: false,
+              txHash: '',
+              message: `0.50 USDC Schutzsperre aktiv: Trade über $${params.amountUsdc.toFixed(2)} würde das Guthaben (${totalUsdc.toFixed(4)} USDC) unter die eiserne Reserve von 0.50 USDC senken.`
+            };
+          }
+          if (activeUsdcBal < params.amountUsdc) {
+            return {
+              success: false,
+              txHash: '',
+              message: `Nicht genügend ${useBridged ? 'USDC.e' : 'Native USDC'} (${activeUsdcBal.toFixed(4)} verfügbar).`
+            };
+          }
+
+          const amountInWei = ethers.parseUnits(params.amountUsdc.toFixed(6), 6);
+          const currentAllowance = (await activeUsdcContract.allowance(this.address, POLYGON_UNISWAP_V3_ROUTER)) as bigint;
+          if (currentAllowance < amountInWei) {
+            const appTx = await activeUsdcContract.approve(POLYGON_UNISWAP_V3_ROUTER, amountInWei, txOverrides);
+            await appTx.wait(1);
+          }
+
+          // MEV / Sandwich Slippage Protection (Max 1.5% slippage)
+          let minOutWei = 0n;
+          if (params.expectedPriceUsd && params.expectedPriceUsd > 0) {
+            const expectedTok = (params.amountUsdc / params.expectedPriceUsd) * 0.985;
+            minOutWei = ethers.parseUnits(expectedTok.toFixed(Math.min(8, targetToken.decimals)), targetToken.decimals);
+          }
+
+          const swapTx = await router.exactInputSingle(
+            {
+              tokenIn: activeUsdcAddr,
+              tokenOut: targetToken.address,
+              fee: targetToken.fee,
+              recipient: this.address,
+              amountIn: amountInWei,
+              amountOutMinimum: minOutWei,
+              sqrtPriceLimitX96: 0n
+            },
+            txOverrides
+          );
+          const receipt = await swapTx.wait(1);
+          await this.getUsdcBalance();
+          return {
+            success: true,
+            txHash: swapTx.hash,
+            message: `On-Chain BUY Swap bestätigt (${params.amountUsdc.toFixed(2)} USDC → ${cleanSym}) | TX: ${swapTx.hash.slice(0, 12)}... (Block ${receipt?.blockNumber})`
+          };
+        } else {
+          // SELL_TOKEN back to USDC
+          const tokenContract = new ethers.Contract(targetToken.address, ERC20_SWAP_ABI, walletWithRpc);
+          const tokBalWei = (await tokenContract.balanceOf(this.address)) as bigint;
+          if (tokBalWei === 0n) {
+            return {
+              success: false,
+              txHash: '',
+              message: `Kein On-Chain ${cleanSym} Bestand auf Wallet gefunden.`
+            };
+          }
+
+          const currentAllowance = (await tokenContract.allowance(this.address, POLYGON_UNISWAP_V3_ROUTER)) as bigint;
+          if (currentAllowance < tokBalWei) {
+            const appTx = await tokenContract.approve(POLYGON_UNISWAP_V3_ROUTER, tokBalWei, txOverrides);
+            await appTx.wait(1);
+          }
+
+          let minUsdcOutWei = 0n;
+          if (params.expectedPriceUsd && params.expectedPriceUsd > 0) {
+            const tokUnits = Number(ethers.formatUnits(tokBalWei, targetToken.decimals));
+            const expectedUsdc = tokUnits * params.expectedPriceUsd * 0.985;
+            if (expectedUsdc > 0.01) {
+              minUsdcOutWei = ethers.parseUnits(expectedUsdc.toFixed(6), 6);
+            }
+          }
+
+          const swapTx = await router.exactInputSingle(
+            {
+              tokenIn: targetToken.address,
+              tokenOut: activeUsdcAddr,
+              fee: targetToken.fee,
+              recipient: this.address,
+              amountIn: tokBalWei,
+              amountOutMinimum: minUsdcOutWei,
+              sqrtPriceLimitX96: 0n
+            },
+            txOverrides
+          );
+          const receipt = await swapTx.wait(1);
+          await this.getUsdcBalance();
+          return {
+            success: true,
+            txHash: swapTx.hash,
+            message: `On-Chain SELL Swap bestätigt (${cleanSym} → USDC) | TX: ${swapTx.hash.slice(0, 12)}... (Block ${receipt?.blockNumber})`
+          };
+        }
+      } catch (err: any) {
+        lastError = err.shortMessage || err.reason || err.message || 'Polygon DEX Swap Fehler';
+        continue;
+      }
+    }
+
+    return { success: false, txHash: '', message: lastError || 'Polygon DEX RPC nicht erreichbar.' };
+  }
 }
 
 // ==========================================
@@ -2630,6 +2842,106 @@ app.post('/api/wallet/creator-address', async (req, res) => {
   } else {
     res.status(400).json({ success: false, error: 'Ungültige EVM/Polygon-Adresse oder Private Key.' });
   }
+});
+
+// --- MULTI-ASSET AUTONOMOUS TRADING ENGINE (STOCKS, CRYPTO, FOREX) ---
+const tradingEngine = new MultiAssetTradingEngine(
+  () => ({
+    walletAddress: agentZero.wallet.address,
+    usdcBalance: agentZero.wallet.onChainUsdcBalance || agentZero.current_balance || 0,
+    polBalance: agentZero.wallet.onChainPolBalance || 0,
+    hasSigner: Boolean(agentZero.wallet.hasSigner)
+  }),
+  (swapParams) => agentZero.wallet.executePolygonDexSwap(swapParams)
+);
+tradingEngine.startBackgroundLoop();
+
+app.get('/api/trading/state', (req, res) => {
+  res.json(tradingEngine.getState());
+});
+
+app.post('/api/trading/mode', (req, res) => {
+  const mode: TradingMode = req.body.mode === 'LIVE' ? 'LIVE' : 'DEMO';
+  const state = tradingEngine.setMode(mode);
+  agentZero.log('SYSTEM', `[TRADING ENGINE] Modus umgeschaltet auf: ${mode}`);
+  res.json({ success: true, state });
+});
+
+app.post('/api/trading/autopilot', (req, res) => {
+  const enabled = Boolean(req.body.enabled);
+  const state = tradingEngine.setAutoPilot(enabled);
+  agentZero.log('SYSTEM', `[TRADING ENGINE] Auto-Pilot ${enabled ? 'AKTIVIERT' : 'PAUSIERT'}`);
+  res.json({ success: true, state });
+});
+
+app.post('/api/trading/scan', async (req, res) => {
+  try {
+    const result = await tradingEngine.runMarketScanAndTradeCycle();
+    res.json({ success: true, ...result, state: tradingEngine.getState() });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/trading/order', async (req, res) => {
+  try {
+    const { symbol, side, amountUsd } = req.body;
+    const result = await tradingEngine.executeManualOrder({
+      symbol: String(symbol || '').toUpperCase(),
+      side: side === 'SHORT' ? 'SHORT' : 'LONG',
+      amountUsd: Number(amountUsd) || 0.25
+    });
+    res.json({ ...result, state: tradingEngine.getState() });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/trading/close', async (req, res) => {
+  try {
+    const { positionId } = req.body;
+    const result = await tradingEngine.closePositionById(String(positionId || ''));
+    res.json({ ...result, state: tradingEngine.getState() });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/trading/optimize', async (req, res) => {
+  try {
+    const log = await tradingEngine.runSelfOptimization('Manueller KI-Strategie-Optimierungslauf');
+    agentZero.log('SYSTEM', `[TRADING ENGINE] Strategie v${log.newVersion} optimiert.`);
+    res.json({ success: true, optimization: log, state: tradingEngine.getState() });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/trading/reset-demo', (req, res) => {
+  const capital = Number(req.body.capital) || 10000;
+  const state = tradingEngine.resetDemoPortfolio(capital);
+  res.json({ success: true, state });
+});
+
+app.post('/api/trading/target', (req, res) => {
+  try {
+    const { symbol, side, targetEntryPrice, allocatedUsd } = req.body;
+    const result = tradingEngine.addCustomOrderTarget({
+      symbol: String(symbol || '').toUpperCase().replace(/^\$/, ''),
+      side: side === 'SHORT' ? 'SHORT' : 'LONG',
+      targetEntryPrice: Number(targetEntryPrice) || 0,
+      allocatedUsd: Number(allocatedUsd) || 500
+    });
+    res.json({ ...result, state: tradingEngine.getState() });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/trading/target/remove', (req, res) => {
+  const { targetId } = req.body;
+  const result = tradingEngine.removeOrderTarget(String(targetId || ''));
+  res.json({ ...result, state: tradingEngine.getState() });
 });
 
 async function start() {

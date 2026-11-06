@@ -1,6 +1,6 @@
 {
   "name": "Agent Zero",
-  "description": "Real-data autonomous economic unit operating exclusively on Polygon PoS with real Web3 RPC, live HTTP request tools, cognitive intelligence evaluation, and self-managed persistent storage.",
+  "description": "Autonomes Multi-Asset Trading System für Aktien, Krypto und Forex mit kostenloser Echtzeit-Marktanalyse, günstigem Order-Routing, Demo/Live-Modus und KI-Selbstoptimierung.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

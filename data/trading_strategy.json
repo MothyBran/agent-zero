@@ -1,0 +1,35 @@
+{
+  "strategy": {
+    "version": 2,
+    "minConfluenceScore": 51,
+    "rsiOversold": 36,
+    "rsiOverbought": 66,
+    "atrStopLossMultiplier": 1.5,
+    "atrTakeProfitMultiplier": 2.8,
+    "maxPositionSizePct": 14,
+    "maxConcurrentPositions": 6,
+    "preferredCategories": [
+      "CRYPTO",
+      "STOCKS",
+      "FOREX"
+    ],
+    "lastOptimizedAt": "2026-11-06T19:09:52.714Z",
+    "optimizationSummary": "Quantitative Evidenz-Kalibrierung abgeschlossen: Win-Rate 0%, Profit-Faktor 1x, Ø Volatilität 0.34%. Risikound Rendite-Multiplikatoren autonom angepasst."
+  },
+  "history": [
+    {
+      "id": "opt_1793992192714",
+      "timestamp": "2026-11-06T19:09:52.714Z",
+      "mode": "DEMO",
+      "trigger": "Manueller KI-Strategie-Optimierungslauf",
+      "previousVersion": 1,
+      "newVersion": 2,
+      "changes": [
+        "Confluence-Filter auf 51 kalibriert für ruhigere Intraday-Spreads"
+      ],
+      "aiReasoning": "Quantitative Evidenz-Kalibrierung abgeschlossen: Win-Rate 0%, Profit-Faktor 1x, Ø Volatilität 0.34%. Risikound Rendite-Multiplikatoren autonom angepasst.",
+      "winRateAtOptimization": 0,
+      "netPnlAtOptimization": 0
+    }
+  ]
+}

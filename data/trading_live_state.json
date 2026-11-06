@@ -1,0 +1,25 @@
+{
+  "worstLossUsd": 0,
+  "bestTradeUsd": 0,
+  "mode": "LIVE",
+  "initialCapitalUsd": 0.594,
+  "cashBalanceUsd": 0.594,
+  "equityUsd": 0.594,
+  "totalRealizedPnlUsd": 0,
+  "totalUnrealizedPnlUsd": 0,
+  "totalFeesPaidUsd": 0,
+  "winCount": 0,
+  "lossCount": 0,
+  "winRatePct": 0,
+  "profitFactor": 1,
+  "sharpeEstimate": 0,
+  "maxDrawdownPct": 0,
+  "openPositions": [],
+  "closedTrades": [],
+  "equityCurve": [
+    {
+      "timestamp": "2026-11-06T19:09:30.223Z",
+      "equity": 0
+    }
+  ]
+}
