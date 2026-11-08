@@ -1414,26 +1414,20 @@ class AgentWalletTS {
       return { success: false, txHash: '', message: 'Kein AGENT_PRIVATE_KEY für On-Chain Signatur hinterlegt.' };
     }
 
-    const POLYGON_UNISWAP_V3_ROUTER = '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45';
-    const TOKEN_MAP: Record<string, { address: string; decimals: number; fee: number }> = {
-      BTC:    { address: '0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6', decimals: 8,  fee: 500 },  // WBTC 0.05% pool
-      ETH:    { address: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', decimals: 18, fee: 500 },  // WETH 0.05% pool
-      POL:    { address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', decimals: 18, fee: 500 },  // WPOL 0.05% pool
-      LINK:   { address: '0x53E0bca35eC356BD5ddDFebbD1Fc0fD03FaBad39', decimals: 18, fee: 3000 }, // LINK 0.3% pool
-      AVAX:   { address: '0x2C89bbc92BD86F8075d1DEcc58C7F4E0107f286b', decimals: 18, fee: 3000 }, // AVAX 0.3% pool
-      SOL:    { address: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', decimals: 18, fee: 500 },  // High-liquidity WETH/WPOL bridge pool
-      PEPE:   { address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', decimals: 18, fee: 500 },
-      MABEL:  { address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', decimals: 18, fee: 500 },
-      PIXEL:  { address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', decimals: 18, fee: 500 },
-      BONGO:  { address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', decimals: 18, fee: 500 },
-      KROK:   { address: '0x53E0bca35eC356BD5ddDFebbD1Fc0fD03FaBad39', decimals: 18, fee: 3000 },
-      VORTEX: { address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', decimals: 18, fee: 500 },
-      ZORA:   { address: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', decimals: 18, fee: 500 }
-    };
-
     const cleanSym = params.symbol.replace(/^\$/, '').toUpperCase();
-    const targetToken = TOKEN_MAP[cleanSym] || TOKEN_MAP.POL;
-
+    const targetToken = getPolygonToken(cleanSym);
+    if (!targetToken) {
+     return {
+    success: false,
+    txHash: '',
+    message: `Unsupported live token: ${params.symbol}. Supported: BTC, ETH, POL, LINK, AAVE, UNI, AVAX`
+     };
+    }
+// Ab hier unverändert weiter mit:
+// targetToken.address
+// targetToken.decimals
+// targetToken.fee
+// und statt der alten lokalen Konstante: POLYGON_UNISWAP_V3_ROUTER (aus dem Import)
     const ERC20_SWAP_ABI = [
       'function balanceOf(address owner) view returns (uint256)',
       'function allowance(address owner, address spender) view returns (uint256)',
@@ -1467,9 +1461,13 @@ class AgentWalletTS {
         }
 
         const feeData = await rpc.getFeeData();
-        const maxGasAllowed = ethers.parseUnits('250', 'gwei');
+        const maxGasAllowed = ethers.parseUnits(String(LIVE_CONFIG.maxGwei), 'gwei');
         if (feeData.gasPrice && feeData.gasPrice > maxGasAllowed) {
-          return { success: false, txHash: '', message: 'Gas-Schutzsperre: Polygon Netzwerk-Gas aktuell über 250 Gwei.' };
+          return {
+           success: false,
+           txHash: '',
+           message: `Gas-Schutzsperre: ${ethers.formatUnits(feeData.gasPrice, 'gwei')} Gwei > ${LIVE_CONFIG.maxGwei} Gwei`
+          };
         }
 
         const minPriority = ethers.parseUnits('35', 'gwei');
