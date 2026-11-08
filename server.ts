@@ -9,6 +9,8 @@ import { createServer as createViteServer } from 'vite';
 import { MultiAssetTradingEngine, TradingMode } from './src/server/tradingEngine';
 import { GrokDeskEngine } from './src/server/grokDeskEngine';
 import { ExecutionMode } from './src/types/grokDesk';
+import { getPolygonToken, POLYGON_UNISWAP_V3_ROUTER } from './src/server/polygonTokenMap.js';
+import { LIVE_CONFIG } from './src/server/liveConfig.js';
 
 dotenv.config();
 
