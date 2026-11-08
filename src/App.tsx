@@ -4,6 +4,7 @@ import { GrokBootLoaderModal } from './components/grok/GrokBootLoaderModal';
 import { PortfolioPerformanceHeader } from './components/grok/PortfolioPerformanceHeader';
 import { NightShiftFivePacksGrid } from './components/grok/NightShiftFivePacksGrid';
 import { LiveDecisionStream } from './components/grok/LiveDecisionStream';
+import { WalletAddressBar } from './components/grok/WalletAddressBar';
 import { LoginPage } from './components/LoginPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { safeFetchJson } from './lib/api';
@@ -188,6 +189,17 @@ export function App() {
             </div>
           ) : (
             <>
+              {/* Permanent Wallet Address Bar – always visible */}
+              <WalletAddressBar
+                address={state.liveWalletInfo.address || ''}
+                usdcBalance={state.liveWalletInfo.usdcBalance}
+                polGasBalance={state.liveWalletInfo.polGasBalance}
+                hasPrivateKeySigner={!!state.liveWalletInfo.hasPrivateKeySigner}
+                networkLabel={state.liveWalletInfo.networkLabel || 'Polygon'}
+                mode={state.mode}
+                lastDiagnostic={state.liveWalletInfo.lastExecutionDiagnostic}
+              />
+
               {/* Strict Live Wallet Notice Banner when in LIVE ON-CHAIN mode */}
               {state.mode === 'LIVE' && (
                 <div className="bg-[#121215] border border-[#EF4444]/40 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono">
@@ -195,28 +207,10 @@ export function App() {
                     <div className="flex items-center gap-2.5 text-[#F4F4F5] flex-wrap">
                       <ShieldAlert className="w-4 h-4 text-[#EF4444] shrink-0" />
                       <span>
-                        <strong>LIVE ON-CHAIN EXECUTION (0% SIMULATION):</strong> Wallet (
-                        {state.liveWalletInfo.address || 'Nicht verbunden'}):{' '}
-                        <strong className="text-[#10B981]">
-                          ${state.liveWalletInfo.usdcBalance.toFixed(4)} USDC
-                        </strong>{' '}
-                        · Gas: <strong>{state.liveWalletInfo.polGasBalance.toFixed(4)} POL</strong> · Signer:{' '}
-                        <strong
-                          className={
-                            state.liveWalletInfo.hasPrivateKeySigner
-                              ? 'text-[#10B981]'
-                              : 'text-[#EF4444]'
-                          }
-                        >
-                          {state.liveWalletInfo.hasPrivateKeySigner ? 'AKTIV' : 'FEHLT (READ-ONLY)'}
-                        </strong>
+                        <strong>LIVE ON-CHAIN EXECUTION (0% SIMULATION):</strong> Alle Trades werden real
+                        on-chain ausgeführt. Private Key bleibt ausschließlich serverseitig.
                       </span>
                     </div>
-                    {state.liveWalletInfo.lastExecutionDiagnostic && (
-                      <div className="text-[11px] text-[#A1A1AA] pl-6">
-                        Status: {state.liveWalletInfo.lastExecutionDiagnostic}
-                      </div>
-                    )}
                   </div>
                   <button
                     type="button"
@@ -338,7 +332,7 @@ export function App() {
                 </div>
               )}
 
-              {/* View 4: Focused Live Decision Stream & Active Slugs */}
+              {/* View 4: Focused Live Decision Stream & Active Slogs */}
               {activeSection === 'STREAM' && (
                 <div className="space-y-5">
                   <LiveDecisionStream
