@@ -1,8 +1,6 @@
 /**
  * Live Execution Guard & Adapter
- * -----------------------------
  * Hard-wires the 6 Night-Shift agents → real on-chain swap.
- * Only tokens present in polygonTokenMap.ts are allowed in LIVE mode.
  */
 
 import {
@@ -13,15 +11,16 @@ import {
   POLYGON_UNISWAP_V3_ROUTER,
   type PolygonTokenInfo,
 } from './polygonTokenMap.js';
+import { LIVE_CONFIG } from './liveConfig.js';
 
-export { getPolygonToken, isSupportedLiveToken, listSupportedLiveSymbols, POLYGON_USDC, POLYGON_UNISWAP_V3_ROUTER };
+export { getPolygonToken, isSupportedLiveToken, listSupportedLiveSymbols, POLYGON_USDC, POLYGON_UNISWAP_V3_ROUTER, LIVE_CONFIG };
 export type { PolygonTokenInfo };
 
 export type LiveSwapDirection = 'BUY_TOKEN' | 'SELL_TOKEN';
 
 export interface LiveSwapRequest {
   direction: LiveSwapDirection;
-  symbol: string;           // e.g. "BTC", "$ETH", "LINK"
+  symbol: string;
   amountUsdc: number;
   expectedPriceUsd?: number;
 }
@@ -33,10 +32,6 @@ export interface LiveSwapResult {
   token?: PolygonTokenInfo;
 }
 
-/**
- * Pre-flight check used by every agent before calling the real executor.
- * Returns a clear rejection reason instead of letting a wrong address go on-chain.
- */
 export function guardLiveSwap(req: LiveSwapRequest): { ok: true; token: PolygonTokenInfo } | { ok: false; reason: string } {
   if (!req.symbol || typeof req.symbol !== 'string') {
     return { ok: false, reason: 'Missing symbol' };
@@ -50,21 +45,17 @@ export function guardLiveSwap(req: LiveSwapRequest): { ok: true; token: PolygonT
     };
   }
 
-  if (!Number.isFinite(req.amountUsdc) || req.amountUsdc < 0.5) {
-    return { ok: false, reason: `LIVE rejected: amountUsdc must be ≥ 0.50 (got ${req.amountUsdc})` };
+  if (!Number.isFinite(req.amountUsdc) || req.amountUsdc < LIVE_CONFIG.minTradeUsdc) {
+    return { ok: false, reason: `LIVE rejected: amountUsdc must be ≥ ${LIVE_CONFIG.minTradeUsdc} (got ${req.amountUsdc})` };
   }
 
-  if (req.amountUsdc > 250) {
-    return { ok: false, reason: `LIVE rejected: single trade size capped at $250 USDC for safety (got ${req.amountUsdc})` };
+  if (req.amountUsdc > LIVE_CONFIG.maxTradeUsdc) {
+    return { ok: false, reason: `LIVE rejected: single trade size capped at $${LIVE_CONFIG.maxTradeUsdc} USDC (got ${req.amountUsdc})` };
   }
 
   return { ok: true, token };
 }
 
-/**
- * Creates a safe wrapper around the low-level wallet.executePolygonDexSwap.
- * All 6 agents should call this instead of the raw method.
- */
 export function createLiveSwapExecutor(
   rawExecute: (params: {
     direction: LiveSwapDirection;
@@ -82,15 +73,11 @@ export function createLiveSwapExecutor(
     try {
       const result = await rawExecute({
         direction: req.direction,
-        symbol: guard.token.symbol, // canonical symbol (WBTC, WETH, …)
+        symbol: guard.token.symbol,
         amountUsdc: req.amountUsdc,
         expectedPriceUsd: req.expectedPriceUsd,
       });
-
-      return {
-        ...result,
-        token: guard.token,
-      };
+      return { ...result, token: guard.token };
     } catch (err: any) {
       return {
         success: false,
