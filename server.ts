@@ -1456,7 +1456,7 @@ class AgentWalletTS {
         // 1. Check Gas Reserve & Gas Ceiling (Max 250 Gwei)
         const polBal = await rpc.getBalance(this.address);
         this.onChainPolBalance = Number(ethers.formatEther(polBal));
-        if (this.onChainPolBalance < 0.25) {
+        if (this.onChainPolBalance < LIVE_CONFIG.minPolGas) {
           return { success: false, txHash: '', message: `Gas-Schutzsperre: Zu wenig POL (${this.onChainPolBalance.toFixed(3)} POL). Mindestens 0.25 POL erforderlich.` };
         }
 
@@ -3009,7 +3009,7 @@ app.post('/api/grok-desk/trade', async (req, res) => {
     const { ticker, action, amountUsd } = req.body || {};
     const validAction = action === 'SELL' ? 'SELL' : action === 'STOP' ? 'STOP' : 'BUY';
     const result = await grokDeskEngine.executeManualTrade({
-      ticker: String(ticker || '$MABEL'),
+      ticker: String(ticker || 'BTC'),
       action: validAction,
       amountUsd: Number(amountUsd) || 150
     });
