@@ -191,16 +191,32 @@ export function App() {
               {/* Strict Live Wallet Notice Banner when in LIVE ON-CHAIN mode */}
               {state.mode === 'LIVE' && (
                 <div className="bg-[#121215] border border-[#EF4444]/40 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono">
-                  <div className="flex items-center gap-2.5 text-[#F4F4F5]">
-                    <ShieldAlert className="w-4 h-4 text-[#EF4444] shrink-0" />
-                    <span>
-                      <strong>LIVE ON-CHAIN EXECUTION:</strong> Keine Mock-Daten aktiv. Verifiziertes Wallet (
-                      {state.liveWalletInfo.address || 'Nicht verbunden'}):{' '}
-                      <strong className="text-[#10B981]">
-                        {state.liveWalletInfo.usdcBalance.toFixed(4)} USDC
-                      </strong>{' '}
-                      · Gas: <strong>{state.liveWalletInfo.polGasBalance.toFixed(4)} POL</strong>
-                    </span>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2.5 text-[#F4F4F5] flex-wrap">
+                      <ShieldAlert className="w-4 h-4 text-[#EF4444] shrink-0" />
+                      <span>
+                        <strong>LIVE ON-CHAIN EXECUTION (0% SIMULATION):</strong> Wallet (
+                        {state.liveWalletInfo.address || 'Nicht verbunden'}):{' '}
+                        <strong className="text-[#10B981]">
+                          ${state.liveWalletInfo.usdcBalance.toFixed(4)} USDC
+                        </strong>{' '}
+                        · Gas: <strong>{state.liveWalletInfo.polGasBalance.toFixed(4)} POL</strong> · Signer:{' '}
+                        <strong
+                          className={
+                            state.liveWalletInfo.hasPrivateKeySigner
+                              ? 'text-[#10B981]'
+                              : 'text-[#EF4444]'
+                          }
+                        >
+                          {state.liveWalletInfo.hasPrivateKeySigner ? 'AKTIV' : 'FEHLT (READ-ONLY)'}
+                        </strong>
+                      </span>
+                    </div>
+                    {state.liveWalletInfo.lastExecutionDiagnostic && (
+                      <div className="text-[11px] text-[#A1A1AA] pl-6">
+                        Status: {state.liveWalletInfo.lastExecutionDiagnostic}
+                      </div>
+                    )}
                   </div>
                   <button
                     type="button"

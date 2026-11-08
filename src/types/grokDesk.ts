@@ -173,9 +173,11 @@ export interface GrokDeskSystemState {
   decisionStream: DecisionStreamEntry[];
   liveWalletInfo: {
     connected: boolean;
+    hasPrivateKeySigner?: boolean;
     address: string;
     usdcBalance: number;
     polGasBalance: number;
     networkLabel: string;
+    lastExecutionDiagnostic?: string;
   };
 }
