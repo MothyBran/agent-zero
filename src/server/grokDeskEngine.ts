@@ -17,6 +17,7 @@ import {
   DecisionStreamEntry,
   GrokDeskSystemState
 } from '../types/grokDesk';
+import { NIGHT_SHIFT_LIVE_UNIVERSE } from './nightShiftUniverse.js';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const GROK_PAPER_FILE = path.join(DATA_DIR, 'grok_desk_paper_state.json');
@@ -33,16 +34,16 @@ interface TokenCandidateSpec {
   colorHex: string;
 }
 
-const NIGHT_SHIFT_TOKEN_UNIVERSE: TokenCandidateSpec[] = [
-  { ticker: '$MABEL', name: 'Mabel Trench Runner', chain: 'SOLANA', basePriceUsd: 0.0148, binancePair: 'SOLUSDT', liquidityUsd: 184000, routeVenue: 'Jupiter V6 / Raydium CLMM', colorHex: '#10B981' },
-  { ticker: '$PIXEL', name: 'Pixel Neural Grid', chain: 'SOLANA', basePriceUsd: 0.0892, binancePair: 'PEPEUSDT', liquidityUsd: 265000, routeVenue: 'GMGN Fast-Router / Meteora', colorHex: '#34D399' },
-  { ticker: '$BONGO', name: 'Bongo Cat Hyper', chain: 'BASE', basePriceUsd: 0.00425, binancePair: 'SUIUSDT', liquidityUsd: 142000, routeVenue: 'Aerodrome Slipstream V2', colorHex: '#059669' },
-  { ticker: '$SOL', name: 'Solana Native Spot', chain: 'SOLANA', basePriceUsd: 188.40, binancePair: 'SOLUSDT', liquidityUsd: 48500000, routeVenue: 'Jupiter Ultra / Orca', colorHex: '#6EE7B7' },
-  { ticker: '$PEPE', name: 'Pepe Momentum L2', chain: 'POLYGON', basePriceUsd: 0.0000124, binancePair: 'PEPEUSDT', liquidityUsd: 920000, routeVenue: 'QuickSwap V3 / 1inch', colorHex: '#047857' },
-  { ticker: '$KROK', name: 'Krok Quant AI', chain: 'SOLANA', basePriceUsd: 0.0219, binancePair: 'AVAXUSDT', liquidityUsd: 96000, routeVenue: 'GMGN Sniper Route', colorHex: '#10B981' },
-  { ticker: '$VORTEX', name: 'Vortex Liquidity Protocol', chain: 'POLYGON', basePriceUsd: 0.3410, binancePair: 'POLUSDT', liquidityUsd: 215000, routeVenue: 'Uniswap V3 Polygon', colorHex: '#34D399' },
-  { ticker: '$ZORA', name: 'Zora Hyper-Mint', chain: 'BASE', basePriceUsd: 0.0675, binancePair: 'ETHUSDT', liquidityUsd: 310000, routeVenue: 'Uniswap V3 Base', colorHex: '#059669' }
-];
+const NIGHT_SHIFT_TOKEN_UNIVERSE: TokenCandidateSpec[] = NIGHT_SHIFT_LIVE_UNIVERSE.map(t => ({
+  ticker: t.ticker,
+  name: t.name,
+  chain: t.chain as 'SOLANA' | 'POLYGON' | 'BASE',
+  basePriceUsd: t.basePriceUsd,
+  binancePair: t.binancePair,
+  liquidityUsd: t.liquidityUsd,
+  routeVenue: t.routeVenue,
+  colorHex: t.colorHex,
+}));
 
 const SCAM_LAUNCH_SAMPLES: { ticker: string; reason: string; liquidityUsd: number; honeypotRiskPct: number }[] = [
   { ticker: '$RUGAI', reason: 'LP unlocked • Dev holds 44%', liquidityUsd: 4200, honeypotRiskPct: 96 },
