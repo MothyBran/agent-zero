@@ -1,72 +1,76 @@
-# LIVE-Modus aktivieren – Checkliste
+# LIVE-Modus – 3 Copy-Paste-Blöcke für server.ts
 
-## 1. Railway Environment Variables (MUSS)
+Die Datei ist zu groß für automatisches Full-Overwrite. Diese 3 Blöcke reichen, um den Live-Modus freizuschalten.
+
+## Railway Variables (zuerst setzen + Redeploy)
 
 ```
 POLYGON_MAX_GWEI=900
 LIVE_MIN_TRADE_USDC=0.25
 LIVE_USDC_RESERVE=0.05
 LIVE_MIN_POL=0.15
-POLYGON_RPC_URL=<dein privater RPC – Alchemy / Helius / QuickNode>
 ```
 
-Danach **Redeploy**.
-
-## 2. server.ts – Gas-Limit (kritisch)
-
-In `executePolygonDexSwap` diesen Block ersetzen:
+## Block 1 – Imports (ganz oben in server.ts)
 
 ```ts
-// ALT (blockiert dich gerade):
-const maxGasAllowed = ethers.parseUnits('250', 'gwei');
+import { getPolygonToken, POLYGON_UNISWAP_V3_ROUTER } from './src/server/polygonTokenMap.js';
+import { LIVE_CONFIG } from './src/server/liveConfig.js';
+```
 
-// NEU:
-const MAX_GWEI = Number(process.env.POLYGON_MAX_GWEI || 900);
-const maxGasAllowed = ethers.parseUnits(String(MAX_GWEI), 'gwei');
+## Block 2 – Gas-Limit (suche `250` / `maxGasAllowed`)
+
+**Ersetze:**
+```ts
+const maxGasAllowed = ethers.parseUnits('250', 'gwei');
+if (feeData.gasPrice && feeData.gasPrice > maxGasAllowed) {
+  return { success: false, txHash: '', message: 'Gas-Schutzsperre: Polygon Netzwerk-Gas aktuell über 250 Gwei.' };
+}
+```
+
+**Durch:**
+```ts
+const maxGasAllowed = ethers.parseUnits(String(LIVE_CONFIG.maxGwei), 'gwei');
 if (feeData.gasPrice && feeData.gasPrice > maxGasAllowed) {
   return {
     success: false,
     txHash: '',
-    message: `Gas-Schutzsperre: ${ethers.formatUnits(feeData.gasPrice,'gwei')} Gwei > ${MAX_GWEI} Gwei`
+    message: `Gas-Schutzsperre: ${ethers.formatUnits(feeData.gasPrice, 'gwei')} Gwei > ${LIVE_CONFIG.maxGwei} Gwei`
   };
 }
 ```
 
-## 3. server.ts – Token-Map (kritisch)
+## Block 3 – Token-Map (suche `TOKEN_MAP` und `MABEL`)
+
+**Ersetze den gesamten TOKEN_MAP-Block + die Zeile mit `|| TOKEN_MAP.POL` durch:**
 
 ```ts
-import { getPolygonToken } from './src/server/polygonTokenMap.js';
-
-// statt der alten TOKEN_MAP + Fallback auf POL:
 const cleanSym = params.symbol.replace(/^\$/, '').toUpperCase();
 const targetToken = getPolygonToken(cleanSym);
 if (!targetToken) {
-  return { success: false, txHash: '', message: `Unsupported live token: ${params.symbol}` };
+  return {
+    success: false,
+    txHash: '',
+    message: `Unsupported live token: ${params.symbol}. Supported: BTC, ETH, POL, LINK, AAVE, UNI, AVAX`
+  };
 }
-// danach targetToken.address / .decimals / .fee verwenden
+// Danach weiter mit targetToken.address, targetToken.decimals, targetToken.fee
+// und POLYGON_UNISWAP_V3_ROUTER statt der lokalen Konstante
 ```
 
-## 4. GrokDeskEngine – Universe
+## GrokDeskEngine Universe (optional aber empfohlen)
 
 ```ts
 import { NIGHT_SHIFT_LIVE_UNIVERSE } from './nightShiftUniverse.js';
-
-// Alte NIGHT_SHIFT_TOKEN_UNIVERSE-Definition löschen und ersetzen durch:
+// alte NIGHT_SHIFT_TOKEN_UNIVERSE-Definition löschen
 const NIGHT_SHIFT_TOKEN_UNIVERSE = NIGHT_SHIFT_LIVE_UNIVERSE;
 ```
 
-## 5. Instantiierung mit Guard
+## Nach dem Paste + Redeploy
 
-```ts
-import { createLiveSwapExecutor } from './src/server/liveExecutionGuard.js';
+- Gas-Sperre greift erst ab 900 Gwei
+- Nur echte Tokens werden geswappt
+- Min-Trade $0.25 → dein $0.59 Wallet kann handeln
+- $ZORA / $MABEL werden abgelehnt
 
-const safeLiveSwap = createLiveSwapExecutor(p => agentWallet.executePolygonDexSwap(p));
-const grokDesk = new GrokDeskEngine(getLiveWalletInfo, safeLiveSwap);
-```
-
-## 6. Kapital-Realität
-
-Die Anzeige **$0.59 USDC** ist der echte Stand der verbundenen Adresse.
-Wenn du mehr handeln willst → sende zusätzliches USDC (native oder USDC.e) auf `0x8B89…0e1E`.
-
-Mit den Änderungen oben und einem Redeploy kann der Bot bei Gas < 900 Gwei und ≥ $0.25 USDC echte Swaps der Tokens BTC / ETH / POL / LINK / AAVE / UNI / AVAX ausführen.
+Die $0.59 USDC sind der reale Stand. Mehr Kapital = mehr USDC auf die Adresse senden.
