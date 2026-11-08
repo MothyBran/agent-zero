@@ -1,30 +1,32 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { TradingSystemState, TradingMode } from './types/trading';
-import { SixAgentTerminalView } from './components/trading/SixAgentTerminalView';
-import { MarketScannerView } from './components/trading/MarketScannerView';
-import { PortfolioPositionsView } from './components/trading/PortfolioPositionsView';
-import { SelfOptimizerView } from './components/trading/SelfOptimizerView';
-import { ConceptMasterplanView } from './components/trading/ConceptMasterplanView';
+import React, { useState, useEffect } from 'react';
+import { useGrokDeskStream } from './hooks/useGrokDeskStream';
+import { GrokBootLoaderModal } from './components/grok/GrokBootLoaderModal';
+import { PortfolioPerformanceHeader } from './components/grok/PortfolioPerformanceHeader';
+import { NightShiftFivePacksGrid } from './components/grok/NightShiftFivePacksGrid';
+import { LiveDecisionStream } from './components/grok/LiveDecisionStream';
 import { LoginPage } from './components/LoginPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { safeFetchJson, safePostJson } from './lib/api';
+import { safeFetchJson } from './lib/api';
 import { RefreshCw, ShieldAlert } from 'lucide-react';
 
-type ActiveSection = 'TERMINAL' | 'SCANNER' | 'PORTFOLIO' | 'OPTIMIZER' | 'CONCEPT';
+type GrokSection = 'DESK' | 'BOOT' | 'PACKS' | 'STREAM';
 
 export function App() {
-  const [activeSection, setActiveSection] = useState<ActiveSection>('TERMINAL');
-  const [tradingState, setTradingState] = useState<TradingSystemState | null>(null);
-  const [isTriggeringScan, setIsTriggeringScan] = useState(false);
+  const [activeSection, setActiveSection] = useState<GrokSection>('DESK');
+  const [selectedTickerFilter, setSelectedTickerFilter] = useState<string | null>(null);
 
   const [authStatus, setAuthStatus] = useState<{ auth_required: boolean; configured: boolean } | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    try { return localStorage.getItem('agent_zero_auth') === 'true'; } catch { return false; }
+    try {
+      return localStorage.getItem('agent_zero_auth') === 'true';
+    } catch {
+      return false;
+    }
   });
 
   useEffect(() => {
     safeFetchJson<{ auth_required: boolean; configured: boolean }>('/api/auth/status')
-      .then(res => {
+      .then((res) => {
         if (res.ok && res.data) {
           setAuthStatus(res.data);
           if (!res.data.auth_required) setIsAuthenticated(true);
@@ -39,269 +41,281 @@ export function App() {
       });
   }, []);
 
-  const fetchTradingState = useCallback(async () => {
-    const res = await safeFetchJson<TradingSystemState>('/api/trading/state');
-    if (res.ok && res.data) {
-      setTradingState(res.data);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchTradingState();
-      const interval = setInterval(fetchTradingState, 2500);
-      return () => clearInterval(interval);
-    }
-  }, [fetchTradingState, isAuthenticated]);
+  const {
+    state,
+    isBusy,
+    toastMessage,
+    triggerBootSequence,
+    switchExecutionMode,
+    toggleAutoPilot,
+    triggerManualTick,
+    executeTradeAction,
+    resetPaperLedger
+  } = useGrokDeskStream();
 
   const handleLoginSuccess = () => {
     setIsAuthenticated(true);
-    try { localStorage.setItem('agent_zero_auth', 'true'); } catch {}
-    fetchTradingState();
-  };
-
-  const handleSwitchMode = async (mode: TradingMode) => {
-    const res = await safePostJson<{ success: boolean; state: TradingSystemState }>('/api/trading/mode', { mode });
-    if (res.ok && res.data?.state) {
-      setTradingState(res.data.state);
-    }
-  };
-
-  const handleToggleAutoPilot = async () => {
-    if (!tradingState) return;
-    const res = await safePostJson<{ success: boolean; state: TradingSystemState }>('/api/trading/autopilot', {
-      enabled: !tradingState.autoPilotEnabled
-    });
-    if (res.ok && res.data?.state) {
-      setTradingState(res.data.state);
-    }
-  };
-
-  const handleTriggerScanAndTrade = async () => {
-    setIsTriggeringScan(true);
     try {
-      const res = await safePostJson<{ success: boolean; state: TradingSystemState }>('/api/trading/scan');
-      if (res.ok && res.data?.state) {
-        setTradingState(res.data.state);
-      }
-    } finally {
-      setIsTriggeringScan(false);
-    }
-  };
-
-  const handleExecuteOrder = async (symbol: string, side: 'LONG' | 'SHORT', amountUsd: number) => {
-    const res = await safePostJson<{ success: boolean; message: string; state?: TradingSystemState }>('/api/trading/order', {
-      symbol,
-      side,
-      amountUsd
-    });
-    if (res.ok && res.data) {
-      if (res.data.state) setTradingState(res.data.state);
-      return { success: res.data.success, message: res.data.message };
-    }
-    return { success: false, message: res.error || 'Order fehlgeschlagen.' };
-  };
-
-  const handleClosePosition = async (positionId: string) => {
-    const res = await safePostJson<{ success: boolean; state?: TradingSystemState }>('/api/trading/close', { positionId });
-    if (res.ok && res.data?.state) {
-      setTradingState(res.data.state);
-    }
-  };
-
-  const handleRunOptimization = async () => {
-    const res = await safePostJson<{ success: boolean; state?: TradingSystemState }>('/api/trading/optimize');
-    if (res.ok && res.data?.state) {
-      setTradingState(res.data.state);
-    }
-  };
-
-  const handleResetDemo = async (capitalUsd: number) => {
-    const res = await safePostJson<{ success: boolean; state?: TradingSystemState }>('/api/trading/reset-demo', { capital: capitalUsd });
-    if (res.ok && res.data?.state) {
-      setTradingState(res.data.state);
-    }
+      localStorage.setItem('agent_zero_auth', 'true');
+    } catch {}
   };
 
   if (authStatus?.auth_required && !isAuthenticated) {
     return <LoginPage onLoginSuccess={handleLoginSuccess} />;
   }
 
-  const activeMode: TradingMode = tradingState?.activeMode || 'DEMO';
-  const currentPortfolio = activeMode === 'DEMO'
-    ? tradingState?.demoPortfolio
-    : tradingState?.livePortfolio;
+  const handleBootClick = async () => {
+    setActiveSection('BOOT');
+    await triggerBootSequence();
+  };
 
   return (
-    <div className="min-h-screen w-full flex flex-col text-[#0b213a]">
+    <div className="min-h-screen w-full bg-[#09090B] text-[#F4F4F5] flex flex-col">
       {/* Strict 3-Zone Top Bar Contract */}
-      <header className="sticky top-0 z-30 backdrop-blur-xl bg-white/80 border-b border-white/95 shadow-xs px-6 py-3.5 flex items-center justify-between gap-8">
+      <header className="sticky top-0 z-30 bg-[#09090B]/90 backdrop-blur-md border-b border-[#1E1E24] px-4 sm:px-6 py-3.5 flex items-center justify-between gap-8">
         {/* Zone 1: Single text element wordmark */}
         <a
-          href="#terminal"
-          onClick={(e) => { e.preventDefault(); setActiveSection('TERMINAL'); }}
-          className="text-lg font-bold tracking-tight text-[#08203e] font-display whitespace-nowrap shrink-0"
+          href="#desk"
+          onClick={(e) => {
+            e.preventDefault();
+            setActiveSection('DESK');
+          }}
+          className="text-lg font-bold tracking-tight text-[#F4F4F5] font-display whitespace-nowrap shrink-0"
         >
-          Agent Zero
+          Grok desk
         </a>
 
-        {/* Zone 2: 5 concise single-line navigation links */}
-        <nav className="flex items-center gap-6 text-xs sm:text-sm font-semibold text-[#35567c] overflow-x-auto">
+        {/* Zone 2: 4 concise single-line text navigation links */}
+        <nav className="flex items-center gap-5 sm:gap-7 text-xs sm:text-sm font-medium text-[#A1A1AA] overflow-x-auto">
           <a
-            href="#terminal"
-            onClick={(e) => { e.preventDefault(); setActiveSection('TERMINAL'); }}
+            href="#desk"
+            onClick={(e) => {
+              e.preventDefault();
+              setActiveSection('DESK');
+            }}
             className={`transition-colors whitespace-nowrap shrink-0 pb-0.5 ${
-              activeSection === 'TERMINAL'
-                ? 'text-[#08203e] border-b-2 border-sky-600'
-                : 'hover:text-[#08203e]'
+              activeSection === 'DESK'
+                ? 'text-[#10B981] border-b-2 border-[#10B981]'
+                : 'hover:text-[#F4F4F5]'
             }`}
           >
-            6-Agenten Terminal
+            Night Shift #2
           </a>
           <a
-            href="#scanner"
-            onClick={(e) => { e.preventDefault(); setActiveSection('SCANNER'); }}
+            href="#boot"
+            onClick={(e) => {
+              e.preventDefault();
+              setActiveSection('BOOT');
+            }}
             className={`transition-colors whitespace-nowrap shrink-0 pb-0.5 ${
-              activeSection === 'SCANNER'
-                ? 'text-[#08203e] border-b-2 border-sky-600'
-                : 'hover:text-[#08203e]'
+              activeSection === 'BOOT'
+                ? 'text-[#10B981] border-b-2 border-[#10B981]'
+                : 'hover:text-[#F4F4F5]'
             }`}
           >
-            Markt & Order-Ziele
+            Boot / 5 Packs
           </a>
           <a
-            href="#portfolio"
-            onClick={(e) => { e.preventDefault(); setActiveSection('PORTFOLIO'); }}
+            href="#packs"
+            onClick={(e) => {
+              e.preventDefault();
+              setActiveSection('PACKS');
+            }}
             className={`transition-colors whitespace-nowrap shrink-0 pb-0.5 ${
-              activeSection === 'PORTFOLIO'
-                ? 'text-[#08203e] border-b-2 border-sky-600'
-                : 'hover:text-[#08203e]'
+              activeSection === 'PACKS'
+                ? 'text-[#10B981] border-b-2 border-[#10B981]'
+                : 'hover:text-[#F4F4F5]'
             }`}
           >
-            Portfolio & Trades
+            Five Packs Grid
           </a>
           <a
-            href="#optimizer"
-            onClick={(e) => { e.preventDefault(); setActiveSection('OPTIMIZER'); }}
+            href="#stream"
+            onClick={(e) => {
+              e.preventDefault();
+              setActiveSection('STREAM');
+            }}
             className={`transition-colors whitespace-nowrap shrink-0 pb-0.5 ${
-              activeSection === 'OPTIMIZER'
-                ? 'text-[#08203e] border-b-2 border-sky-600'
-                : 'hover:text-[#08203e]'
+              activeSection === 'STREAM'
+                ? 'text-[#10B981] border-b-2 border-[#10B981]'
+                : 'hover:text-[#F4F4F5]'
             }`}
           >
-            KI-Selbstoptimierung
-          </a>
-          <a
-            href="#concept"
-            onClick={(e) => { e.preventDefault(); setActiveSection('CONCEPT'); }}
-            className={`transition-colors whitespace-nowrap shrink-0 pb-0.5 ${
-              activeSection === 'CONCEPT'
-                ? 'text-[#08203e] border-b-2 border-sky-600'
-                : 'hover:text-[#08203e]'
-            }`}
-          >
-            Konzept & Wallet
+            Decision Stream
           </a>
         </nav>
 
-        {/* Zone 3: 1 primary action (Mode Switch Paper vs Live) */}
+        {/* Zone 3: 1 primary action */}
         <div className="flex items-center shrink-0">
           <button
             type="button"
-            onClick={() => handleSwitchMode(activeMode === 'DEMO' ? 'LIVE' : 'DEMO')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-mono font-bold cursor-pointer whitespace-nowrap shrink-0 transition-all ${
-              activeMode === 'DEMO'
-                ? 'waterdrop-btn-pearl text-sky-900'
-                : 'bg-emerald-600 text-white shadow-sm'
-            }`}
+            onClick={handleBootClick}
+            className="px-3.5 py-1.5 rounded-xl bg-[#10B981] hover:bg-[#059669] text-[#09090B] text-xs font-mono font-bold transition-colors cursor-pointer whitespace-nowrap shrink-0"
           >
-            {activeMode === 'DEMO' ? 'paper-✓ → live' : 'live-✓ → paper'}
+            Boot 5 Packs
           </button>
         </div>
       </header>
 
-      {/* Main Workspace Container */}
-      <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
-        {/* Strict Live Mode Notice Banner when in ECHT-BETRIEB */}
-        {activeMode === 'LIVE' && (
-          <div className="waterdrop-card p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-[#0b213a]">
-            <div className="flex items-center gap-2.5">
-              <ShieldAlert className="w-4 h-4 text-emerald-700 shrink-0" />
-              <span>
-                <strong>Echt-Betrieb Sicherheitsgarantie:</strong> Keine fiktiven oder simulierten Salden aktiv. Verifiziertes Polygon Wallet ({tradingState?.liveConnectors.polygonDexOnChain.walletAddress || 'Nicht verbunden'}): <strong>{tradingState?.liveConnectors.polygonDexOnChain.usdcBalance.toFixed(4)} USDC</strong> und <strong>{tradingState?.liveConnectors.polygonDexOnChain.polGasBalance.toFixed(4)} POL Gas</strong>.
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => handleSwitchMode('DEMO')}
-              className="waterdrop-btn-pearl px-3 py-1 rounded-lg font-mono font-bold text-[11px] shrink-0 cursor-pointer"
-            >
-              Zurück in Demo-Spielgeld
-            </button>
-          </div>
-        )}
+      {/* Non-intrusive Action Feedback Toast */}
+      {toastMessage && (
+        <div className="fixed bottom-5 right-5 z-50 max-w-sm bg-[#121215] border border-[#27272A] rounded-xl px-4 py-3 shadow-2xl font-mono text-xs flex items-center gap-2.5">
+          <span
+            className={`w-2 h-2 rounded-full shrink-0 ${
+              toastMessage.tone === 'danger'
+                ? 'bg-[#EF4444]'
+                : toastMessage.tone === 'profit'
+                ? 'bg-[#10B981]'
+                : 'bg-[#A1A1AA]'
+            }`}
+          />
+          <span className="text-[#F4F4F5]">{toastMessage.text}</span>
+        </div>
+      )}
 
-        {/* Active View Content */}
-        <ErrorBoundary fallbackTitle="Trading-Modul Schutzschild">
-          {!tradingState ? (
-            <div className="waterdrop-card p-12 text-center space-y-3">
-              <RefreshCw className="w-6 h-6 text-sky-600 animate-spin mx-auto" />
-              <div className="text-sm font-semibold text-[#0b213a]">
-                Starte 6-Agenten Hard-Handoff Pipeline (SCOUT → FILTER → ANALYST → EXECUTOR → RISK → LOGGER)...
+      {/* Main Scoped Workspace Container */}
+      <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 py-5 space-y-5">
+        <ErrorBoundary fallbackTitle="Grok Desk Protection Shield">
+          {!state ? (
+            <div className="bg-[#121215] border border-[#222228] rounded-2xl p-12 text-center space-y-3 font-mono">
+              <RefreshCw className="w-6 h-6 text-[#10B981] animate-spin mx-auto" />
+              <div className="text-sm font-semibold text-[#F4F4F5]">
+                MORPH / NIGHT SHIFT #2 · Opening scoped workspace...
+              </div>
+              <div className="text-xs text-[#71717A]">
+                BOOT / 5 PACKS: GMGN Skills · Kaiser.Charon · GMGN Trading Bot · gmgnAgent · PumpGrok
               </div>
             </div>
           ) : (
             <>
-              {activeSection === 'TERMINAL' && (
-                <SixAgentTerminalView
-                  state={tradingState}
-                  onToggleAutoPilot={handleToggleAutoPilot}
-                  onTriggerScan={handleTriggerScanAndTrade}
-                  onRunOptimize={handleRunOptimization}
-                  onClosePosition={handleClosePosition}
-                  onExecuteOrder={handleExecuteOrder}
+              {/* Strict Live Wallet Notice Banner when in LIVE ON-CHAIN mode */}
+              {state.mode === 'LIVE' && (
+                <div className="bg-[#121215] border border-[#EF4444]/40 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono">
+                  <div className="flex items-center gap-2.5 text-[#F4F4F5]">
+                    <ShieldAlert className="w-4 h-4 text-[#EF4444] shrink-0" />
+                    <span>
+                      <strong>LIVE ON-CHAIN EXECUTION:</strong> Keine Mock-Daten aktiv. Verifiziertes Wallet (
+                      {state.liveWalletInfo.address || 'Nicht verbunden'}):{' '}
+                      <strong className="text-[#10B981]">
+                        {state.liveWalletInfo.usdcBalance.toFixed(4)} USDC
+                      </strong>{' '}
+                      · Gas: <strong>{state.liveWalletInfo.polGasBalance.toFixed(4)} POL</strong>
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => switchExecutionMode('PAPER')}
+                    className="px-3 py-1.5 rounded-lg bg-[#18181E] hover:bg-[#22222A] border border-[#27272A] text-[#F4F4F5] font-bold text-xs shrink-0 cursor-pointer"
+                  >
+                    Switch to Paper Mode
+                  </button>
+                </div>
+              )}
+
+              {/* Compact Shift & 5-Packs Status Strip on main Desk */}
+              {activeSection !== 'BOOT' && (
+                <div className="bg-[#121215] border border-[#222228] rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <span className="font-bold text-[#F4F4F5]">{state.bootState.shiftLabel}</span>
+                    <span className="text-[#3F3F46]">·</span>
+                    <span className="text-[#10B981] font-semibold">
+                      {state.bootState.bootHeaderLabel} ({state.bootState.overallProgressPct}%)
+                    </span>
+                    <span className="text-[#3F3F46] hidden md:inline">·</span>
+                    <div className="hidden md:flex items-center gap-2 text-[#A1A1AA]">
+                      {state.bootState.packs.map((p, idx) => (
+                        <React.Fragment key={p.id}>
+                          {idx > 0 && <span className="text-[#3F3F46]">/</span>}
+                          <span>
+                            {p.name}:{' '}
+                            <strong
+                              className={
+                                p.status === 'READY' ? 'text-[#10B981]' : 'text-[#F59E0B]'
+                              }
+                            >
+                              {p.status}
+                            </strong>
+                          </span>
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveSection('BOOT')}
+                    className="text-[#A1A1AA] hover:text-[#10B981] transition-colors cursor-pointer whitespace-nowrap"
+                  >
+                    Opening scoped workspace →
+                  </button>
+                </div>
+              )}
+
+              {/* View 1: Dedicated Boot- / Workspace-Loader ("Grok desk") */}
+              {activeSection === 'BOOT' && (
+                <GrokBootLoaderModal
+                  bootState={state.bootState}
+                  isBusy={isBusy}
+                  onReRunBoot={triggerBootSequence}
+                  onEnterWorkspace={() => setActiveSection('DESK')}
                 />
               )}
 
-              {activeSection === 'SCANNER' && currentPortfolio && (
-                <MarketScannerView
-                  quotes={tradingState.marketQuotes}
-                  activeMode={activeMode}
-                  availableCashUsd={currentPortfolio.cashBalanceUsd}
-                  strategy={tradingState.strategy}
-                  sentiment={tradingState.marketSentiment}
-                  autoPilotEnabled={tradingState.autoPilotEnabled}
-                  isScanning={tradingState.isScanning || isTriggeringScan}
-                  onExecuteOrder={handleExecuteOrder}
-                  onTriggerScan={handleTriggerScanAndTrade}
-                />
+              {/* View 2: Full Grok Desk (All Modules Integrated) */}
+              {activeSection === 'DESK' && (
+                <div className="space-y-5">
+                  <PortfolioPerformanceHeader
+                    header={state.portfolioHeader}
+                    autoPilotEnabled={state.autoPilotEnabled}
+                    selectedTickerFilter={selectedTickerFilter}
+                    isBusy={isBusy}
+                    onSelectTickerFilter={setSelectedTickerFilter}
+                    onToggleAutoPilot={toggleAutoPilot}
+                    onTriggerTick={triggerManualTick}
+                    onSwitchMode={switchExecutionMode}
+                    onResetPaper={resetPaperLedger}
+                  />
+
+                  <NightShiftFivePacksGrid
+                    fivePacks={state.fivePacks}
+                    isBusy={isBusy}
+                    onQuickBuyCandidate={(ticker) => executeTradeAction(ticker, 'BUY', 150)}
+                  />
+
+                  <LiveDecisionStream
+                    entries={state.decisionStream}
+                    openSlugs={state.portfolioHeader.openSlugs}
+                    selectedTickerFilter={selectedTickerFilter}
+                    isBusy={isBusy}
+                    onClearTickerFilter={() => setSelectedTickerFilter(null)}
+                    onExecuteTradeAction={executeTradeAction}
+                  />
+                </div>
               )}
 
-              {activeSection === 'PORTFOLIO' && currentPortfolio && (
-                <PortfolioPositionsView
-                  portfolio={currentPortfolio}
-                  activeMode={activeMode}
-                  liveConnectors={tradingState.liveConnectors}
-                  onClosePosition={handleClosePosition}
-                  onResetDemo={handleResetDemo}
-                  onSwitchTabToScanner={() => setActiveSection('TERMINAL')}
-                />
+              {/* View 3: Focused Night Shift / Five Packs Control-Grid */}
+              {activeSection === 'PACKS' && (
+                <div className="space-y-5">
+                  <NightShiftFivePacksGrid
+                    fivePacks={state.fivePacks}
+                    isBusy={isBusy}
+                    onQuickBuyCandidate={(ticker) => executeTradeAction(ticker, 'BUY', 150)}
+                  />
+                </div>
               )}
 
-              {activeSection === 'OPTIMIZER' && (
-                <SelfOptimizerView
-                  strategy={tradingState.strategy}
-                  optimizationHistory={tradingState.optimizationHistory}
-                  activityLogs={tradingState.recentActivityLogs}
-                  onRunOptimize={handleRunOptimization}
-                />
-              )}
-
-              {activeSection === 'CONCEPT' && (
-                <ConceptMasterplanView
-                  liveConnectors={tradingState.liveConnectors}
-                  onRefreshState={fetchTradingState}
-                />
+              {/* View 4: Focused Live Decision Stream & Active Slugs */}
+              {activeSection === 'STREAM' && (
+                <div className="space-y-5">
+                  <LiveDecisionStream
+                    entries={state.decisionStream}
+                    openSlugs={state.portfolioHeader.openSlugs}
+                    selectedTickerFilter={selectedTickerFilter}
+                    isBusy={isBusy}
+                    onClearTickerFilter={() => setSelectedTickerFilter(null)}
+                    onExecuteTradeAction={executeTradeAction}
+                  />
+                </div>
               )}
             </>
           )}

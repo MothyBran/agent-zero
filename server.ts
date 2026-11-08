@@ -7,6 +7,8 @@ import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
 import { MultiAssetTradingEngine, TradingMode } from './src/server/tradingEngine';
+import { GrokDeskEngine } from './src/server/grokDeskEngine';
+import { ExecutionMode } from './src/types/grokDesk';
 
 dotenv.config();
 
@@ -2942,6 +2944,83 @@ app.post('/api/trading/target/remove', (req, res) => {
   const { targetId } = req.body;
   const result = tradingEngine.removeOrderTarget(String(targetId || ''));
   res.json({ ...result, state: tradingEngine.getState() });
+});
+
+// --- GROK DESK (NIGHT SHIFT #2 / FIVE PACKS) AUTONOMOUS ENGINE & SSE STREAM ---
+const grokDeskEngine = new GrokDeskEngine(
+  () => ({
+    connected: Boolean(agentZero.wallet.hasSigner && agentZero.wallet.address),
+    address: agentZero.wallet.address || '',
+    usdcBalance: agentZero.wallet.onChainUsdcBalance || agentZero.current_balance || 0,
+    polGasBalance: agentZero.wallet.onChainPolBalance || 0
+  }),
+  (swapParams) => agentZero.wallet.executePolygonDexSwap(swapParams)
+);
+grokDeskEngine.startWorkerLoop();
+
+app.get('/api/grok-desk/state', (req, res) => {
+  res.json(grokDeskEngine.getState());
+});
+
+app.get('/api/grok-desk/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  const initialPayload = JSON.stringify({
+    type: 'init',
+    timestamp: new Date().toISOString(),
+    state: grokDeskEngine.getState()
+  });
+  res.write(`data: ${initialPayload}\n\n`);
+  grokDeskEngine.addSseClient(res);
+});
+
+app.post('/api/grok-desk/boot', (req, res) => {
+  const state = grokDeskEngine.triggerBootSequence();
+  res.json({ success: true, state });
+});
+
+app.post('/api/grok-desk/mode', (req, res) => {
+  const mode: ExecutionMode = req.body?.mode === 'LIVE' ? 'LIVE' : 'PAPER';
+  const state = grokDeskEngine.setExecutionMode(mode);
+  res.json({ success: true, state });
+});
+
+app.post('/api/grok-desk/autopilot', (req, res) => {
+  const enabled = Boolean(req.body?.enabled);
+  const state = grokDeskEngine.setAutoPilot(enabled);
+  res.json({ success: true, state });
+});
+
+app.post('/api/grok-desk/tick', async (req, res) => {
+  try {
+    await grokDeskEngine.runNightShiftTick();
+    res.json({ success: true, state: grokDeskEngine.getState() });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/grok-desk/trade', async (req, res) => {
+  try {
+    const { ticker, action, amountUsd } = req.body || {};
+    const validAction = action === 'SELL' ? 'SELL' : action === 'STOP' ? 'STOP' : 'BUY';
+    const result = await grokDeskEngine.executeManualTrade({
+      ticker: String(ticker || '$MABEL'),
+      action: validAction,
+      amountUsd: Number(amountUsd) || 150
+    });
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/grok-desk/reset-paper', (req, res) => {
+  const state = grokDeskEngine.resetPaperWorkspace();
+  res.json({ success: true, state });
 });
 
 async function start() {
