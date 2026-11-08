@@ -279,10 +279,20 @@ export function App() {
                   <NightShiftFivePacksGrid
                     fivePacks={state.fivePacks}
                     isBusy={isBusy}
-                    onQuickBuyCandidate={(ticker) => executeTradeAction(ticker, 'BUY', 150)}
+                    onQuickBuyCandidate={(ticker) =>
+                      executeTradeAction(
+                        ticker,
+                        'BUY',
+                        state.mode === 'PAPER'
+                          ? 150
+                          : Math.max(0.25, Number((state.portfolioHeader.availableCashUsd * 0.25).toFixed(2)))
+                      )
+                    }
                   />
 
                   <LiveDecisionStream
+                    mode={state.mode}
+                    availableCashUsd={state.portfolioHeader.availableCashUsd}
                     entries={state.decisionStream}
                     openSlugs={state.portfolioHeader.openSlugs}
                     selectedTickerFilter={selectedTickerFilter}
@@ -299,7 +309,15 @@ export function App() {
                   <NightShiftFivePacksGrid
                     fivePacks={state.fivePacks}
                     isBusy={isBusy}
-                    onQuickBuyCandidate={(ticker) => executeTradeAction(ticker, 'BUY', 150)}
+                    onQuickBuyCandidate={(ticker) =>
+                      executeTradeAction(
+                        ticker,
+                        'BUY',
+                        state.mode === 'PAPER'
+                          ? 150
+                          : Math.max(0.25, Number((state.portfolioHeader.availableCashUsd * 0.25).toFixed(2)))
+                      )
+                    }
                   />
                 </div>
               )}
@@ -308,6 +326,8 @@ export function App() {
               {activeSection === 'STREAM' && (
                 <div className="space-y-5">
                   <LiveDecisionStream
+                    mode={state.mode}
+                    availableCashUsd={state.portfolioHeader.availableCashUsd}
                     entries={state.decisionStream}
                     openSlugs={state.portfolioHeader.openSlugs}
                     selectedTickerFilter={selectedTickerFilter}

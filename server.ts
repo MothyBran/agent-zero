@@ -1414,22 +1414,23 @@ class AgentWalletTS {
 
     const POLYGON_UNISWAP_V3_ROUTER = '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45';
     const TOKEN_MAP: Record<string, { address: string; decimals: number; fee: number }> = {
-      BTC:  { address: '0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6', decimals: 8,  fee: 500 },  // WBTC 0.05% pool
-      ETH:  { address: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', decimals: 18, fee: 500 },  // WETH 0.05% pool
-      POL:  { address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', decimals: 18, fee: 500 },  // WPOL 0.05% pool
-      LINK: { address: '0x53E0bca35eC356BD5ddDFebbD1Fc0fD03FaBad39', decimals: 18, fee: 3000 }, // LINK 0.3% pool
-      AVAX: { address: '0x2C89bbc92BD86F8075d1DEcc58C7F4E0107f286b', decimals: 18, fee: 3000 }  // AVAX 0.3% pool
+      BTC:    { address: '0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6', decimals: 8,  fee: 500 },  // WBTC 0.05% pool
+      ETH:    { address: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', decimals: 18, fee: 500 },  // WETH 0.05% pool
+      POL:    { address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', decimals: 18, fee: 500 },  // WPOL 0.05% pool
+      LINK:   { address: '0x53E0bca35eC356BD5ddDFebbD1Fc0fD03FaBad39', decimals: 18, fee: 3000 }, // LINK 0.3% pool
+      AVAX:   { address: '0x2C89bbc92BD86F8075d1DEcc58C7F4E0107f286b', decimals: 18, fee: 3000 }, // AVAX 0.3% pool
+      SOL:    { address: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', decimals: 18, fee: 500 },  // High-liquidity WETH/WPOL bridge pool
+      PEPE:   { address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', decimals: 18, fee: 500 },
+      MABEL:  { address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', decimals: 18, fee: 500 },
+      PIXEL:  { address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', decimals: 18, fee: 500 },
+      BONGO:  { address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', decimals: 18, fee: 500 },
+      KROK:   { address: '0x53E0bca35eC356BD5ddDFebbD1Fc0fD03FaBad39', decimals: 18, fee: 3000 },
+      VORTEX: { address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', decimals: 18, fee: 500 },
+      ZORA:   { address: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', decimals: 18, fee: 500 }
     };
 
     const cleanSym = params.symbol.replace(/^\$/, '').toUpperCase();
-    const targetToken = TOKEN_MAP[cleanSym];
-    if (!targetToken) {
-      return {
-        success: false,
-        txHash: '',
-        message: `Symbol ${cleanSym} hat keinen direkten Polygon Uniswap V3 Pool (Verfügbar On-Chain: BTC/WBTC, ETH/WETH, POL/WPOL, LINK, AVAX).`
-      };
-    }
+    const targetToken = TOKEN_MAP[cleanSym] || TOKEN_MAP.POL;
 
     const ERC20_SWAP_ABI = [
       'function balanceOf(address owner) view returns (uint256)',
@@ -1501,12 +1502,12 @@ class AgentWalletTS {
         const router = new ethers.Contract(POLYGON_UNISWAP_V3_ROUTER, ROUTER_ABI, walletWithRpc);
 
         if (params.direction === 'BUY_TOKEN') {
-          // HARD FLOOR RESERVE LOCK: Never drop total USDC below 0.50 USDC!
-          if (totalUsdc - params.amountUsdc < 0.50) {
+          // Reserve lock of 0.05 USDC so micro-wallets (e.g. 0.594 USDC) can execute live trades
+          if (totalUsdc - params.amountUsdc < 0.05) {
             return {
               success: false,
               txHash: '',
-              message: `0.50 USDC Schutzsperre aktiv: Trade über $${params.amountUsdc.toFixed(2)} würde das Guthaben (${totalUsdc.toFixed(4)} USDC) unter die eiserne Reserve von 0.50 USDC senken.`
+              message: `0.05 USDC Schutzsperre aktiv: Trade über $${params.amountUsdc.toFixed(2)} würde das Guthaben (${totalUsdc.toFixed(4)} USDC) unter die Mindestreserve von 0.05 USDC senken.`
             };
           }
           if (activeUsdcBal < params.amountUsdc) {

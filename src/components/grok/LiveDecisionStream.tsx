@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
-import { DecisionStreamEntry, DecisionAction, ActiveSlugPosition } from '../../types/grokDesk';
+import React, { useState, useEffect } from 'react';
+import { DecisionStreamEntry, DecisionAction, ActiveSlugPosition, ExecutionMode } from '../../types/grokDesk';
 import { Terminal, ArrowUpRight, ArrowDownRight, ShieldAlert, PlusCircle } from 'lucide-react';
 
 interface LiveDecisionStreamProps {
+  mode: ExecutionMode;
+  availableCashUsd: number;
   entries: DecisionStreamEntry[];
   openSlugs: ActiveSlugPosition[];
   selectedTickerFilter: string | null;
@@ -12,6 +14,8 @@ interface LiveDecisionStreamProps {
 }
 
 export const LiveDecisionStream: React.FC<LiveDecisionStreamProps> = ({
+  mode,
+  availableCashUsd,
   entries,
   openSlugs,
   selectedTickerFilter,
@@ -23,7 +27,19 @@ export const LiveDecisionStream: React.FC<LiveDecisionStreamProps> = ({
   const [quickTicker, setQuickTicker] = useState<string>('$MABEL');
   const [quickAmount, setQuickAmount] = useState<string>('180');
 
-  const filteredEntries = entries.filter(item => {
+  useEffect(() => {
+    if (mode === 'LIVE') {
+      const suggested = Math.max(0.25, Number((availableCashUsd * 0.25).toFixed(2)));
+      setQuickAmount(String(suggested));
+    } else {
+      setQuickAmount('180');
+    }
+  }, [mode, availableCashUsd]);
+
+  const modeFilteredEntries = entries.filter(item => item.mode === mode);
+  const baseList = modeFilteredEntries.length > 0 ? modeFilteredEntries : entries;
+
+  const filteredEntries = baseList.filter(item => {
     if (actionFilter !== 'ALL' && item.action !== actionFilter) return false;
     if (selectedTickerFilter && item.ticker !== selectedTickerFilter) return false;
     return true;
@@ -31,9 +47,14 @@ export const LiveDecisionStream: React.FC<LiveDecisionStreamProps> = ({
 
   const handleQuickBuy = (e: React.FormEvent) => {
     e.preventDefault();
-    const amt = Math.max(10, Number(quickAmount) || 150);
+    const minOrder = mode === 'LIVE' ? 0.10 : 10;
+    const amt = Math.max(minOrder, Number(quickAmount) || (mode === 'LIVE' ? 1.0 : 150));
     onExecuteTradeAction(quickTicker, 'BUY', amt);
   };
+
+  const defaultStarterAmt = mode === 'LIVE'
+    ? Math.max(0.25, Number((availableCashUsd * 0.25).toFixed(2)))
+    : 180;
 
   return (
     <section className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
@@ -44,7 +65,7 @@ export const LiveDecisionStream: React.FC<LiveDecisionStreamProps> = ({
             <div className="flex items-center gap-2">
               <ShieldAlert className="w-4 h-4 text-[#10B981]" />
               <h3 className="text-sm font-bold text-[#F4F4F5] font-display">
-                Active Slugs & -6% Stop Guard
+                Active Slugs & -6% Stop Guard ({mode})
               </h3>
             </div>
             <span className="text-xs font-mono text-[#A1A1AA] tabular-nums">
@@ -55,15 +76,15 @@ export const LiveDecisionStream: React.FC<LiveDecisionStreamProps> = ({
           {openSlugs.length === 0 ? (
             <div className="bg-[#09090B] border border-[#1C1C22] rounded-xl p-6 text-center space-y-2 font-mono">
               <p className="text-xs text-[#A1A1AA]">
-                Keine offenen Positionen im aktuellen Modus.
+                Keine offenen Positionen im {mode}-Modus.
               </p>
               <button
                 type="button"
                 disabled={isBusy}
-                onClick={() => onExecuteTradeAction('$MABEL', 'BUY', 180)}
+                onClick={() => onExecuteTradeAction('$PEPE', 'BUY', defaultStarterAmt)}
                 className="px-3.5 py-2 rounded-lg bg-[#10B981] text-[#09090B] text-xs font-bold cursor-pointer"
               >
-                Open First Position ($MABEL $180)
+                Open First Position ($PEPE ${defaultStarterAmt.toFixed(2)})
               </button>
             </div>
           ) : (
@@ -81,7 +102,7 @@ export const LiveDecisionStream: React.FC<LiveDecisionStreamProps> = ({
                           {slug.ticker}
                         </span>
                         <span className="text-[11px] text-[#71717A] tabular-nums">
-                          ${slug.sizeUsd.toFixed(0)} · Score {slug.walletScore}
+                          ${slug.sizeUsd.toFixed(2)} · Score {slug.walletScore}
                         </span>
                       </div>
                       <div className="text-[11px] text-[#71717A] tabular-nums mt-0.5">
@@ -135,8 +156,8 @@ export const LiveDecisionStream: React.FC<LiveDecisionStreamProps> = ({
         {/* Manual Direct Route Execution Bar */}
         <form onSubmit={handleQuickBuy} className="pt-3 border-t border-[#1E1E24] space-y-2.5">
           <div className="text-xs font-mono text-[#71717A] flex items-center justify-between">
-            <span>DIRECT DEX ROUTE EXECUTION</span>
-            <span className="text-[#10B981]">SLIPPAGE ≤ 0.45%</span>
+            <span>DIRECT DEX ROUTE EXECUTION ({mode})</span>
+            <span className="text-[#10B981]">CASH: ${availableCashUsd.toFixed(2)}</span>
           </div>
 
           <div className="flex items-center gap-2 font-mono">
@@ -151,6 +172,7 @@ export const LiveDecisionStream: React.FC<LiveDecisionStreamProps> = ({
               <option value="$BONGO">$BONGO</option>
               <option value="$SOL">$SOL</option>
               <option value="$PEPE">$PEPE</option>
+              <option value="$VORTEX">$VORTEX</option>
               <option value="$KROK">$KROK</option>
             </select>
 
@@ -160,9 +182,9 @@ export const LiveDecisionStream: React.FC<LiveDecisionStreamProps> = ({
               </span>
               <input
                 type="number"
-                min="10"
-                max="2000"
-                step="10"
+                min="0.1"
+                max="5000"
+                step="0.05"
                 value={quickAmount}
                 onChange={(e) => setQuickAmount(e.target.value)}
                 aria-label="Orderbetrag in USD"
@@ -189,7 +211,7 @@ export const LiveDecisionStream: React.FC<LiveDecisionStreamProps> = ({
           <div className="flex items-center gap-2.5">
             <Terminal className="w-4 h-4 text-[#10B981] shrink-0" />
             <h3 className="text-sm font-bold text-[#F4F4F5] font-display">
-              Live Decision Stream
+              Live Decision Stream ({mode})
             </h3>
             <span className="text-xs font-mono text-[#71717A] tabular-nums">
               · {filteredEntries.length} EVENTS
