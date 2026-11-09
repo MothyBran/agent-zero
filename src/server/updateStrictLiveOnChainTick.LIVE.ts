@@ -3,12 +3,10 @@ private async updateStrictLiveOnChainTick(candidate: TokenCandidateSpec, walletS
     const realUsdc = Number((wallet.usdcBalance || 0).toFixed(4));
     const nowMs = Date.now();
 
-    // Only keep positions with real on-chain txHash
     this.liveHeader.openSlugs = this.liveHeader.openSlugs.filter(
       s => Boolean(s.txHash && s.txHash.startsWith('0x'))
     );
 
-    // ── Mark-to-market via live Binance prices ───────────────────────────
     for (let i = this.liveHeader.openSlugs.length - 1; i >= 0; i--) {
       const slug = this.liveHeader.openSlugs[i];
       const liveSpot = this.livePrices.get(slug.ticker);
@@ -24,11 +22,6 @@ private async updateStrictLiveOnChainTick(candidate: TokenCandidateSpec, walletS
       }
     }
 
-    // ── FLEXIBLE EXITS (no fixed profit ceiling) ─────────────────────────
-    //  1. Hard stop:     unrealized ≤ -6%
-    //  2. Trailing stop: once peak gain ≥ +1.0%, exit if drawdown from peak ≥ 0.9%
-    //  3. Quick lock:    unrealized ≥ +1.2% and held ≥ 8 minutes
-    //  4. Stale exit:    held ≥ 45 minutes and unrealized ≥ +0.4%
     for (let i = this.liveHeader.openSlugs.length - 1; i >= 0; i--) {
       const slug = this.liveHeader.openSlugs[i];
       const heldMs = nowMs - new Date(slug.openedAt).getTime();
@@ -40,8 +33,9 @@ private async updateStrictLiveOnChainTick(candidate: TokenCandidateSpec, walletS
       const trailingStop = peakPct >= 1.0 && drawdownFromPeak >= 0.9;
       const quickLock = slug.unrealizedPnlPct >= 1.2 && heldMin >= 8;
       const staleProfit = heldMin >= 45 && slug.unrealizedPnlPct >= 0.4;
+      const forceRotate = heldMin >= 90 && slug.unrealizedPnlPct > -3.0;
 
-      if (!hardStop && !trailingStop && !quickLock && !staleProfit) continue;
+      if (!hardStop && !trailingStop && !quickLock && !staleProfit && !forceRotate) continue;
       if (!this.executeOnChainSwap || !wallet.connected || wallet.polGasBalance < 0.15) continue;
       if (nowMs - this.lastLiveSwapAttemptMs < 12000) continue;
       this.lastLiveSwapAttemptMs = nowMs;
@@ -52,7 +46,9 @@ private async updateStrictLiveOnChainTick(candidate: TokenCandidateSpec, walletS
           ? `TRAIL_PEAK_${peakPct.toFixed(1)}%`
           : quickLock
             ? 'QUICK_LOCK_+1.2%'
-            : 'STALE_PROFIT_45m';
+            : forceRotate
+              ? 'FORCE_ROTATE_90m'
+              : 'STALE_PROFIT_45m';
 
       try {
         const swapRes = await this.executeOnChainSwap({
@@ -88,7 +84,6 @@ private async updateStrictLiveOnChainTick(candidate: TokenCandidateSpec, walletS
       }
     }
 
-    // ── SCALED BUYS (size grows with free capital) ───────────────────────
     if (
       this.autoPilotEnabled &&
       this.pipelinePhase === 2 &&
@@ -101,19 +96,12 @@ private async updateStrictLiveOnChainTick(candidate: TokenCandidateSpec, walletS
       this.liveHeader.openSlugs.length < 4
     ) {
       this.lastLiveSwapAttemptMs = nowMs;
-
       const free = Math.max(0, realUsdc - 0.15);
-      const tradeAmountUsdc = Number(
-        Math.max(0.30, Math.min(8.0, free * 0.40)).toFixed(2)
-      );
+      const tradeAmountUsdc = Number(Math.max(0.30, Math.min(8.0, free * 0.40)).toFixed(2));
 
-      if (tradeAmountUsdc < 0.30) {
-        this.lastLiveExecutionDiagnostic = `Cash too low for scaled entry (${realUsdc.toFixed(2)} USDC)`;
-      } else {
+      if (tradeAmountUsdc >= 0.30) {
         const livePrice = this.livePrices.get(candidate.ticker) || candidate.basePriceUsd;
-        const alreadyOpen = this.liveHeader.openSlugs.some(
-          s => s.ticker === candidate.ticker
-        );
+        const alreadyOpen = this.liveHeader.openSlugs.some(s => s.ticker === candidate.ticker);
 
         if (!alreadyOpen) {
           try {
@@ -171,7 +159,6 @@ private async updateStrictLiveOnChainTick(candidate: TokenCandidateSpec, walletS
       }
     }
 
-    // ── Recompute equity from real USDC + open positions ────────────────
     const refreshed = this.getLiveWalletInfo();
     const currentUsdc = Number((refreshed.usdcBalance || 0).toFixed(4));
     const openVal = this.liveHeader.openSlugs.reduce(
